@@ -1,0 +1,203 @@
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import api from '../lib/api-client';
+import {
+    Typography, Grid, Card, CardContent, Box, Button, TextField, Dialog, DialogTitle,
+    DialogContent, DialogActions, MenuItem, LinearProgress, Chip, IconButton, Avatar, Paper
+} from '@mui/material';
+import { Bell, Plus, Edit, Trash2, Megaphone, ShieldAlert, Clock, User, Filter } from 'lucide-react';
+import DashboardLayout from '../components/layout/DashboardLayout';
+import { useAuth } from '../contexts/AuthContext';
+
+export default function Announcements() {
+    const { user } = useAuth();
+    const queryClient = useQueryClient();
+    const [open, setOpen] = useState(false);
+    const [editAnn, setEditAnn] = useState<any>(null);
+    const [formData, setFormData] = useState({
+        title: '',
+        content: '',
+        priority: 'NORMAL',
+        departmentId: user?.role === 'SUPER_ADMIN' ? '' : user?.departmentId || ''
+    });
+
+    const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+
+    const { data: announcements, isLoading } = useQuery(['announcements'], async () => {
+        const res = await api.get('/announcements');
+        const all = Array.isArray(res.data) ? res.data : [];
+        if (isSuperAdmin) return all;
+        // Show global ones OR published ones from user's department
+        return all.filter((ann: any) => 
+            ann.isGlobal || (ann.departmentId === user?.departmentId && ann.status === 'PUBLISHED')
+        );
+    });
+
+    const { data: departments } = useQuery(['departments'], async () => {
+        const res = await api.get('/departments');
+        return res.data;
+    }, { enabled: isSuperAdmin });
+
+    const createMutation = useMutation((data: any) => api.post('/announcements', data), {
+        onSuccess: () => { queryClient.invalidateQueries(['announcements']); handleClose(); }
+    });
+
+    const updateMutation = useMutation((data: any) => api.put(`/announcements/${editAnn.id}`, data), {
+        onSuccess: () => { queryClient.invalidateQueries(['announcements']); handleClose(); }
+    });
+
+    const deleteMutation = useMutation((id: string) => api.delete(`/announcements/${id}`), {
+        onSuccess: () => queryClient.invalidateQueries(['announcements'])
+    });
+
+    const handleOpen = (ann: any = null) => {
+        if (ann) {
+            setEditAnn(ann);
+            setFormData({
+                title: ann.title,
+                content: ann.content,
+                priority: ann.priority,
+                departmentId: ann.departmentId || ''
+            });
+        } else {
+            setEditAnn(null);
+            setFormData({
+                title: '',
+                content: '',
+                priority: 'NORMAL',
+                departmentId: isSuperAdmin ? '' : user?.departmentId || ''
+            });
+        }
+        setOpen(true);
+    };
+
+    const handleClose = () => {
+        setOpen(false);
+        setEditAnn(null);
+    };
+
+    const handleSubmit = () => {
+        if (editAnn) updateMutation.mutate(formData);
+        else createMutation.mutate(formData);
+    };
+
+    return (
+        <DashboardLayout>
+            <Box sx={{ mb: 6, display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'start', md: 'end' }, gap: 3 }}>
+                <div>
+                    <Typography variant="h3" fontWeight="950" className="glow-text" sx={{ letterSpacing: -2 }}>STRATEGIC <span className="text-primary/70">ALERTS</span></Typography>
+                    <Typography color="textSecondary" sx={{ fontWeight: 500, opacity: 0.6 }}>Mission-critical communications and tactical broadcasts.</Typography>
+                </div>
+                {isSuperAdmin && (
+                    <Button variant="contained" startIcon={<Plus size={20} />} onClick={() => handleOpen()} sx={{ borderRadius: 3, px: 4, py: 1.5, fontWeight: '900', boxShadow: '0 0 20px var(--primary-glow)' }}>
+                        NEW BROADCAST
+                    </Button>
+                )}
+            </Box>
+
+            {isLoading && <LinearProgress sx={{ mb: 4, borderRadius: 1 }} />}
+
+            <Grid container spacing={3}>
+                {announcements?.map((ann: any) => (
+                    <Grid item xs={12} md={6} lg={4} key={ann.id}>
+                        <Card className="holographic-card smooth-tilt" sx={{ height: '100%', borderRadius: 'var(--radius-lg)' }}>
+                            <CardContent sx={{ p: 4 }}>
+                                <Box display="flex" justifyContent="space-between" mb={3} alignItems="center">
+                                    <div className={`px-3 py-1 rounded-full border ${ann.priority === 'HIGH' ? 'bg-error/10 border-error/20 text-error' : 'bg-primary/10 border-primary/20 text-primary'}`}>
+                                        <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 1, fontSize: '0.65rem' }}>{ann.priority === 'HIGH' ? 'CRITICAL_ALERT' : 'STANDARD_INTEL'}</Typography>
+                                    </div>
+                                    <Box>
+                                        {isSuperAdmin && (
+                                            <>
+                                                <IconButton size="small" onClick={() => handleOpen(ann)} className="tactical-border" sx={{ mr: 1 }}><Edit size={14} /></IconButton>
+                                                <IconButton size="small" color="error" onClick={() => deleteMutation.mutate(ann.id)} className="tactical-border"><Trash2 size={14} /></IconButton>
+                                            </>
+                                        )}
+                                    </Box>
+                                </Box>
+                                <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1, mb: 1 }}>{ann.title}</Typography>
+                                <Typography variant="body2" sx={{ mb: 4, minHeight: 60, opacity: 0.7, lineHeight: 1.6, fontWeight: 500 }}>
+                                    {ann.content}
+                                </Typography>
+                                <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <Box display="flex" alignItems="center" gap={1.5}>
+                                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm border border-primary/20">
+                                            {ann.author?.name?.charAt(0)}
+                                        </div>
+                                        <div>
+                                            <Typography variant="body2" fontWeight="900">{ann.author?.name}</Typography>
+                                            <Typography className="neon-label" sx={{ fontSize: '0.55rem !important' }}>{ann.department?.name || 'GLOBAL_CMD'}</Typography>
+                                        </div>
+                                    </Box>
+                                    <Typography variant="caption" sx={{ fontWeight: 800, opacity: 0.5 }}>{new Date(ann.createdAt).toLocaleDateString()}</Typography>
+                                </Box>
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                ))}
+            </Grid>
+
+            {announcements?.length === 0 && (
+                <Paper sx={{ p: 10, textAlign: 'center', borderRadius: 4, border: '1px dashed', borderColor: 'divider', bgcolor: 'transparent' }}>
+                    <Megaphone size={48} className="mx-auto mb-4 opacity-20" />
+                    <Typography variant="h5" fontWeight="bold">No Broadcasts Found</Typography>
+                    <Typography color="textSecondary">The strategic alert channel is currently silent.</Typography>
+                </Paper>
+            )}
+
+            <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm" PaperProps={{ sx: { borderRadius: 4 } }}>
+                <DialogTitle sx={{ fontWeight: 900, px: 4, pt: 4 }}>
+                    {editAnn ? 'Edit Broadcast' : 'Deploy New Broadcast'}
+                </DialogTitle>
+                <DialogContent sx={{ px: 4 }}>
+                    <Box display="flex" flexDirection="column" gap={3} sx={{ mt: 2 }}>
+                        <TextField
+                            label="Broadcast Title"
+                            fullWidth
+                            value={formData.title}
+                            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                        />
+                        <TextField
+                            label="Intelligence Content"
+                            fullWidth
+                            multiline
+                            rows={4}
+                            value={formData.content}
+                            onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                        />
+                        <TextField
+                            select
+                            label="Priority Level"
+                            fullWidth
+                            value={formData.priority}
+                            onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
+                        >
+                            <MenuItem value="NORMAL">NORMAL</MenuItem>
+                            <MenuItem value="HIGH">CRITICAL</MenuItem>
+                        </TextField>
+                        {isSuperAdmin && (
+                            <TextField
+                                select
+                                label="Target Sector"
+                                fullWidth
+                                value={formData.departmentId}
+                                onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
+                            >
+                                <MenuItem value="">GLOBAL COMMAND</MenuItem>
+                                {departments?.map((dept: any) => (
+                                    <MenuItem key={dept.id} value={dept.id}>{dept.name}</MenuItem>
+                                ))}
+                            </TextField>
+                        )}
+                    </Box>
+                </DialogContent>
+                <DialogActions sx={{ px: 4, pb: 4 }}>
+                    <Button onClick={handleClose} sx={{ fontWeight: 'bold' }}>Abort</Button>
+                    <Button onClick={handleSubmit} variant="contained" disabled={createMutation.isLoading || updateMutation.isLoading} sx={{ borderRadius: 2, fontWeight: 'bold' }}>
+                        {editAnn ? 'Update' : 'Broadcast'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        </DashboardLayout>
+    );
+}

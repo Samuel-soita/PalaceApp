@@ -1,0 +1,183 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Deep Space UI Palette */
+    --h-bg: 230; --s-bg: 25%; --l-bg: 6%;
+    --bg-color: hsl(var(--h-bg), var(--s-bg), var(--l-bg));
+    
+    /* Neon Accents - Brightened for Legibility */
+    --primary: hsl(217, 91%, 65%);
+    --primary-glow: hsla(217, 91%, 65%, 0.5);
+    --secondary: hsl(280, 80%, 70%);
+    --secondary-glow: hsla(280, 80%, 70%, 0.5);
+    --cyan: hsl(188, 86%, 58%);
+    --cyan-glow: hsla(188, 86%, 58%, 0.5);
+
+    /* Glassmorphism Foundations - Increased Opacity for Contrast */
+    --glass-base: hsla(230, 25%, 15%, 0.6);
+    --glass-border: hsla(217, 33%, 40%, 0.6);
+    --glass-highlight: hsla(0, 0%, 100%, 0.12);
+    --glass-blur: 32px;
+
+    /* Strict Square Geometry */
+    --radius-xl: 0px;
+    --radius-lg: 0px;
+    --radius-md: 0px;
+  }
+
+  body {
+    background-color: var(--bg-color);
+    color: hsl(210, 40%, 98%);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased;
+    /* Immersive animated background */
+    background-image: 
+      radial-gradient(ellipse at 10% 0%, var(--primary-glow) 0%, transparent 60%),
+      radial-gradient(ellipse at 90% 100%, var(--secondary-glow) 0%, transparent 60%),
+      radial-gradient(circle at 50% 50%, var(--cyan-glow) 0%, transparent 80%);
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg-color); }
+  ::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 0px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+}
+
+@layer components {
+  /* 💠 Core Holographic Card */
+  .holographic-card {
+    position: relative;
+    background: var(--glass-base);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-xl);
+    box-shadow: 
+      0 8px 32px 0 hsla(0, 0%, 0%, 0.5),
+      inset 0 1px 0 0 var(--glass-highlight);
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    transform: translateZ(0);
+  }
+
+  /* Shimmer highlights on hover */
+  .holographic-card::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    background: linear-gradient(
+      135deg,
+      transparent 0%,
+      var(--glass-highlight) 30%,
+      rgba(255, 255, 255, 0.25) 50%,
+      var(--glass-highlight) 70%,
+      transparent 100%
+    );
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .holographic-card:hover {
+    transform: translateY(-4px) scale(1.01);
+    border-color: var(--cyan);
+    box-shadow: 
+      0 10px 30px -10px var(--cyan-glow),
+      0 0 15px -5px var(--primary-glow),
+      inset 0 1px 0 0 rgba(255,255,255,0.3);
+    background: hsla(230, 25%, 22%, 0.8);
+  }
+
+  .holographic-card:hover::before { opacity: 1; }
+  
+  /* 💎 Global Modal (MUI Dialog) Overrides */
+  .MuiDialog-paper {
+    background: hsla(230, 25%, 15%, 0.95) !important;
+    backdrop-filter: blur(40px) !important;
+    -webkit-backdrop-filter: blur(40px) !important;
+    border: 1px solid var(--cyan) !important;
+    box-shadow: 
+      0 30px 60px -10px hsla(0, 0%, 0%, 0.8),
+      0 0 50px -10px var(--cyan-glow),
+      inset 0 1px 0 0 rgba(255,255,255,0.2) !important;
+    border-radius: var(--radius-xl) !important;
+    color: hsl(210, 40%, 98%) !important;
+    isolation: isolate;
+  }
+
+  /* Text & Labels */
+  .glow-text {
+    text-shadow: 0 0 15px var(--primary-glow), 0 0 30px var(--primary-glow);
+  }
+
+  .neon-label {
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--cyan);
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--cyan-glow);
+    border-radius: var(--radius-md);
+    background: hsla(188, 86%, 53%, 0.1);
+  }
+}
+
+/* MUI Global Component Glass Tweaks */
+.MuiCard-root, .MuiPaper-root:not(.MuiDialog-paper):not(.MuiMenu-paper) {
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0px !important;
+}
+
+.MuiMenu-paper {
+  background: hsla(230, 25%, 18%, 0.98) !important;
+  backdrop-filter: blur(25px) !important;
+  border: 1px solid var(--glass-border) !important;
+  color: white !important;
+  border-radius: var(--radius-md) !important;
+}
+
+.MuiMenu-list .MuiMenuItem-root:hover {
+  background: var(--primary-glow) !important;
+}
+
+.MuiTextField-root .MuiInputBase-root {
+  background: hsla(0, 0%, 100%, 0.05);
+  backdrop-filter: blur(10px);
+  border-radius: var(--radius-md);
+  color: white;
+}
+
+.MuiTextField-root .MuiInputBase-root fieldset {
+  border-color: hsla(0, 0%, 100%, 0.2);
+  transition: all 0.3s;
+  border-radius: 0px !important;
+}
+
+.MuiTextField-root .MuiInputBase-root:hover fieldset {
+  border-color: var(--cyan);
+  background: hsla(188, 86%, 53%, 0.05);
+}
+
+.MuiTextField-root .MuiInputBase-root.Mui-focused fieldset {
+  border-color: var(--primary) !important;
+  border-width: 1px !important;
+  box-shadow: inset 0 0 10px var(--primary-glow);
+}
+
+.MuiInputLabel-root {
+  color: hsla(0, 0%, 100%, 0.7) !important;
+}
+
+.MuiInputLabel-root.Mui-focused {
+  color: var(--primary) !important;
+}

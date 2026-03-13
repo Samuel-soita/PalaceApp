@@ -1,0 +1,338 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id                     String                 @id @default(uuid())
+  email                  String                 @unique
+  password               String
+  name                   String
+  membershipNumber       String?
+  role                   String                 @default("MEMBER")
+  departmentId           String?
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  announcements          Announcement[]
+  assignedFollowUps      Meeting[]              @relation("MeetingFollowUp")
+  meetingsOrganized      Meeting[]              @relation("MeetingOrganizer")
+  prayerRequests         PrayerRequest[]
+  department             Department?            @relation("DeptLeader", fields: [departmentId], references: [id])
+  messages               Message[]
+  notifications          Notification[]
+  meetingApprovals       MeetingApproval[]
+  announcementApprovals  AnnouncementApproval[]
+  supportRequests        SupportRequest[]
+  eventApprovals         EventApproval[]
+  projectApprovals       ProjectApproval[]
+  planApprovals          PlanApproval[]
+}
+
+model Department {
+  id            String         @id @default(uuid())
+  name          String         @unique
+  description   String?
+  leaderId      String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  announcements Announcement[]
+  assets        Asset[]
+  budgets       Budget[]
+  contributors  Contributor[]
+  meetings      Meeting[]
+  strategies    Strategy[]
+  events        Event[]
+  projects      Project[]
+  plans         Plan[]
+  messages      Message[]
+  leaders       User[]         @relation("DeptLeader")
+  volunteers    Volunteer[]
+}
+
+model Event {
+  id               String           @id @default(uuid())
+  title            String
+  description      String
+  date             DateTime
+  time             String
+  location         String
+  departmentId     String
+  department       Department       @relation(fields: [departmentId], references: [id])
+  budgetNeeded     Float            @default(0)
+  volunteersNeeded Int              @default(0)
+  eventType        String           @default("DEPARTMENT_EVENT") // SERVICE, CONFERENCE, DEPARTMENT_EVENT, MEETING
+  status           String           @default("PLANNED") // PLANNED, ACTIVE, COMPLETED, CANCELLED
+  approvalStatus   String           @default("PENDING_APPROVAL") // PENDING_APPROVAL, APPROVED, REJECTED
+  whatsappGroupLink String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  messages         Message[]
+  supportRequests  SupportRequest[]
+  approvals        EventApproval[]
+}
+
+model Meeting {
+  id               String            @id @default(uuid())
+  title            String
+  departmentId     String
+  date             DateTime
+  time             String
+  venue            String
+  meetingType      String
+  agenda           String
+  organizerId      String
+  followUpPersonId String?
+  followUpDeadline DateTime?
+  followUpStatus   String            @default("PENDING")
+  meetingStatus    String            @default("PENDING_APPROVAL") // PENDING_APPROVAL, SCHEDULED, CANCELLED
+  minutes          String?
+  attendance       String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  followUpPerson   User?             @relation("MeetingFollowUp", fields: [followUpPersonId], references: [id])
+  organizer        User              @relation("MeetingOrganizer", fields: [organizerId], references: [id])
+  department       Department        @relation(fields: [departmentId], references: [id])
+  approvals        MeetingApproval[]
+}
+
+model Budget {
+  id            String        @id @default(uuid())
+  title         String
+  targetAmount  Float
+  amountRaised  Float         @default(0)
+  linkedEventId String?
+  deadline      DateTime
+  status        String        @default("OPEN")
+  departmentId  String?
+  whatsappGroupLink String?
+  isGlobal      Boolean       @default(false)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  department    Department?   @relation(fields: [departmentId], references: [id])
+  contributors  Contributor[]
+}
+
+model Contributor {
+  id            String     @id @default(uuid())
+  name          String
+  amount        Float
+  paymentMethod String
+  date          DateTime   @default(now())
+  budgetId      String
+  departmentId  String?
+  anonymousFlag Boolean    @default(false)
+  notes         String?
+  department    Department? @relation(fields: [departmentId], references: [id])
+  budget        Budget     @relation(fields: [budgetId], references: [id])
+}
+
+model Announcement {
+  id           String                 @id @default(uuid())
+  title        String
+  content      String
+  priority     String                 @default("NORMAL")
+  isGlobal     Boolean                @default(false)
+  status       String                 @default("PENDING") // PENDING, PUBLISHED, REJECTED
+  expiry       DateTime?
+  authorId     String
+  departmentId String?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  department   Department?            @relation(fields: [departmentId], references: [id])
+  author       User                   @relation(fields: [authorId], references: [id])
+  approvals    AnnouncementApproval[]
+}
+
+model PrayerRequest {
+  id           String   @id @default(uuid())
+  requesterId  String
+  content      String
+  privacyLevel String   @default("PRIVATE")
+  status       String   @default("PENDING")
+  assignedTeam String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  requester    User     @relation(fields: [requesterId], references: [id])
+}
+
+model Volunteer {
+  id           String     @id @default(uuid())
+  name         String
+  email        String?
+  skills       String?
+  availability String?
+  departmentId String
+  status       String     @default("ACTIVE")
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  department   Department @relation(fields: [departmentId], references: [id])
+}
+
+model Asset {
+  id                  String     @id @default(uuid())
+  name                String
+  condition           String
+  assignedTo          String?
+  maintenanceSchedule String?
+  departmentId        String
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  department          Department @relation(fields: [departmentId], references: [id])
+}
+
+model Strategy {
+  id             String     @id @default(uuid())
+  title          String
+  actionItems    String
+  assignedPerson String?
+  deadline       DateTime?
+  status         String     @default("PENDING")
+  departmentId   String
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  department     Department @relation(fields: [departmentId], references: [id])
+}
+
+model Project {
+  id           String          @id @default(uuid())
+  title        String
+  description  String
+  deadline     DateTime?
+  departmentId String
+  status       String          @default("PLANNED") // PLANNED, ONGOING, COMPLETED, CANCELLED
+  budget       Float           @default(0)
+  progress     Int             @default(0)
+  whatsappGroupLink String?
+  approvalStatus String        @default("PENDING_APPROVAL") // PENDING_APPROVAL, APPROVED, REJECTED
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  department   Department      @relation(fields: [departmentId], references: [id])
+  updates      ProjectUpdate[]
+  messages     Message[]
+  approvals    ProjectApproval[]
+}
+
+model ProjectUpdate {
+  id        String   @id @default(uuid())
+  projectId String
+  message   String
+  date      DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id])
+}
+
+model Plan {
+  id             String     @id @default(uuid())
+  departmentId   String
+  type           String // MONTHLY, YEARLY
+  title          String
+  description    String
+  approvalStatus String     @default("PENDING_APPROVAL") // PENDING_APPROVAL, APPROVED, REJECTED
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  department     Department @relation(fields: [departmentId], references: [id])
+  approvals      PlanApproval[]
+}
+
+model Message {
+  id           String      @id @default(uuid())
+  content      String
+  senderId     String
+  sender       User        @relation(fields: [senderId], references: [id])
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  projectId    String?
+  project      Project?    @relation(fields: [projectId], references: [id])
+  eventId      String?
+  event        Event?      @relation(fields: [eventId], references: [id])
+  isEdited     Boolean     @default(false)
+  isDeleted    Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model MeetingApproval {
+  id        String   @id @default(uuid())
+  meetingId String
+  userId    String
+  role      String // BISHOP, DEPARTMENT_LEADER
+  approved  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  meeting   Meeting  @relation(fields: [meetingId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([meetingId, userId])
+}
+
+model AnnouncementApproval {
+  id             String       @id @default(uuid())
+  announcementId String
+  userId         String
+  role           String       // BISHOP, PASTOR
+  createdAt      DateTime     @default(now())
+  announcement   Announcement @relation(fields: [announcementId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
+
+  @@unique([announcementId, userId])
+}
+
+model SupportRequest {
+  id             String   @id @default(uuid())
+  eventId        String
+  requesterId    String
+  title          String
+  description    String
+  amountRequired Float    @default(1500)
+  proofImageUrl  String?  // base64 or URL of uploaded screenshot
+  status         String   @default("OPEN") // OPEN, FUNDED, CLOSED
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  event          Event    @relation(fields: [eventId], references: [id])
+  requester      User     @relation(fields: [requesterId], references: [id])
+}
+
+model EventApproval {
+  id        String   @id @default(uuid())
+  eventId   String
+  userId    String
+  role      String   // BISHOP, PASTOR
+  createdAt DateTime @default(now())
+  event     Event    @relation(fields: [eventId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+  @@unique([eventId, userId])
+}
+
+model ProjectApproval {
+  id        String   @id @default(uuid())
+  projectId String
+  userId    String
+  role      String   // BISHOP, PASTOR
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+  @@unique([projectId, userId])
+}
+
+model PlanApproval {
+  id        String   @id @default(uuid())
+  planId    String
+  userId    String
+  role      String   // BISHOP, PASTOR
+  createdAt DateTime @default(now())
+  plan      Plan     @relation(fields: [planId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+  @@unique([planId, userId])
+}
+
