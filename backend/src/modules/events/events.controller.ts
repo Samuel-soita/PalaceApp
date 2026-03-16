@@ -1,9 +1,49 @@
 import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
+import { logAudit } from '../../utils/audit.js';
 
 export const getEvents = async (req: Request, res: Response) => {
     try {
+        const { departmentId, isMajor } = req.query;
+        const user = (req as any).user;
+
+        const where: any = {};
+        if (departmentId) where.departmentId = String(departmentId);
+        if (isMajor !== undefined) where.isMajor = isMajor === 'true';
+
+        // VISIBILITY RULES:
+        // Approved Major -> Global
+        // Approved Dept -> Global (as per existing design, but we can restrict if needed)
+        // Members see only APPROVED
+        if (user.role === 'WATUA') {
+            // WATUA sees EVERYTHING
+        } else if (isMajor === 'true') {
+            where.approvalStatus = 'APPROVED';
+            where.isMajor = true;
+        } else if (user.role === 'MEMBER') {
+            where.approvalStatus = 'APPROVED';
+            // MEMBER Privacy: Major OR Own Department
+            where.OR = [
+                { isMajor: true },
+                ...(user.departmentId ? [{ departmentId: user.departmentId }] : [])
+            ];
+        } else if (user.role === 'DEPARTMENT_LEADER') {
+            // Dashboard view: own dept (any status) OR approved major items
+            if (!departmentId) {
+                where.OR = [
+                    { departmentId: user.departmentId },
+                    { approvalStatus: 'APPROVED', isMajor: true }
+                ];
+            } else {
+                where.departmentId = String(departmentId);
+            }
+        } else if (user.role === 'SYSTEM_ADMIN' || user.role === 'SECRETARY') {
+            // Church Admin and Secretary see all church-wide activities
+            // They don't have a department, so they see everything (similar to WATUA but maybe restricted later if needed)
+        }
+
         const events = await prisma.event.findMany({
+            where,
             include: { department: true },
             orderBy: [
                 { date: 'asc' },
@@ -33,11 +73,17 @@ export const getEventsByDepartment = async (req: Request, res: Response) => {
 };
 
 export const createEvent = async (req: any, res: Response) => {
-    const { title, description, date, time, location, eventType, budgetNeeded, volunteersNeeded, departmentId, pastorIds } = req.body;
+    const { title, description, date, time, location, eventType, budgetNeeded, volunteersNeeded, departmentId, pastorIds, attachmentUrl } = req.body;
     
     // RBAC
     if (req.user?.role === 'DEPARTMENT_LEADER' && req.user.departmentId !== departmentId) {
         return res.status(403).json({ error: 'You can only create events for your own department' });
+    }
+    
+    // Secretary and Administrator can create for any department (usually church-wide)
+    // Members cannot create (handled by router authorizer usually, but let's be safe)
+    if (req.user?.role === 'MEMBER') {
+        return res.status(403).json({ error: 'Members cannot create events' });
     }
 
     // Must pick exactly 2 pastors
@@ -46,16 +92,34 @@ export const createEvent = async (req: any, res: Response) => {
     }
 
     try {
+        // CONFLICT DETECTION
+        const conflict = await prisma.event.findFirst({
+            where: {
+                date: new Date(date),
+                location,
+                approvalStatus: { not: 'REJECTED' }
+            }
+        });
+        if (conflict) {
+            return res.status(409).json({ 
+                error: `TACTICAL CONFLICT: The venue "${location}" is already reserved on ${new Date(date).toLocaleDateString()}. Please select alternate coordinates.` 
+            });
+        }
+
         const event = await prisma.event.create({
             data: {
                 title, description, location, eventType, departmentId,
                 date: new Date(date), time,
-                budgetNeeded: budgetNeeded || 0,
-                volunteersNeeded: volunteersNeeded || 0,
+                budgetNeeded: Number(budgetNeeded) || 0,
+                volunteersNeeded: Number(volunteersNeeded) || 0,
+                attachmentUrl,
+                isMajor: req.body.isMajor === true,
                 // @ts-ignore
                 approvalStatus: 'PENDING_APPROVAL',
             },
         });
+
+        await logAudit(req.user.id, 'CREATE', 'EVENT', event.id, { title, location });
 
         // Notify Bishop and the 2 assigned Pastors
         const bishop = await prisma.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
@@ -106,7 +170,7 @@ export const approveEvent = async (req: any, res: Response) => {
     const { id } = req.params;
     const user = req.user!;
 
-    if (!['SUPER_ADMIN', 'PASTOR'].includes(user.role)) {
+    if (!['SUPER_ADMIN', 'PASTOR', 'WATUA'].includes(user.role)) {
         return res.status(403).json({ error: 'Only the Bishop or Pastors can approve events.' });
     }
 
@@ -140,23 +204,34 @@ export const approveEvent = async (req: any, res: Response) => {
         const bishopApproved = allApprovals.some((a: any) => a.role === 'BISHOP');
         const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR').length;
 
-        // If quorum met: Publish
-        if (bishopApproved && pastorCount >= 2) {
+        // NEW QUORUM RULES:
+        // Major: 1 Bishop + 2 Pastors
+        // Department-only: 2 Pastors
+        const quorumMet = event.isMajor 
+            ? (bishopApproved && pastorCount >= 2)
+            : (pastorCount >= 2);
+
+        if (quorumMet) {
             await prisma.event.update({
                 where: { id },
                 // @ts-ignore
                 data: { approvalStatus: 'APPROVED' }
             });
 
-            // Notify Department Leaders
+            // Notify Stakeholders
             const leaders = await prisma.user.findMany({
                 where: { role: 'DEPARTMENT_LEADER' }
             });
+            
+            const message = event.isMajor 
+                ? `MAJOR EVENT APPROVED: "${event.title}" is now church-wide live!`
+                : `Internal Event Approved: "${event.title}" is now official within the ${event.department.name} sector.`;
+
             await prisma.notification.createMany({
                 data: leaders.map(l => ({
                     userId: l.id,
-                    title: '✅ Event Approved',
-                    message: `Event "${event.title}" from the ${event.department.name} department is now approved and live!`
+                    title: '✅ Event Fully Authorized',
+                    message
                 }))
             });
         }
@@ -170,13 +245,39 @@ export const approveEvent = async (req: any, res: Response) => {
 
 export const updateEvent = async (req: any, res: Response) => {
     try {
-        const { date, budgetNeeded, volunteersNeeded, ...rest } = req.body;
+        const { id, departmentId, approvalStatus, createdAt, date, budgetNeeded, volunteersNeeded, attachmentUrl, ...rest } = req.body;
         const event = await prisma.event.findUnique({ where: { id: req.params.id } });
         if (!event) return res.status(404).json({ error: 'Event not found' });
 
-        // RBAC: Leaders can only update events for their own department
-        if (req.user.role === 'DEPARTMENT_LEADER' && req.user.departmentId !== event.departmentId) {
+        // RBAC: Leaders can only update events for their own department. WATUA/Admin/Bishop/Secretary bypass.
+        const canUpdate = ['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY'].includes(req.user.role) || 
+                          (req.user.role === 'DEPARTMENT_LEADER' && req.user.departmentId === event.departmentId);
+        
+        if (!canUpdate) {
             return res.status(403).json({ error: 'Access denied' });
+        }
+
+        // CONFLICT DETECTION ON UPDATE
+        const newDate = date ? new Date(date).getTime() : event.date.getTime();
+        const newLoc = rest.location || event.location;
+        
+        const hasDateChanged = date && new Date(date).getTime() !== event.date.getTime();
+        const hasLocChanged = rest.location && rest.location !== event.location;
+
+        if (hasDateChanged || hasLocChanged) {
+            const conflict = await prisma.event.findFirst({
+                where: {
+                    id: { not: req.params.id },
+                    date: new Date(newDate),
+                    location: newLoc,
+                    approvalStatus: { not: 'REJECTED' }
+                }
+            });
+            if (conflict) {
+                return res.status(409).json({ 
+                    error: `CONFLICT DETECTED: The venue "${newLoc}" is booked for another mission at that time.` 
+                });
+            }
         }
 
         const updatedEvent = await prisma.event.update({
@@ -186,8 +287,12 @@ export const updateEvent = async (req: any, res: Response) => {
                 ...(date && { date: new Date(date) }),
                 ...(budgetNeeded !== undefined && { budgetNeeded: Number(budgetNeeded) }),
                 ...(volunteersNeeded !== undefined && { volunteersNeeded: Number(volunteersNeeded) }),
+                ...(attachmentUrl !== undefined && { attachmentUrl }),
             },
         });
+
+        await logAudit(req.user.id, 'UPDATE', 'EVENT', updatedEvent.id, rest);
+
         res.json(updatedEvent);
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Failed to update event' });
@@ -199,11 +304,19 @@ export const deleteEvent = async (req: any, res: Response) => {
         const event = await prisma.event.findUnique({ where: { id: req.params.id } });
         if (!event) return res.status(404).json({ error: 'Event not found' });
 
-        // RBAC: Leaders can only delete events for their own department
-        if (req.user.role === 'DEPARTMENT_LEADER' && req.user.departmentId !== event.departmentId) {
+        // RBAC: Secretary cannot delete. Leaders only own dept.
+        if (req.user.role === 'SECRETARY') {
+            return res.status(403).json({ error: 'Secretaries cannot delete church records' });
+        }
+
+        const canDelete = ['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(req.user.role) || 
+                          (req.user.role === 'DEPARTMENT_LEADER' && req.user.departmentId === event.departmentId);
+        
+        if (!canDelete) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
+        await logAudit(req.user.id, 'DELETE', 'EVENT', event.id, { title: event.title });
         await prisma.event.delete({ where: { id: req.params.id } });
         res.json({ message: 'Event deleted successfully' });
     } catch (error: any) {

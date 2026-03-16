@@ -1,13 +1,19 @@
 import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
+import { logAudit } from '../../utils/audit.js';
 
-export const createDepartment = async (req: Request, res: Response) => {
+export const createDepartment = async (req: any, res: Response) => {
     const { name, description, leaderId } = req.body;
 
     try {
         const department = await prisma.department.create({
             data: { name, description, leaderId },
         });
+
+        if (req.user) {
+            await logAudit(req.user.id, 'CREATE', 'DEPARTMENT', department.id, { name });
+        }
+
         res.status(201).json(department);
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Failed to create department' });

@@ -15,7 +15,7 @@ interface Message {
     id: string;
     content: string;
     senderId: string;
-    sender: { name: string; role: string };
+    sender: { name: string; role: string; avatarUrl?: string | null };
     isEdited?: boolean;
     isDeleted?: boolean;
     createdAt: string;
@@ -213,8 +213,18 @@ export default function Messages() {
                             return (
                                 <Box key={msg.id} sx={{ display: 'flex', gap: 2, alignSelf: isMe ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
                                     {!isMe && showHeader && (
-                                        <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.dark', fontSize: '0.8rem', mt: 1 }}>
-                                            {msg.sender?.name?.charAt(0) || '?'}
+                                        <Avatar 
+                                            src={msg.sender?.avatarUrl || undefined}
+                                            sx={{ 
+                                                width: 32, 
+                                                height: 32, 
+                                                bgcolor: 'primary.dark', 
+                                                fontSize: '0.8rem', 
+                                                mt: 1,
+                                                opacity: msg.sender?.avatarUrl ? 1 : 0.3 
+                                            }}
+                                        >
+                                            {!msg.sender?.avatarUrl && <Users size={16} />}
                                         </Avatar>
                                     )}
                                     {!isMe && !showHeader && <Box sx={{ width: 32 }} />}

@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
+import { logAudit } from '../../utils/audit.js';
 
-export const createBudget = async (req: Request, res: Response) => {
+export const createBudget = async (req: any, res: Response) => {
     const { title, targetAmount, deadline, departmentId, linkedEventId } = req.body;
 
     try {
@@ -14,6 +15,11 @@ export const createBudget = async (req: Request, res: Response) => {
                 linkedEventId,
             },
         });
+        
+        if (req.user) {
+            await logAudit(req.user.id, 'CREATE', 'BUDGET', budget.id, { title, targetAmount });
+        }
+
         res.status(201).json(budget);
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Failed to create budget' });
@@ -37,7 +43,7 @@ export const getBudgets = async (req: Request, res: Response) => {
         res.status(500).json({ error: 'Failed to fetch budgets' });
     }
 };
-export const updateBudget = async (req: Request, res: Response) => {
+export const updateBudget = async (req: any, res: Response) => {
     try {
         const budget = await prisma.budget.update({
             where: { id: req.params.id },
@@ -46,14 +52,29 @@ export const updateBudget = async (req: Request, res: Response) => {
                 deadline: req.body.deadline ? new Date(req.body.deadline) : undefined,
             },
         });
+
+        if (req.user) {
+            await logAudit(req.user.id, 'UPDATE', 'BUDGET', budget.id, req.body);
+        }
+
         res.json(budget);
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Failed to update budget' });
     }
 };
 
-export const deleteBudget = async (req: Request, res: Response) => {
+export const deleteBudget = async (req: any, res: Response) => {
     try {
+        const budget = await prisma.budget.findUnique({ where: { id: req.params.id } });
+        
+        if (!budget) {
+            return res.status(404).json({ error: 'Budget not found' });
+        }
+
+        if (req.user) {
+            await logAudit(req.user.id, 'DELETE', 'BUDGET', budget.id, { title: budget.title });
+        }
+
         await prisma.budget.delete({ where: { id: req.params.id } });
         res.json({ message: 'Budget deleted successfully' });
     } catch (error: any) {

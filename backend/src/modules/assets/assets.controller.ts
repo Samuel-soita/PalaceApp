@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
+import { logAudit } from '../../utils/audit.js';
 
 export const getAssets = async (req: Request, res: Response) => {
     try {
@@ -26,32 +27,48 @@ export const getAssetsByDepartment = async (req: Request, res: Response) => {
     }
 };
 
-export const createAsset = async (req: Request, res: Response) => {
+export const createAsset = async (req: any, res: Response) => {
     const { name, condition, assignedTo, maintenanceSchedule, departmentId } = req.body;
     try {
         const asset = await prisma.asset.create({
             data: { name, condition, assignedTo, maintenanceSchedule, departmentId },
         });
+
+        if (req.user) {
+            await logAudit(req.user.id, 'CREATE', 'ASSET', asset.id, { name });
+        }
+
         res.status(201).json(asset);
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Failed to create asset' });
     }
 };
 
-export const updateAsset = async (req: Request, res: Response) => {
+export const updateAsset = async (req: any, res: Response) => {
     try {
         const asset = await prisma.asset.update({
             where: { id: req.params.id },
             data: req.body,
         });
+
+        if (req.user) {
+            await logAudit(req.user.id, 'UPDATE', 'ASSET', asset.id, req.body);
+        }
+
         res.json(asset);
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Failed to update asset' });
     }
 };
 
-export const deleteAsset = async (req: Request, res: Response) => {
+export const deleteAsset = async (req: any, res: Response) => {
     try {
+        const asset = await prisma.asset.findUnique({ where: { id: req.params.id } });
+        
+        if (asset && req.user) {
+            await logAudit(req.user.id, 'DELETE', 'ASSET', asset.id, { name: asset.name });
+        }
+
         await prisma.asset.delete({ where: { id: req.params.id } });
         res.json({ message: 'Asset deleted successfully' });
     } catch (error: any) {

@@ -30,9 +30,30 @@ export const createMeeting = async (req: any, res: Response) => {
 
 export const getMeetings = async (req: Request, res: Response) => {
     const { departmentId } = req.query;
+    const user = (req as any).user;
+    const where: any = {};
+    
     try {
+        if (user.role === 'WATUA') {
+            // WATUA sees everything
+        } else if (user.role === 'MEMBER') {
+            where.meetingStatus = 'SCHEDULED';
+            // MEMBER Privacy: Only their own department
+            if (user.departmentId) {
+                where.departmentId = user.departmentId;
+            } else {
+                return res.json([]);
+            }
+        } else if (user.role === 'DEPARTMENT_LEADER') {
+            if (!departmentId) {
+                where.departmentId = user.departmentId;
+            } else {
+                where.departmentId = String(departmentId);
+            }
+        }
+
         const meetings = await prisma.meeting.findMany({
-            where: departmentId ? { departmentId: String(departmentId) } : {},
+            where,
             include: {
                 organizer: { select: { name: true } },
                 followUpPerson: { select: { name: true } },
@@ -63,6 +84,7 @@ export const updateMeeting = async (req: Request, res: Response) => {
         res.status(400).json({ error: 'Failed to update meeting' });
     }
 };
+
 export const approveMeeting = async (req: any, res: Response) => {
     const { id } = req.params;
     const userId = req.user.id;
@@ -99,9 +121,7 @@ export const approveMeeting = async (req: any, res: Response) => {
         const hasBishop = currentApprovals.some((a: any) => a.role === 'BISHOP');
         const hasLeader = currentApprovals.some((a: any) => a.role === 'DEPARTMENT_LEADER');
 
-        // User requested "approved by 3 people" - I'll stick to Bishop + Leader for now 
-        // until clarified if there is a 3rd specific role.
-        if (hasBishop && hasLeader) {
+        if (userRole === 'WATUA' || (hasBishop && hasLeader)) {
             await prisma.meeting.update({
                 where: { id },
                 data: { meetingStatus: 'SCHEDULED' }

@@ -339,15 +339,16 @@ export default function Events() {
                                     onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                                 >
                                     <MenuItem value="PLANNED">Planned</MenuItem>
+                                    <MenuItem value="IN_PROGRESS">In Progress</MenuItem>
                                     <MenuItem value="ACTIVE">Active</MenuItem>
+                                    <MenuItem value="ON_HOLD">On Hold</MenuItem>
                                     <MenuItem value="COMPLETED">Completed</MenuItem>
                                     <MenuItem value="CANCELLED">Cancelled</MenuItem>
                                 </TextField>
                             </Box>
                             
-                            {!editEvent && (
-                                <FormControl fullWidth required error={formData.pastorIds.length > 0 && formData.pastorIds.length !== 2}>
-                                    <InputLabel id="pastors-label">Select 2 Authorizing Pastors</InputLabel>
+                            <FormControl fullWidth required error={formData.pastorIds.length > 0 && formData.pastorIds.length !== 2}>
+                                <InputLabel id="pastors-label">Select 2 Authorizing Pastors</InputLabel>
                                     <Select
                                         labelId="pastors-label"
                                         multiple
@@ -371,7 +372,6 @@ export default function Events() {
                                         ))}
                                     </Select>
                                 </FormControl>
-                            )}
                         </Box>
                     </DialogContent>
                     <DialogActions sx={{ p: 4 }}>
