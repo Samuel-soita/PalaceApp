@@ -6,13 +6,14 @@ interface AuthContextType {
     token: string | null;
     login: (data: any) => void;
     logout: () => void;
+    updateUser: (data: any) => void;
     loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-    const [user, setUser] = useState(null);
+    const [user, setUser] = useState<any>(null);
     const [token, setToken] = useState(localStorage.getItem('token'));
     const [loading, setLoading] = useState(true);
 
@@ -43,8 +44,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem('token');
     };
 
+    const updateUser = (data: any) => {
+        setUser((prev: any) => prev ? { ...prev, ...data } : data);
+    };
+
     return (
-        <AuthContext.Provider value={{ user, token, login, logout, loading }}>
+        <AuthContext.Provider value={{ user, token, login, logout, updateUser, loading }}>
             {children}
         </AuthContext.Provider>
     );

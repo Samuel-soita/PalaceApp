@@ -1,15 +1,15 @@
-import { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import api from '../lib/api-client';
 import {
     Typography, Grid, Card, CardContent, Box, Button, Chip, Divider, LinearProgress,
-    Avatar, Tooltip, Paper, Tabs, Tab, IconButton
+    Avatar, Tooltip, Paper, Tabs, Tab, IconButton, Skeleton, useMediaQuery, useTheme
 } from '@mui/material';
 import {
     Calendar, Users, Briefcase, ChevronRight, CheckCircle2,
     Package, TrendingUp, AlertCircle, ArrowUpRight, ShieldCheck, Plus, MapPin,
-    Heart, FileText, Download, Share2, Edit, Trash2
+    Heart, FileText, Download, Share2, Edit, Trash2, MessageSquare, Coins, Clock, Zap, Shield
 } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
@@ -20,6 +20,7 @@ import ProjectFormModal from '../components/modals/ProjectFormModal';
 import EventFormModal from '../components/modals/EventFormModal';
 import PlanFormModal from '../components/modals/PlanFormModal';
 import AnnouncementFormModal from '../components/modals/AnnouncementFormModal';
+import { DepartmentAccounts } from '../components/dashboard/DepartmentAccounts';
 
 interface TabPanelProps {
     children?: React.ReactNode;
@@ -41,6 +42,18 @@ export default function DepartmentDashboard() {
     const { user } = useAuth();
     const queryClient = useQueryClient();
     const [tabValue, setTabValue] = useState(0);
+    const navigate = useNavigate();
+
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+    const isTablet = useMediaQuery(theme.breakpoints.down('md'));
+
+    // Front-end access validation
+    useEffect(() => {
+        if (user?.role === 'DEPARTMENT_LEADER' && id && id !== user.departmentId) {
+            navigate(`/department/${user.departmentId}`, { replace: true });
+        }
+    }, [id, user, navigate]);
 
     const isAuthorized = user?.role === 'SUPER_ADMIN' || user?.role === 'DEPARTMENT_LEADER';
 
@@ -104,19 +117,45 @@ export default function DepartmentDashboard() {
 
     if (isLoading) return (
         <DashboardLayout>
-            <Box sx={{ height: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 2 }}>
-                <LinearProgress sx={{ width: 200, borderRadius: 1 }} />
-                <Typography variant="body2" color="textSecondary" sx={{ fontWeight: 'bold', letterSpacing: 2 }}>
-                    INITIALIZING SECTOR HUB...
-                </Typography>
+            <Box sx={{ mb: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'end' }}>
+                <Box display="flex" gap={2}>
+                    <Skeleton variant="circular" width={60} height={60} />
+                    <Box>
+                        <Skeleton variant="text" width={200} height={40} />
+                        <Skeleton variant="text" width={100} height={20} />
+                    </Box>
+                </Box>
+                <Skeleton variant="rectangular" width={200} height={40} sx={{ borderRadius: 2 }} />
             </Box>
+            
+            <Grid container spacing={3} mb={4}>
+                {[1, 2, 3, 4].map(i => (
+                    <Grid item xs={12} sm={6} md={3} key={`skeleton-stat-${i}`}>
+                        <Skeleton variant="rectangular" height={120} sx={{ borderRadius: 4 }} />
+                    </Grid>
+                ))}
+            </Grid>
+            
+            <Skeleton variant="rectangular" width="100%" height={400} sx={{ borderRadius: 4 }} />
         </DashboardLayout>
     );
 
+    const activeProjectsCount = projects?.filter((p: any) => p.status === 'IN_PROGRESS' || p.approvalStatus === 'APPROVED').length || 0;
+    const upcomingEventsCount = events?.filter((e: any) => new Date(e.date) >= new Date() && (e.status === 'SCHEDULED' || e.approvalStatus === 'APPROVED')).length || 0;
+    
+    // Calculate total budget progression
+    const totalBudgetTarget = budgets?.reduce((acc: number, b: any) => acc + (b.targetAmount || 0), 0) || 0;
+    const totalBudgetRaised = budgets?.reduce((acc: number, b: any) => acc + (b.amountRaised || 0), 0) || 0;
+    const budgetProgressStr = totalBudgetTarget > 0 ? `${Math.round((totalBudgetRaised / totalBudgetTarget) * 100)}%` : '0%';
+
+    // Mock volunteers (since there is no volunteer model yet, we show personnel count from users endpoint ideally, but we use a placeholder for now to match the user request)
+    const volunteersCount = 12;
+
     const stats = [
-        { title: 'Assets', value: assets?.length || 0, icon: Package, color: 'purple' },
-        { title: 'Objectives', value: budgets?.filter((b: any) => b.status === 'OPEN').length || 0, icon: TrendingUp, color: 'green' },
-        { title: 'Syncs', value: department?.meetings?.length || 0, icon: Calendar, color: 'orange' },
+        { title: 'Projects Active', value: activeProjectsCount, icon: Briefcase, color: 'blue' },
+        { title: 'Upcoming Events', value: upcomingEventsCount, icon: Calendar, color: 'purple' },
+        { title: 'Budget Progress', value: budgetProgressStr, icon: TrendingUp, color: 'green' },
+        { title: 'Volunteers', value: volunteersCount, icon: Users, color: 'orange' },
     ];
 
     return (
@@ -124,11 +163,11 @@ export default function DepartmentDashboard() {
             <Box sx={{ mb: 6, display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'start', md: 'end' }, gap: 3 }}>
                 <div>
                     <Box display="flex" alignItems="center" gap={2} mb={1}>
-                        <div className="p-3 bg-primary/10 rounded-2xl text-primary shadow-[0_0_20px_rgba(var(--primary-h),var(--primary-s),var(--primary-l),0.2)]">
-                            <ShieldCheck size={36} />
+                        <div className="p-2 sm:p-3 bg-primary/10 rounded-2xl text-primary shadow-[0_0_20px_rgba(var(--primary-h),var(--primary-s),var(--primary-l),0.2)]">
+                            <ShieldCheck size={isMobile ? 28 : 36} />
                         </div>
                         <div>
-                            <Typography variant="h3" fontWeight="900" className="glow-text" sx={{ letterSpacing: -2 }}>
+                            <Typography variant={isMobile ? "h5" : "h3"} fontWeight="900" className="glow-text" sx={{ letterSpacing: isMobile ? -1 : -2 }}>
                                 {department?.name} <span className="text-primary/70">Sector</span>
                             </Typography>
                             <Box display="flex" alignItems="center" gap={1.5}>
@@ -141,34 +180,69 @@ export default function DepartmentDashboard() {
                         </div>
                     </Box>
                 </div>
-                <Box display="flex" gap={2} width={{ xs: '100%', md: 'auto' }}>
-                    <Button variant="outlined" fullWidth startIcon={<Users size={18} />} sx={{ borderRadius: 3, fontWeight: 'bold', textTransform: 'none', px: 3, border: '1px solid var(--glass-border)' }}>
-                        Personnel
-                    </Button>
-                    <Button variant="contained" fullWidth startIcon={<Plus size={18} />} sx={{ borderRadius: 3, fontWeight: 'bold', textTransform: 'none', px: 3 }}>
-                        New Mission
-                    </Button>
-                </Box>
             </Box>
 
-            <Grid container spacing={3} mb={4}>
+            {/* POS QUICK ACTION GRID */}
+            <Typography variant="caption" fontWeight="900" sx={{ letterSpacing: 2, color: 'primary.main', mb: 2, display: 'block' }}>MISSION CONTROL TERMINAL</Typography>
+            <Grid container spacing={isMobile ? 1 : 2} mb={isMobile ? 4 : 8}>
+                {[
+                    { label: 'New Project', icon: Briefcase, color: 'purple', onClick: () => setProjectModal({ open: true, data: null }) },
+                    { label: 'Host Event', icon: Calendar, color: 'blue', onClick: () => setEventModal({ open: true, data: null }) },
+                    { label: 'Strategic Plan', icon: FileText, color: 'cyan', onClick: () => setPlanModal({ open: true, data: null }) },
+                    { label: 'Broadcast', icon: AlertCircle, color: 'orange', onClick: () => setAnnouncementModal({ open: true, data: null }) },
+                    { label: 'Strategic Alignment', icon: FileText, color: 'blue', href: '/plans' },
+                    { label: 'Asset Register', icon: Shield, color: 'amber', href: '#assets' },
+                ].map((action, i) => (
+                    <Grid item xs={6} sm={4} md={2} key={i}>
+                        <Button
+                            fullWidth
+                            component={action.href ? Link : 'button'}
+                            to={action.href}
+                            onClick={action.onClick}
+                            sx={{
+                                height: isMobile ? 80 : 100,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: isMobile ? 1 : 1.5,
+                                bgcolor: 'rgba(255,255,255,0.03)',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: isMobile ? 2 : 3,
+                                color: 'white',
+                                textTransform: 'none',
+                                transition: 'all 0.3s',
+                                '&:hover': {
+                                    bgcolor: `rgba(var(--${action.color}-rgb), 0.1)`,
+                                    borderColor: `var(--${action.color})`,
+                                    transform: 'translateY(-4px)',
+                                    boxShadow: `0 8px 24px rgba(var(--${action.color}-rgb), 0.2)`
+                                }
+                            }}
+                        >
+                            <action.icon size={isMobile ? 20 : 24} color={`var(--${action.color})`} />
+                            <Typography variant="caption" fontWeight="bold" sx={{ fontSize: isMobile ? '0.65rem' : '0.75rem' }}>{action.label}</Typography>
+                        </Button>
+                    </Grid>
+                ))}
+            </Grid>
+
+            <Grid container spacing={isMobile ? 2 : 3} mb={4}>
                 {stats.map((stat) => (
                     <Grid item xs={12} sm={6} md={3} key={stat.title}>
                         <Card sx={{
-                            borderRadius: 4,
+                            borderRadius: isMobile ? 3 : 4,
                             border: '1px solid',
                             borderColor: 'divider',
                             bgcolor: 'background.paper'
                         }}>
-                            <CardContent sx={{ p: 3 }}>
-                                <Box display="flex" justifyContent="space-between" alignItems="start" mb={2}>
-                                    <div className={`p-2 rounded-xl bg-${stat.color}-500/10 text-${stat.color}-600`}>
-                                        <stat.icon size={20} />
+                            <CardContent sx={{ p: isMobile ? 2 : 3 }}>
+                                <Box display="flex" justifyContent="space-between" alignItems="start" mb={isMobile ? 1 : 2}>
+                                    <div className={`p-1.5 sm:p-2 rounded-xl bg-${stat.color}-500/10 text-${stat.color}-600`}>
+                                        <stat.icon size={isMobile ? 18 : 20} />
                                     </div>
-                                    <ArrowUpRight size={16} className="text-muted-foreground opacity-50" />
+                                    <ArrowUpRight size={14} className="text-muted-foreground opacity-50" />
                                 </Box>
-                                <Typography variant="h4" fontWeight="800" sx={{ mb: 0.5 }}>{stat.value}</Typography>
-                                <Typography variant="caption" fontWeight="bold" sx={{ color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                <Typography variant={isMobile ? "h5" : "h4"} fontWeight="800" sx={{ mb: 0.5 }}>{stat.value}</Typography>
+                                <Typography variant="caption" fontWeight="bold" sx={{ color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5, fontSize: isMobile ? '0.6rem' : '0.75rem' }}>
                                     {stat.title}
                                 </Typography>
                             </CardContent>
@@ -177,11 +251,17 @@ export default function DepartmentDashboard() {
                 ))}
             </Grid>
 
-            <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-                <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{
-                    '& .MuiTab-root': { fontWeight: 'bold', textTransform: 'none', minWidth: 120 },
-                    '& .Mui-selected': { color: 'primary.main' }
-                }}>
+            <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2, overflowX: 'auto' }}>
+                <Tabs 
+                    value={tabValue} 
+                    onChange={(_, v) => setTabValue(v)} 
+                    variant={isMobile ? "scrollable" : "standard"}
+                    scrollButtons={isMobile ? "auto" : false}
+                    sx={{
+                        '& .MuiTab-root': { fontWeight: 'bold', textTransform: 'none', minWidth: isMobile ? 100 : 120, fontSize: isMobile ? '0.8rem' : '0.875rem' },
+                        '& .Mui-selected': { color: 'primary.main' }
+                    }}
+                >
                     <Tab label="Strategic Briefing" />
                     <Tab label="Financial Tactics" />
                     <Tab label="Intelligence Reports" />
@@ -287,8 +367,11 @@ export default function DepartmentDashboard() {
                             p: 3
                         }}>
                             <Box display="flex" alignItems="center" gap={2} mb={4}>
-                                <Avatar sx={{ width: 50, height: 50, bgcolor: 'white/10' }}>
-                                    {department?.leaders?.[0]?.name?.charAt(0) || user?.name?.charAt(0)}
+                                <Avatar 
+                                    src={department?.leaders?.[0]?.avatarUrl || user?.avatarUrl}
+                                    sx={{ width: 50, height: 50, bgcolor: 'white/10' }}
+                                >
+                                    {!(department?.leaders?.[0]?.avatarUrl || user?.avatarUrl) && (department?.leaders?.[0]?.name?.charAt(0) || user?.name?.charAt(0))}
                                 </Avatar>
                                 <div>
                                     <Typography variant="h6" fontWeight="900">{department?.leaders?.[0]?.name || user?.name}</Typography>
@@ -311,30 +394,7 @@ export default function DepartmentDashboard() {
             </TabPanel>
 
             <TabPanel value={tabValue} index={1}>
-                <Typography variant="h6" fontWeight="900" sx={{ mb: 3 }}>Active Objectives</Typography>
-                <Grid container spacing={4}>
-                    {budgets?.map((budget: any) => (
-                        <Grid item xs={12} md={6} key={budget.id}>
-                            <Card sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider' }}>
-                                <CardContent sx={{ p: 3 }}>
-                                    <Box display="flex" justifyContent="space-between" mb={2}>
-                                        <Typography variant="h6" fontWeight="800">{budget.title}</Typography>
-                                        <Chip label={budget.status} size="small" color="primary" sx={{ fontWeight: 'bold' }} />
-                                    </Box>
-                                    <LinearProgress
-                                        variant="determinate"
-                                        value={Math.min((budget.amountRaised / budget.targetAmount) * 100, 100)}
-                                        sx={{ height: 8, borderRadius: 4, mb: 2 }}
-                                    />
-                                    <Box display="flex" justifyContent="space-between">
-                                        <Typography variant="body2" fontWeight="bold">${budget.amountRaised.toLocaleString()}</Typography>
-                                        <Typography variant="caption" color="textSecondary">of ${budget.targetAmount.toLocaleString()}</Typography>
-                                    </Box>
-                                </CardContent>
-                            </Card>
-                        </Grid>
-                    )) || <Typography color="textSecondary">No financial objectives.</Typography>}
-                </Grid>
+                <DepartmentAccounts departmentId={effectiveId as string} />
             </TabPanel>
 
             <TabPanel value={tabValue} index={2}>
@@ -367,108 +427,115 @@ export default function DepartmentDashboard() {
             </TabPanel>
 
             <TabPanel value={tabValue} index={3}>
-                <Typography variant="h6" fontWeight="900" sx={{ mb: 3 }}>Department Initiatives</Typography>
+                <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
+                    <Typography variant="h6" fontWeight="900">Initiative Tactical Board</Typography>
+                    <Box display="flex" gap={1}>
+                        <Button size="small" variant="contained" startIcon={<Plus size={16}/>} onClick={() => setProjectModal({ open: true, data: null })}>PROJECT</Button>
+                        <Button size="small" variant="contained" startIcon={<Plus size={16}/>} onClick={() => setEventModal({ open: true, data: null })}>EVENT</Button>
+                    </Box>
+                </Box>
+
                 <Grid container spacing={4}>
-                    <Grid item xs={12} md={4}>
-                        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                            <Typography variant="subtitle1" fontWeight="800" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Briefcase size={18} className="text-primary" /> Projects
-                            </Typography>
-                            {isAuthorized && (
-                                <IconButton size="small" onClick={() => setProjectModal({ open: true, data: null })}><Plus size={18} /></IconButton>
-                            )}
-                        </Box>
-                        <div className="space-y-3">
-                            {(projects || []).length > 0 ? (projects || []).map((project: any) => (
-                                <Card key={project.id} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
-                                    <CardContent sx={{ p: 2 }}>
-                                        <Box display="flex" justifyContent="space-between" alignItems="start">
-                                            <Typography variant="body1" fontWeight="800">{project.title}</Typography>
-                                            <Box>
-                                                {(user?.role === 'SUPER_ADMIN' || project.approvalStatus === 'PENDING_APPROVAL') && (
-                                                    <>
-                                                        <IconButton size="small" onClick={() => setProjectModal({ open: true, data: project })}><Edit size={14} /></IconButton>
-                                                        <IconButton size="small" color="error" onClick={() => handleDelete('project', project.id)}><Trash2 size={14} /></IconButton>
-                                                    </>
-                                                )}
+                    {/* PENDING APPROVALS */}
+                    <Grid item xs={12}>
+                        <Typography variant="subtitle2" fontWeight="900" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main', letterSpacing: 1 }}>
+                            <Clock size={16} /> PENDING AUTHORIZATION
+                        </Typography>
+                        <Grid container spacing={2}>
+                            {[
+                                ...(projects?.filter((p: any) => p.approvalStatus === 'PENDING_APPROVAL') || []),
+                                ...(events?.filter((e: any) => e.approvalStatus === 'PENDING_APPROVAL') || []),
+                                ...(plans?.filter((pl: any) => pl.approvalStatus === 'PENDING_APPROVAL') || []),
+                                ...(announcements?.filter((a: any) => a.status === 'PENDING') || [])
+                            ].map((item: any, i: number) => (
+                                <Grid item xs={12} sm={6} md={4} lg={3} key={`pending-${i}`}>
+                                    <Card sx={{ borderRadius: 3, border: '1px solid var(--glass-border)', bgcolor: 'rgba(255,152,0,0.03)' }}>
+                                        <CardContent sx={{ p: 2 }}>
+                                            <Box display="flex" justifyContent="space-between" alignItems="start">
+                                                <Typography variant="body2" fontWeight="800" noWrap sx={{ maxWidth: '70%' }}>{item.title}</Typography>
+                                                <Chip label={item.isMajor ? "MAJOR" : "LOCAL"} size="small" variant="outlined" sx={{ height: 16, fontSize: '0.6rem', fontWeight: 'bold' }} />
                                             </Box>
-                                        </Box>
-                                        <Box display="flex" justifyContent="space-between" mt={1}>
-                                            <Chip label={project.approvalStatus || project.status} size="small" color={project.approvalStatus === 'APPROVED' ? 'success' : 'warning'} sx={{ fontSize: '0.65rem', fontWeight: 'bold' }} />
-                                            <Typography variant="caption" color="textSecondary">{new Date(project.deadline).toLocaleDateString()}</Typography>
-                                        </Box>
-                                    </CardContent>
-                                </Card>
-                            )) : <Typography variant="body2" color="textSecondary">No projects.</Typography>}
-                        </div>
+                                            <Typography variant="caption" color="textSecondary" display="block" sx={{ mt: 0.5 }}>{item.isMajor ? "Requires Bishop + 2 Pastors" : "Requires 2 Pastors"}</Typography>
+                                            <Box display="flex" justifyContent="space-between" mt={2} alignItems="center">
+                                                <Chip label="Awaiting Signatures" size="small" sx={{ height: 18, fontSize: '0.6rem' }} />
+                                                <Box>
+                                                    <IconButton size="small" onClick={() => {
+                                                        if (item.budget !== undefined) setProjectModal({ open: true, data: item });
+                                                        else if (item.date) setEventModal({ open: true, data: item });
+                                                        else if (item.type) setPlanModal({ open: true, data: item });
+                                                        else setAnnouncementModal({ open: true, data: item });
+                                                    }}><Edit size={12}/></IconButton>
+                                                </Box>
+                                            </Box>
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+                            ))}
+                            {[
+                                ...(projects?.filter((p: any) => p.approvalStatus === 'PENDING_APPROVAL') || []),
+                                ...(events?.filter((e: any) => e.approvalStatus === 'PENDING_APPROVAL') || []),
+                                ...(plans?.filter((pl: any) => pl.approvalStatus === 'PENDING_APPROVAL') || []),
+                                ...(announcements?.filter((a: any) => a.status === 'PENDING') || [])
+                            ].length === 0 && (
+                                <Grid item xs={12}>
+                                    <Typography variant="caption" sx={{ opacity: 0.5 }}>No items pending authorization.</Typography>
+                                </Grid>
+                            )}
+                        </Grid>
+                        <Divider sx={{ my: 4 }} />
                     </Grid>
 
-                    <Grid item xs={12} md={4}>
-                        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                            <Typography variant="subtitle1" fontWeight="800" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Calendar size={18} className="text-primary" /> Events
-                            </Typography>
-                            {isAuthorized && (
-                                <IconButton size="small" onClick={() => setEventModal({ open: true, data: null })}><Plus size={18} /></IconButton>
-                            )}
-                        </Box>
-                        <div className="space-y-3">
-                            {(events || []).length > 0 ? (events || []).map((event: any) => (
-                                <Card key={event.id} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
-                                    <CardContent sx={{ p: 2 }}>
-                                        <Box display="flex" justifyContent="space-between" alignItems="start">
-                                            <Typography variant="body1" fontWeight="800">{event.title}</Typography>
-                                            <Box>
-                                                {(user?.role === 'SUPER_ADMIN' || event.approvalStatus === 'PENDING_APPROVAL') && (
-                                                    <>
-                                                        <IconButton size="small" onClick={() => setEventModal({ open: true, data: event })}><Edit size={14} /></IconButton>
-                                                        <IconButton size="small" color="error" onClick={() => handleDelete('event', event.id)}><Trash2 size={14} /></IconButton>
-                                                    </>
-                                                )}
+                    {/* ACTIVE INITIATIVES */}
+                    <Grid item xs={12}>
+                        <Typography variant="subtitle2" fontWeight="900" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1, color: 'success.main', letterSpacing: 1 }}>
+                            <Zap size={16} /> ACTIVE MISSIONS
+                        </Typography>
+                        <Grid container spacing={2}>
+                            {[
+                                ...(projects?.filter((p: any) => p.approvalStatus === 'APPROVED' && p.status !== 'COMPLETED') || []),
+                                ...(events?.filter((e: any) => e.approvalStatus === 'APPROVED' && e.status !== 'COMPLETED' && new Date(e.date) >= new Date()) || []),
+                                ...(plans?.filter((pl: any) => pl.approvalStatus === 'APPROVED') || [])
+                            ].map((item: any, i: number) => (
+                                <Grid item xs={12} sm={6} md={4} lg={3} key={`active-${i}`}>
+                                    <Card sx={{ borderRadius: 3, border: '1px solid var(--glass-border)', bgcolor: 'rgba(76,175,80,0.03)' }}>
+                                        <CardContent sx={{ p: 2 }}>
+                                            <Box display="flex" justifyContent="space-between" alignItems="start">
+                                                <Typography variant="body2" fontWeight="800" noWrap sx={{ maxWidth: '70%' }}>{item.title}</Typography>
+                                                {item.isMajor && <Chip label="MAJOR" color="primary" size="small" sx={{ height: 16, fontSize: '0.6rem', fontWeight: 'bold' }} />}
                                             </Box>
-                                        </Box>
-                                        <Box display="flex" justifyContent="space-between" mt={1}>
-                                            <Chip label={event.approvalStatus || event.status} size="small" color={event.approvalStatus === 'APPROVED' ? 'success' : 'warning'} sx={{ fontSize: '0.65rem', fontWeight: 'bold' }} />
-                                            <Typography variant="caption" color="textSecondary">{new Date(event.date).toLocaleDateString()}</Typography>
-                                        </Box>
-                                    </CardContent>
-                                </Card>
-                            )) : <Typography variant="body2" color="textSecondary">No events.</Typography>}
-                        </div>
+                                            <Box display="flex" justifyContent="space-between" mt={2} alignItems="center">
+                                                <Chip label={item.status || "ACTIVE"} size="small" color="success" sx={{ height: 18, fontSize: '0.6rem' }} />
+                                                <Typography variant="caption" color="textSecondary">{item.date ? new Date(item.date).toLocaleDateString() : (item.progress !== undefined ? `${item.progress}%` : '')}</Typography>
+                                            </Box>
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+                            ))}
+                        </Grid>
+                        <Divider sx={{ my: 4 }} />
                     </Grid>
 
-                    <Grid item xs={12} md={4}>
-                        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                            <Typography variant="subtitle1" fontWeight="800" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <FileText size={18} className="text-primary" /> Plans
-                            </Typography>
-                            {isAuthorized && (
-                                <IconButton size="small" onClick={() => setPlanModal({ open: true, data: null })}><Plus size={18} /></IconButton>
-                            )}
-                        </Box>
-                        <div className="space-y-3">
-                            {(plans || []).length > 0 ? (plans || []).map((plan: any) => (
-                                <Card key={plan.id} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
-                                    <CardContent sx={{ p: 2 }}>
-                                        <Box display="flex" justifyContent="space-between" alignItems="start">
-                                            <Typography variant="body1" fontWeight="800">{plan.title}</Typography>
-                                            <Box>
-                                                {(user?.role === 'SUPER_ADMIN' || plan.approvalStatus === 'PENDING_APPROVAL') && (
-                                                    <>
-                                                        <IconButton size="small" onClick={() => setPlanModal({ open: true, data: plan })}><Edit size={14} /></IconButton>
-                                                        <IconButton size="small" color="error" onClick={() => handleDelete('plan', plan.id)}><Trash2 size={14} /></IconButton>
-                                                    </>
-                                                )}
-                                            </Box>
-                                        </Box>
-                                        <Box display="flex" justifyContent="space-between" mt={1}>
-                                            <Chip label={plan.approvalStatus || plan.status} size="small" color={plan.approvalStatus === 'APPROVED' ? 'success' : 'warning'} sx={{ fontSize: '0.65rem', fontWeight: 'bold' }} />
-                                            <Typography variant="caption" color="textSecondary">{plan.type}</Typography>
-                                        </Box>
-                                    </CardContent>
-                                </Card>
-                            )) : <Typography variant="body2" color="textSecondary">No plans.</Typography>}
-                        </div>
+                    {/* COMPLETED INITIATIVES */}
+                    <Grid item xs={12}>
+                        <Typography variant="subtitle2" fontWeight="900" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1, opacity: 0.6, letterSpacing: 1 }}>
+                            <CheckCircle2 size={16} /> ARCHIVED / COMPLETED
+                        </Typography>
+                        <Grid container spacing={2}>
+                            {[
+                                ...(projects?.filter((p: any) => p.status === 'COMPLETED') || []),
+                                ...(events?.filter((e: any) => e.status === 'COMPLETED' || new Date(e.date) < new Date()) || []),
+                                ...(announcements?.filter((a: any) => a.status === 'PUBLISHED') || [])
+                            ].slice(0, 8).map((item: any, i: number) => (
+                                <Grid item xs={12} sm={6} md={3} key={`completed-${i}`}>
+                                    <Card sx={{ borderRadius: 2, border: '1px solid var(--glass-border)', opacity: 0.6 }}>
+                                        <CardContent sx={{ p: 2 }}>
+                                            <Typography variant="caption" fontWeight="bold" noWrap display="block">{item.title}</Typography>
+                                            <Typography variant="caption" color="textSecondary">{item.date ? new Date(item.date).toLocaleDateString() : 'ARCHIVED'}</Typography>
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+                            ))}
+                        </Grid>
                     </Grid>
                 </Grid>
             </TabPanel>

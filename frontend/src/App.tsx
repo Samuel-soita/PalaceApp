@@ -1,28 +1,63 @@
+import { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import Departments from './pages/Departments';
-import Announcements from './pages/Announcements';
-import PrayerRequests from './pages/PrayerRequests';
-import AdminDashboard from './pages/AdminDashboard';
-import DepartmentDashboard from './pages/DepartmentDashboard';
-import Plans from './pages/Plans';
-import Events from './pages/Events';
-import Projects from './pages/Projects';
-import Messages from './pages/Messages';
-import Support from './pages/Support';
+import { Box, CircularProgress, Typography } from '@mui/material';
+import { GlobalSkeleton } from './components/layout/GlobalSkeleton';
+
+// Lazy load components
+const Login = lazy(() => import('./pages/Login'));
+const Register = lazy(() => import('./pages/Register'));
+const Departments = lazy(() => import('./pages/Departments'));
+const Announcements = lazy(() => import('./pages/Announcements'));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
+const DepartmentDashboard = lazy(() => import('./pages/DepartmentDashboard'));
+const Plans = lazy(() => import('./pages/Plans'));
+const Events = lazy(() => import('./pages/Events'));
+const Projects = lazy(() => import('./pages/Projects'));
+const Messages = lazy(() => import('./pages/Messages'));
+const Support = lazy(() => import('./pages/Support'));
+const WatuaDashboard = lazy(() => import('./pages/WatuaDashboard'));
+
+const LoadingFallback = () => (
+    <Box sx={{ 
+        height: '100vh', 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        bgcolor: 'background.default',
+        gap: 2
+    }}>
+        <CircularProgress size={40} thickness={4} sx={{ color: 'primary.main' }} />
+        <Typography variant="caption" fontWeight="900" sx={{ letterSpacing: 2, opacity: 0.5 }}>
+            SYNCHRONIZING HUB...
+        </Typography>
+    </Box>
+);
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
     const { token, loading } = useAuth();
-    if (loading) return <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>;
+    if (loading) return <LoadingFallback />;
     if (!token) return <Navigate to="/login" />;
-    return <>{children}</>;
+    return (
+        <Suspense fallback={<GlobalSkeleton />}>
+            {children}
+        </Suspense>
+    );
 }
 
 function RootRedirect() {
-    // All departments should see the main dashboard of the church 
-    // events and plans to stay in sync and not collide.
+    const { user } = useAuth();
+    
+    if (user?.role === 'WATUA') {
+        return <Navigate to="/watua" replace />;
+    }
+
+    if (user?.role === 'DEPARTMENT_LEADER' && user?.departmentId) {
+        return <Navigate to={`/department/${user.departmentId}`} replace />;
+    }
+
+    // Super Admins (and any other roles) see the main command dashboard
     return <AdminDashboard />;
 }
 
@@ -32,26 +67,34 @@ function DepartmentGuard({ children }: { children: React.ReactNode }) {
     return <Navigate to="/" replace />;
 }
 
+function WatuaGuard({ children }: { children: React.ReactNode }) {
+    const { user } = useAuth();
+    if (user?.role === 'WATUA') return <>{children}</>;
+    return <Navigate to="/login" replace />;
+}
+
 function App() {
     return (
-        <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/departments" element={
-                <PrivateRoute>
-                    <DepartmentGuard><Departments /></DepartmentGuard>
-                </PrivateRoute>
-            } />
-            <Route path="/announcements" element={<PrivateRoute><Announcements /></PrivateRoute>} />
-            <Route path="/prayer-requests" element={<PrivateRoute><PrayerRequests /></PrivateRoute>} />
-            <Route path="/calendar" element={<PrivateRoute><Events /></PrivateRoute>} />
-            <Route path="/plans" element={<PrivateRoute><Plans /></PrivateRoute>} />
-            <Route path="/projects" element={<PrivateRoute><Projects /></PrivateRoute>} />
-            <Route path="/messages" element={<PrivateRoute><Messages /></PrivateRoute>} />
-            <Route path="/support" element={<PrivateRoute><Support /></PrivateRoute>} />
-            <Route path="/department/:id" element={<PrivateRoute><DepartmentDashboard /></PrivateRoute>} />
-            <Route path="/" element={<PrivateRoute><RootRedirect /></PrivateRoute>} />
-        </Routes>
+        <Suspense fallback={<LoadingFallback />}>
+            <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+                <Route path="/departments" element={
+                    <PrivateRoute>
+                        <DepartmentGuard><Departments /></DepartmentGuard>
+                    </PrivateRoute>
+                } />
+                <Route path="/announcements" element={<PrivateRoute><Announcements /></PrivateRoute>} />
+                <Route path="/calendar" element={<PrivateRoute><Events /></PrivateRoute>} />
+                <Route path="/plans" element={<PrivateRoute><Plans /></PrivateRoute>} />
+                <Route path="/projects" element={<PrivateRoute><Projects /></PrivateRoute>} />
+                <Route path="/messages" element={<PrivateRoute><Messages /></PrivateRoute>} />
+                <Route path="/support" element={<PrivateRoute><Support /></PrivateRoute>} />
+                <Route path="/department/:id" element={<PrivateRoute><DepartmentDashboard /></PrivateRoute>} />
+                <Route path="/watua" element={<WatuaGuard><WatuaDashboard /></WatuaGuard>} />
+                <Route path="/" element={<PrivateRoute><RootRedirect /></PrivateRoute>} />
+            </Routes>
+        </Suspense>
     );
 }
 

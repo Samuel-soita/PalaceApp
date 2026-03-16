@@ -1,10 +1,50 @@
 import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
+import { logAudit } from '../../utils/audit.js';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
 
 export const getPlans = async (req: Request, res: Response) => {
     try {
+        const { departmentId, isMajor } = req.query;
+        const user = (req as any).user;
+
+        if (!user) {
+            return res.status(401).json({ error: 'User context missing' });
+        }
+
+        const where: any = {};
+        if (departmentId) where.departmentId = String(departmentId);
+        if (isMajor !== undefined) where.isMajor = isMajor === 'true';
+
+        // VISIBILITY RULES:
+        if (user.role === 'WATUA') {
+            // WATUA Sees Everything
+        } else if (isMajor === 'true') {
+            where.approvalStatus = 'APPROVED';
+            where.isMajor = true;
+        } else if (user.role === 'MEMBER') {
+            where.approvalStatus = 'APPROVED';
+            // MEMBER Privacy: Major OR Own Department
+            where.OR = [
+                { isMajor: true },
+                ...(user.departmentId ? [{ departmentId: user.departmentId }] : [])
+            ];
+        } else if (user.role === 'DEPARTMENT_LEADER') {
+            // Dashboard view: own dept (any status) OR approved major items
+            if (!departmentId) {
+                where.OR = [
+                    { departmentId: user.departmentId },
+                    { approvalStatus: 'APPROVED', isMajor: true }
+                ];
+            } else {
+                where.departmentId = String(departmentId);
+            }
+        } else if (user.role === 'SYSTEM_ADMIN' || user.role === 'SECRETARY') {
+            // Church Admin and Secretary see high level plans
+        }
+
         const plans = await prisma.plan.findMany({
+            where,
             include: { department: true },
             orderBy: { createdAt: 'desc' },
         });
@@ -30,9 +70,13 @@ export const getPlansByDepartment = async (req: Request, res: Response) => {
 export const createPlan = async (req: AuthRequest, res: Response) => {
     const { type, title, description, departmentId, pastorIds } = req.body;
     
-    // RBAC: Leaders can only create plans for their own department
+    // RBAC: Only SUPER_ADMIN, SYSTEM_ADMIN, SECRETARY or DEPARTMENT_LEADER can create.
     if (req.user!.role === 'DEPARTMENT_LEADER' && req.user!.departmentId !== departmentId) {
         return res.status(403).json({ error: 'You can only create plans for your own department' });
+    }
+
+    if (req.user!.role === 'MEMBER') {
+        return res.status(403).json({ error: 'Members cannot create plans' });
     }
 
     // Must pick exactly 2 pastors
@@ -44,10 +88,13 @@ export const createPlan = async (req: AuthRequest, res: Response) => {
         const plan = await prisma.plan.create({
             data: {
                 type, title, description, departmentId,
+                isMajor: req.body.isMajor === true,
                 // @ts-ignore
                 approvalStatus: 'PENDING_APPROVAL',
             },
         });
+
+        await logAudit(req.user!.id, 'CREATE', 'PLAN', plan.id, { title, type });
 
         // Notify Bishop and the 2 assigned Pastors
         const bishop = await prisma.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
@@ -85,7 +132,7 @@ export const approvePlan = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const user = req.user!;
 
-    if (!['SUPER_ADMIN', 'PASTOR'].includes(user.role)) {
+    if (!['SUPER_ADMIN', 'PASTOR', 'WATUA'].includes(user.role)) {
         return res.status(403).json({ error: 'Only the Bishop or Pastors can approve plans.' });
     }
 
@@ -119,23 +166,34 @@ export const approvePlan = async (req: AuthRequest, res: Response) => {
         const bishopApproved = allApprovals.some((a: any) => a.role === 'BISHOP');
         const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR').length;
 
-        // If quorum met: Publish
-        if (bishopApproved && pastorCount >= 2) {
+        // NEW QUORUM RULES:
+        // Major: 1 Bishop + 2 Pastors
+        // Department-only: 2 Pastors
+        const quorumMet = plan.isMajor 
+            ? (bishopApproved && pastorCount >= 2)
+            : (pastorCount >= 2);
+
+        if (quorumMet) {
             await prisma.plan.update({
                 where: { id },
                 // @ts-ignore
                 data: { approvalStatus: 'APPROVED' }
             });
 
-            // Notify Department Leaders
+            // Notify Stakeholders
             const leaders = await prisma.user.findMany({
                 where: { role: 'DEPARTMENT_LEADER' }
             });
+            
+            const message = plan.isMajor 
+                ? `MAJOR STRAGETIC PLAN APPROVED: "${plan.title}" is now church-wide board ready!`
+                : `Internal Sector Plan Approved: "${plan.title}" is now operational for the ${plan.department.name} department.`;
+
             await prisma.notification.createMany({
                 data: leaders.map(l => ({
                     userId: l.id,
-                    title: '✅ Plan Approved',
-                    message: `Plan "${plan.title}" from the ${plan.department.name} department is now approved and live!`
+                    title: '✅ Plan Fully Authorized',
+                    message
                 }))
             });
         }
@@ -151,8 +209,10 @@ export const updatePlan = async (req: AuthRequest, res: Response) => {
         const plan = await prisma.plan.findUnique({ where: { id: req.params.id } });
         if (!plan) return res.status(404).json({ error: 'Plan not found' });
 
-        // RBAC: Leaders can only update plans for their own department
-        if (req.user!.role === 'DEPARTMENT_LEADER' && req.user!.departmentId !== plan.departmentId) {
+        const canUpdate = ['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY'].includes(req.user!.role) || 
+                          (req.user!.role === 'DEPARTMENT_LEADER' && req.user!.departmentId === plan.departmentId);
+
+        if (!canUpdate) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
@@ -160,6 +220,9 @@ export const updatePlan = async (req: AuthRequest, res: Response) => {
             where: { id: req.params.id },
             data: req.body,
         });
+
+        await logAudit(req.user!.id, 'UPDATE', 'PLAN', updatedPlan.id, req.body);
+
         res.json(updatedPlan);
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Failed to update plan' });
@@ -171,11 +234,19 @@ export const deletePlan = async (req: any, res: Response) => {
         const plan = await prisma.plan.findUnique({ where: { id: req.params.id } });
         if (!plan) return res.status(404).json({ error: 'Plan not found' });
 
-        // RBAC: Leaders can only delete plans for their own department
-        if (req.user.role === 'DEPARTMENT_LEADER' && req.user.departmentId !== plan.departmentId) {
+        // RBAC: Secretary cannot delete.
+        if (req.user.role === 'SECRETARY') {
+            return res.status(403).json({ error: 'Secretaries cannot delete church records' });
+        }
+
+        const canDelete = ['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(req.user.role) || 
+                          (req.user.role === 'DEPARTMENT_LEADER' && req.user.departmentId === plan.departmentId);
+
+        if (!canDelete) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
+        await logAudit(req.user.id, 'DELETE', 'PLAN', plan.id, { title: plan.title });
         await prisma.plan.delete({ where: { id: req.params.id } });
         res.json({ message: 'Plan deleted successfully' });
     } catch (error: any) {

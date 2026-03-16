@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
     Dialog, DialogTitle, DialogContent, DialogActions, Box, TextField,
     MenuItem, Button, FormControl, InputLabel,
-    Select, Checkbox, ListItemText
+    Select, Checkbox, ListItemText, Typography
 } from '@mui/material';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import api from '../../lib/api-client';
@@ -21,6 +21,7 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess }: PlanFo
         title: '',
         type: 'MONTHLY',
         description: '',
+        isMajor: false,
         departmentId: user?.departmentId || '',
         pastorIds: [] as string[]
     });
@@ -31,6 +32,7 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess }: PlanFo
                 title: plan.title,
                 type: plan.type,
                 description: plan.description,
+                isMajor: plan.isMajor || false,
                 departmentId: plan.departmentId,
                 pastorIds: []
             });
@@ -39,6 +41,7 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess }: PlanFo
                 title: '',
                 type: 'MONTHLY',
                 description: '',
+                isMajor: false,
                 departmentId: user?.departmentId || '',
                 pastorIds: []
             });
@@ -105,6 +108,18 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess }: PlanFo
                             value={formData.description}
                             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                         />
+                        
+                        <Box display="flex" alignItems="center" bgcolor="rgba(255,255,255,0.05)" p={2} borderRadius={2} border="1px dashed rgba(255,255,255,0.1)">
+                            <Box flex={1}>
+                                <Typography variant="subtitle2" fontWeight="bold">CHURCH-WIDE STRATEGY</Typography>
+                                <Typography variant="caption" color="textSecondary">Mark this plan as a global objective for the "Prayer Palace" mission. Requires 3-sig authorization.</Typography>
+                            </Box>
+                            <Checkbox 
+                                checked={formData.isMajor} 
+                                onChange={(e) => setFormData({ ...formData, isMajor: e.target.checked })}
+                                sx={{ color: 'primary.main' }}
+                            />
+                        </Box>
                         
                         {!plan && (
                             <FormControl fullWidth required>

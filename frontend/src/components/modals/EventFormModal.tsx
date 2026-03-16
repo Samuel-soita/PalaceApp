@@ -28,6 +28,7 @@ export default function EventFormModal({ open, onClose, event, onSuccess }: Even
         volunteersNeeded: 0,
         status: 'PLANNED',
         eventType: 'DEPARTMENT_EVENT',
+        isMajor: false,
         pastorIds: [] as string[]
     });
 
@@ -44,6 +45,7 @@ export default function EventFormModal({ open, onClose, event, onSuccess }: Even
                 volunteersNeeded: event.volunteersNeeded,
                 status: event.status,
                 eventType: event.eventType,
+                isMajor: event.isMajor || false,
                 pastorIds: []
             });
         } else {
@@ -58,6 +60,7 @@ export default function EventFormModal({ open, onClose, event, onSuccess }: Even
                 volunteersNeeded: 0,
                 status: 'PLANNED',
                 eventType: 'DEPARTMENT_EVENT',
+                isMajor: false,
                 pastorIds: []
             });
         }
@@ -85,13 +88,44 @@ export default function EventFormModal({ open, onClose, event, onSuccess }: Even
         }
     );
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [uploading, setUploading] = useState(false);
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            setSelectedFile(e.target.files[0]);
+        }
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!event && formData.pastorIds.length !== 2) {
             alert("Exactly 2 Pastors must authorize this Event.");
             return;
         }
-        mutation.mutate(formData);
+
+        let attachmentUrl = event?.attachmentUrl;
+
+        if (selectedFile) {
+            setUploading(true);
+            try {
+                const uploadData = new FormData();
+                uploadData.append('file', selectedFile);
+                const uploadRes = await api.post('/upload', uploadData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+                attachmentUrl = uploadRes.data.url;
+            } catch (err) {
+                console.error("Failed to upload file", err);
+                alert("Failed to upload attachment. Please try again.");
+                setUploading(false);
+                return;
+            }
+        }
+
+        mutation.mutate({ ...formData, attachmentUrl });
+        setUploading(false);
+        setSelectedFile(null);
     };
 
     return (
@@ -179,6 +213,43 @@ export default function EventFormModal({ open, onClose, event, onSuccess }: Even
                             </TextField>
                         </Box>
 
+                        <Box display="flex" alignItems="center" bgcolor="rgba(255,255,255,0.05)" p={2} borderRadius={2} border="1px dashed rgba(255,255,255,0.1)">
+                            <Box flex={1}>
+                                <Typography variant="subtitle2" fontWeight="bold">CHURCH-WIDE EVENT</Typography>
+                                <Typography variant="caption" color="textSecondary">Apply this to events intended for the entire congregation. Requires Bishop + 2 Pastors approval.</Typography>
+                            </Box>
+                            <Checkbox 
+                                checked={formData.isMajor} 
+                                onChange={(e) => setFormData({ ...formData, isMajor: e.target.checked })}
+                                sx={{ color: 'primary.main' }}
+                            />
+                        </Box>
+                        
+                        <Box display="flex" flexDirection="column" gap={1}>
+                            <Typography variant="body2" fontWeight="bold" color="textSecondary">
+                                Event Attachment (PDF, Image, etc)
+                            </Typography>
+                            <Box display="flex" alignItems="center" gap={2}>
+                                <Button
+                                    variant="outlined"
+                                    component="label"
+                                    size="small"
+                                    sx={{ borderRadius: 2 }}
+                                >
+                                    Choose File
+                                    <input
+                                        type="file"
+                                        hidden
+                                        onChange={handleFileChange}
+                                    />
+                                </Button>
+                                {selectedFile && <Typography variant="caption">{selectedFile.name}</Typography>}
+                                {!selectedFile && event?.attachmentUrl && (
+                                    <Typography variant="caption" color="primary">Current attachment: {event.attachmentUrl.split('/').pop()}</Typography>
+                                )}
+                            </Box>
+                        </Box>
+
                         {user?.role === 'SUPER_ADMIN' && (
                             <TextField
                                 label="Department"
@@ -219,8 +290,8 @@ export default function EventFormModal({ open, onClose, event, onSuccess }: Even
                 </DialogContent>
                 <DialogActions sx={{ p: 4 }}>
                     <Button onClick={onClose}>ABORT</Button>
-                    <Button type="submit" variant="contained" disabled={mutation.isLoading} sx={{ borderRadius: 2 }}>
-                        {event ? 'UPDATE' : 'INITIATE'}
+                    <Button type="submit" variant="contained" disabled={mutation.isLoading || uploading} sx={{ borderRadius: 2 }}>
+                        {uploading ? 'UPLOADING...' : (event ? 'UPDATE' : 'INITIATE')}
                     </Button>
                 </DialogActions>
             </form>

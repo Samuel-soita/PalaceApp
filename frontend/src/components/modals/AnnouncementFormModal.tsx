@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
     Dialog, DialogTitle, DialogContent, DialogActions, Box, TextField,
-    MenuItem, Button
+    MenuItem, Button, Typography, Checkbox
 } from '@mui/material';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import api from '../../lib/api-client';
@@ -20,6 +20,7 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
         title: '',
         content: '',
         priority: 'NORMAL',
+        isMajor: false,
         departmentId: user?.role === 'SUPER_ADMIN' ? '' : user?.departmentId || ''
     });
 
@@ -29,6 +30,7 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                 title: announcement.title,
                 content: announcement.content,
                 priority: announcement.priority,
+                isMajor: announcement.isMajor || false,
                 departmentId: announcement.departmentId || ''
             });
         } else {
@@ -36,6 +38,7 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                 title: '',
                 content: '',
                 priority: 'NORMAL',
+                isMajor: false,
                 departmentId: user?.role === 'SUPER_ADMIN' ? '' : user?.departmentId || ''
             });
         }
@@ -97,6 +100,18 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                             <MenuItem value="NORMAL">NORMAL</MenuItem>
                             <MenuItem value="HIGH">CRITICAL</MenuItem>
                         </TextField>
+
+                        <Box display="flex" alignItems="center" bgcolor="rgba(255,255,255,0.05)" p={2} borderRadius={2} border="1px dashed rgba(255,255,255,0.1)">
+                            <Box flex={1}>
+                                <Typography variant="subtitle2" fontWeight="bold">CHURCH-WIDE BROADCAST</Typography>
+                                <Typography variant="caption" color="textSecondary">Broadcast this intelligence update to all sectors. Requires command approval.</Typography>
+                            </Box>
+                            <Checkbox 
+                                checked={formData.isMajor} 
+                                onChange={(e) => setFormData({ ...formData, isMajor: e.target.checked })}
+                                sx={{ color: 'primary.main' }}
+                            />
+                        </Box>
                         {user?.role === 'SUPER_ADMIN' && (
                             <TextField
                                 select

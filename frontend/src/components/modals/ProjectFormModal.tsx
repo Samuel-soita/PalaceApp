@@ -23,6 +23,7 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess }: 
         status: 'PLANNED',
         progress: 0,
         budget: 0,
+        isMajor: false,
         departmentId: user?.departmentId || '',
         pastorIds: [] as string[]
     });
@@ -35,6 +36,7 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess }: 
                 status: project.status,
                 progress: project.progress,
                 budget: project.budget,
+                isMajor: project.isMajor || false,
                 departmentId: project.departmentId,
                 pastorIds: []
             });
@@ -45,6 +47,7 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess }: 
                 status: 'PLANNED',
                 progress: 0,
                 budget: 0,
+                isMajor: false,
                 departmentId: user?.departmentId || '',
                 pastorIds: []
             });
@@ -141,6 +144,18 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess }: 
                                     const percentage = Math.round(((e.clientX - rect.left) / rect.width) * 100);
                                     setFormData({ ...formData, progress: Math.max(0, Math.min(100, percentage)) });
                                 }}
+                            />
+                        </Box>
+
+                        <Box display="flex" alignItems="center" bgcolor="rgba(255,255,255,0.05)" p={2} borderRadius={2} border="1px dashed rgba(255,255,255,0.1)">
+                            <Box flex={1}>
+                                <Typography variant="subtitle2" fontWeight="bold">CHURCH-WIDE INITIATIVE</Typography>
+                                <Typography variant="caption" color="textSecondary">If enabled, this project will appear on the Main Dashboard once approved by the Bishop + 2 Pastors.</Typography>
+                            </Box>
+                            <Checkbox 
+                                checked={formData.isMajor} 
+                                onChange={(e) => setFormData({ ...formData, isMajor: e.target.checked })}
+                                sx={{ color: 'primary.main' }}
                             />
                         </Box>
 
