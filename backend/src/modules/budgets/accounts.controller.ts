@@ -3,6 +3,17 @@ import prisma from '../../utils/prisma.js';
 import { logAudit } from '../../utils/audit.js';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
 
+export const getAllAccountSummaries = async (req: AuthRequest, res: Response) => {
+    try {
+        const accounts = await (prisma as any).account.findMany({
+            include: { department: { select: { name: true } } }
+        });
+        res.json(accounts);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || 'Failed to fetch global accounts' });
+    }
+};
+
 export const getAccountSummary = async (req: AuthRequest, res: Response) => {
     const { departmentId } = req.params;
     if (!departmentId || departmentId === 'undefined') {

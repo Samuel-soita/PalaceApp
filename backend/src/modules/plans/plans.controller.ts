@@ -39,8 +39,18 @@ export const getPlans = async (req: Request, res: Response) => {
             } else {
                 where.departmentId = String(departmentId);
             }
-        } else if (user.role === 'SYSTEM_ADMIN' || user.role === 'SECRETARY') {
-            // Church Admin and Secretary see high level plans
+        } else if (user.role === 'SYSTEM_ADMIN' || user.role === 'SECRETARY' || user.role === 'SUPER_ADMIN') {
+            // Church Admin, Secretary, and Bishop see all major plans by default
+            // If viewing a specific department, they can see those too
+            if (departmentId) {
+                where.departmentId = String(departmentId);
+            } else if (isMajor === undefined) {
+                // If fetching the general list, they see everything major or their own data
+                where.OR = [
+                    { isMajor: true },
+                    ...(user.departmentId ? [{ departmentId: user.departmentId }] : [])
+                ];
+            }
         }
 
         const plans = await prisma.plan.findMany({

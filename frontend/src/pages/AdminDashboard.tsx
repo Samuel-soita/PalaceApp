@@ -298,7 +298,7 @@ export default function AdminDashboard() {
                                             {(auditLogs || []).map((log: any, i: number) => (
                                                 <Box key={i} sx={{ display: 'flex', gap: 2 }}>
                                                     <Avatar 
-                                                        src={log.user?.avatarUrl}
+                                                        src={log.user?.avatarUrl ? `${log.user.avatarUrl}?t=${Date.now()}` : undefined}
                                                         className="tactical-border" 
                                                         sx={{ width: 32, height: 32, bgcolor: 'rgba(255,255,255,0.05)', color: 'primary.main', fontWeight: '900', fontSize: '0.7rem' }}
                                                     >
@@ -359,7 +359,7 @@ export default function AdminDashboard() {
                                     <Card key={u.id} sx={{ mb: 2, borderRadius: 3, border: '1px solid var(--glass-border)', bgcolor: 'rgba(255,255,255,0.02)' }}>
                                         <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 2 }}>
                                             <Box display="flex" alignItems="center" gap={2}>
-                                                <Avatar src={u.avatarUrl}>{u.name.charAt(0)}</Avatar>
+                                                <Avatar src={u.avatarUrl ? `${u.avatarUrl}?t=${Date.now()}` : undefined}>{u.name.charAt(0)}</Avatar>
                                                 <div>
                                                     <Typography variant="subtitle1" fontWeight="bold">{u.name}</Typography>
                                                     <Typography variant="caption" color="textSecondary" display="block">Card: {u.membershipNumber}</Typography>

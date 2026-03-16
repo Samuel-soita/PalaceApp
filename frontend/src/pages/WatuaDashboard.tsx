@@ -28,7 +28,8 @@ import {
     Select,
     MenuItem,
     FormControl,
-    InputLabel
+    InputLabel,
+    Avatar
 } from '@mui/material';
 import {
     Activity,
@@ -56,6 +57,7 @@ interface User {
     dob?: string;
     gender?: string;
     idNumber?: string;
+    avatarUrl?: string;
     wrongdoingCount?: number;
     department?: {
         id: string;
@@ -167,10 +169,10 @@ export default function WatuaDashboard() {
         setLoading(true);
         try {
             const [usersRes, statsRes, diagRes, logsRes, deptsRes, supportRes] = await Promise.all([
-                api.get('/users/all'),
-                api.get('/users/stats'),
-                api.get('/users/diagnostics'),
-                api.get('/users/audit/all'),
+                api.get('/users/technical/all'),
+                api.get('/users/technical/stats'),
+                api.get('/users/technical/diagnostics'),
+                api.get('/users/technical/audit/all'),
                 api.get('/departments'),
                 api.get('/support')
             ]);
@@ -207,7 +209,7 @@ export default function WatuaDashboard() {
 
     const handleAction = async (userId: string, action: string, departmentId?: string) => {
         try {
-            await api.post(`/users/intervention/${userId}`, { action, departmentId });
+            await api.post(`/users/technical/intervention/${userId}`, { action, departmentId });
             setMessage({ type: 'success', text: `Intervention ${action} executed successfully.` });
             setPromoteDialog({ open: false, userId: '', name: '' });
             setSelectedDept('');
@@ -395,7 +397,7 @@ export default function WatuaDashboard() {
                                     {filteredUsers.map((user) => (
                                         <TableRow key={user.id} sx={{ '& td': { borderBottom: '1px solid rgba(255,255,255,0.05)', py: 2, color: '#f8fafc' } }}>
                                             <TableCell>
-                                                <Box sx={{ cursor: 'pointer' }} onClick={() => {
+                                                <Box sx={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2 }} onClick={() => {
                                                     setSelectedUser(user);
                                                     setRepairData({
                                                         name: user.name,
@@ -404,8 +406,16 @@ export default function WatuaDashboard() {
                                                         gender: user.gender || ''
                                                     });
                                                 }}>
-                                                    <Typography variant="body2" fontWeight="bold">{user.name}</Typography>
-                                                    <Typography variant="caption" sx={{ opacity: 0.5 }}>{user.membershipNumber || 'NO_CARD'}</Typography>
+                                                    <Avatar 
+                                                        src={user.avatarUrl ? `${user.avatarUrl}?t=${Date.now()}` : undefined} 
+                                                        sx={{ width: 32, height: 32, border: '1px solid rgba(255,255,255,0.1)' }}
+                                                    >
+                                                        {user.name.charAt(0)}
+                                                    </Avatar>
+                                                    <Box>
+                                                        <Typography variant="body2" fontWeight="bold">{user.name}</Typography>
+                                                        <Typography variant="caption" sx={{ opacity: 0.5 }}>{user.membershipNumber || 'NO_CARD'}</Typography>
+                                                    </Box>
                                                 </Box>
                                             </TableCell>
                                             <TableCell>

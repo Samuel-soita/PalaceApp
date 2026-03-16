@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { createBudget, getBudgets, updateBudget, deleteBudget } from './budgets.controller.js';
-import { getAccountSummary, getTransactions, createTransaction, approveTransaction } from './accounts.controller.js';
+import { getAccountSummary, getTransactions, createTransaction, approveTransaction, getAllAccountSummaries } from './accounts.controller.js';
 import { authenticate, authorize } from '../../middleware/auth.middleware.js';
 
 const router = Router();
@@ -11,6 +11,7 @@ router.put('/:id', authenticate, authorize(['SUPER_ADMIN', 'PASTOR', 'DEPARTMENT
 router.delete('/:id', authenticate, authorize(['SUPER_ADMIN', 'WATUA']), deleteBudget);
 
 // Account Routes
+router.get('/accounts/all', authenticate, authorize(['SUPER_ADMIN', 'PASTOR', 'SYSTEM_ADMIN', 'WATUA']), getAllAccountSummaries);
 router.get('/accounts/summary/:departmentId', authenticate, getAccountSummary);
 router.get('/accounts/transactions/:departmentId', authenticate, getTransactions);
 router.post('/accounts/transactions', authenticate, authorize(['DEPARTMENT_LEADER', 'WATUA']), createTransaction);
