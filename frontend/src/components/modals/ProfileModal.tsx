@@ -43,6 +43,7 @@ export default function ProfileModal({ open, onClose }: ProfileModalProps) {
         gender: '',
         dob: '',
         membershipNumber: '',
+        phoneNumber: '',
     });
 
     // Sync user data into form when modal opens
@@ -53,6 +54,7 @@ export default function ProfileModal({ open, onClose }: ProfileModalProps) {
                 gender: (user as any).gender || '',
                 dob: (user as any).dob ? new Date((user as any).dob).toISOString().split('T')[0] : '',
                 membershipNumber: (user as any).membershipNumber || '',
+                phoneNumber: (user as any).phoneNumber || '',
             });
             setPreviewUrl(null);
             setSelectedFile(null);
@@ -97,6 +99,7 @@ export default function ProfileModal({ open, onClose }: ProfileModalProps) {
                 name: formData.name,
                 gender: formData.gender,
                 dob: formData.dob,
+                phoneNumber: formData.phoneNumber,
                 ...(finalAvatarUrl !== user?.avatarUrl && { avatarUrl: finalAvatarUrl }),
             };
 
@@ -111,6 +114,20 @@ export default function ProfileModal({ open, onClose }: ProfileModalProps) {
             setTimeout(() => { setSuccess(false); onClose(); }, 1500);
         } catch (err: any) {
             setError(err.response?.data?.error || 'Failed to update profile.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleDeleteRequest = async () => {
+        if (!window.confirm("Are you sure you want to request account deletion? An administrator will review your request.")) return;
+        setLoading(true);
+        try {
+            await api.patch('/auth/profile', { deletionRequested: true });
+            setSuccess(true);
+            setTimeout(() => { setSuccess(false); onClose(); }, 1500);
+        } catch (err: any) {
+            setError(err.response?.data?.error || 'Failed to submit deletion request.');
         } finally {
             setLoading(false);
         }
@@ -226,6 +243,12 @@ export default function ProfileModal({ open, onClose }: ProfileModalProps) {
                         </TextField>
                     </Box>
 
+                    <TextField
+                        fullWidth label="Phone Number" name="phoneNumber"
+                        value={formData.phoneNumber} onChange={handleChange}
+                        placeholder="e.g. +254 712 345 678"
+                    />
+
                     {/* Read-only ID Number */}
                     <TextField
                         fullWidth label="National ID Number"
@@ -265,6 +288,22 @@ export default function ProfileModal({ open, onClose }: ProfileModalProps) {
                         />
                     </span>
                 </Tooltip>
+
+                <Box mt={4} pt={2} borderTop="1px solid rgba(255,255,255,0.05)">
+                    <Typography variant="subtitle2" color="error" fontWeight="bold" mb={1}>Danger Zone</Typography>
+                    <Typography variant="body2" color="textSecondary" mb={2}>
+                        Account deletion requests are reviewed by the administration branch before finalization.
+                    </Typography>
+                    <Button 
+                        variant="outlined" 
+                        color="error" 
+                        size="small" 
+                        onClick={handleDeleteRequest} 
+                        disabled={loading || (user as any)?.deletionRequested}
+                    >
+                        {(user as any)?.deletionRequested ? 'Deletion Pending Review' : 'Request Account Deletion'}
+                    </Button>
+                </Box>
             </DialogContent>
 
             <DialogActions sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.05)' }}>

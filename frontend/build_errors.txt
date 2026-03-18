@@ -1,0 +1,16 @@
+
+> frontend@1.0.0 build
+> tsc && vite build
+
+src/components/dashboard/BaptismManager.tsx(96,30): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & BoxOwnProps<Theme> & Omit<any, keyof BoxOwnProps<Theme>>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element; textAlign: "center"; py: number; opacity: number; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<BoxTypeMap<{}, "div", Theme>>): Element | null', gave the following error.
+    Type '{ children: Element; textAlign: "center"; py: number; opacity: number; }' is not assignable to type 'IntrinsicAttributes & BoxOwnProps<Theme> & Omit<Omit<DetailedHTMLProps<HTMLAttributes<HTMLDivElement>, HTMLDivElement>, "ref"> & { ...; }, keyof BoxOwnProps<...>>'.
+      Property 'opacity' does not exist on type 'IntrinsicAttributes & BoxOwnProps<Theme> & Omit<Omit<DetailedHTMLProps<HTMLAttributes<HTMLDivElement>, HTMLDivElement>, "ref"> & { ...; }, keyof BoxOwnProps<...>>'.
+src/components/dashboard/DedicationManager.tsx(98,30): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & BoxOwnProps<Theme> & Omit<any, keyof BoxOwnProps<Theme>>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element; textAlign: "center"; py: number; opacity: number; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<BoxTypeMap<{}, "div", Theme>>): Element | null', gave the following error.
+    Type '{ children: Element; textAlign: "center"; py: number; opacity: number; }' is not assignable to type 'IntrinsicAttributes & BoxOwnProps<Theme> & Omit<Omit<DetailedHTMLProps<HTMLAttributes<HTMLDivElement>, HTMLDivElement>, "ref"> & { ...; }, keyof BoxOwnProps<...>>'.
+      Property 'opacity' does not exist on type 'IntrinsicAttributes & BoxOwnProps<Theme> & Omit<Omit<DetailedHTMLProps<HTMLAttributes<HTMLDivElement>, HTMLDivElement>, "ref"> & { ...; }, keyof BoxOwnProps<...>>'.

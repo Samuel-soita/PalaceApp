@@ -11,7 +11,8 @@ import DashboardLayout from '../components/layout/DashboardLayout';
 export default function Departments() {
     const { data: departments, isLoading } = useQuery(['departments'], async () => {
         const res = await api.get('/departments');
-        return res.data;
+        // Handle both raw arrays and paginated objects
+        return Array.isArray(res.data) ? res.data : (res.data?.data || []);
     });
 
     return (

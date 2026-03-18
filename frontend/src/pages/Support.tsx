@@ -33,12 +33,14 @@ export default function Support() {
 
     const { data: requests } = useQuery(['support-requests'], async () => {
         const res = await api.get('/support');
-        return res.data;
+        // Handle both raw arrays and paginated objects
+        return Array.isArray(res.data) ? res.data : (res.data?.data || []);
     });
 
     const { data: events } = useQuery(['my-events'], async () => {
         const res = await api.get(user?.departmentId ? `/events/department/${user.departmentId}` : '/events');
-        return res.data;
+        // Handle both raw arrays and paginated objects
+        return Array.isArray(res.data) ? res.data : (res.data?.data || []);
     });
 
     const createMutation = useMutation(
@@ -105,7 +107,7 @@ export default function Support() {
 
                 {/* Request Cards */}
                 <Grid container spacing={3}>
-                    {requests?.map((req: SupportRequest) => (
+                    {(Array.isArray(requests) ? requests : []).map((req: SupportRequest) => (
                         <Grid item xs={12} md={6} lg={4} key={req.id}>
                             <Card className="holographic-card" sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                                 <CardContent sx={{ p: 3, flex: 1 }}>
@@ -195,7 +197,7 @@ export default function Support() {
                         <FormControl fullWidth>
                             <InputLabel>Select Event</InputLabel>
                             <Select value={form.eventId} onChange={e => setForm({ ...form, eventId: e.target.value })} label="Select Event" sx={{ borderRadius: 0 }}>
-                                {events?.map((ev: any) => (
+                                {(Array.isArray(events) ? events : []).map((ev: any) => (
                                     <MenuItem key={ev.id} value={ev.id}>{ev.title}</MenuItem>
                                 ))}
                             </Select>

@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "Meeting" ADD COLUMN     "isPartnerOnly" BOOLEAN NOT NULL DEFAULT false;
+
+-- AlterTable
+ALTER TABLE "Partnership" ADD COLUMN     "balance" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "lastPaymentDate" TIMESTAMP(3),
+ADD COLUMN     "paidAmount" DOUBLE PRECISION NOT NULL DEFAULT 0;

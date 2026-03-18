@@ -1,19 +1,32 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../lib/api-client.js';
 
+interface AuthUser {
+    id: string;
+    name: string;
+    role: string;
+    avatarUrl?: string;
+    status: string;
+    departmentId?: string | null;
+    department?: { id: string; name: string } | null;
+    managedDepartments?: { id: string; name: string }[];
+    isPartner?: boolean;
+    permissions?: string[];
+}
+
 interface AuthContextType {
-    user: any;
+    user: AuthUser | null;
     token: string | null;
-    login: (data: any) => void;
+    login: (data: { user: AuthUser; token: string }) => void;
     logout: () => void;
-    updateUser: (data: any) => void;
+    updateUser: (data: Partial<AuthUser>) => void;
     loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-    const [user, setUser] = useState<any>(null);
+    const [user, setUser] = useState<AuthUser | null>(null);
     const [token, setToken] = useState(localStorage.getItem('token'));
     const [loading, setLoading] = useState(true);
 

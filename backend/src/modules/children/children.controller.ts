@@ -1,0 +1,131 @@
+import { Request, Response } from 'express';
+import prisma from '../../utils/prisma.js';
+import { logAudit } from '../../utils/audit.js';
+import { findTargetDepartmentId } from '../../utils/department-mapper.js';
+import redis, { getCachedData, setCachedData, invalidateCache } from '../../utils/redis.js';
+
+export const registerChild = async (req: any, res: Response) => {
+    const { name, dob, gender, branch = 'HQ', isDedicated = false, dedicationCardNumber = null } = req.body;
+    const parentId = req.user.id;
+
+    if (!name || !dob || !gender) {
+        return res.status(400).json({ error: 'Name, Date of Birth, and Gender are required.' });
+    }
+
+    try {
+        // --- Duplicate Check (Strict: Same Parent + Same Name + Same DOB) ---
+        const existingChild = await prisma.child.findFirst({
+            where: {
+                name: { equals: name, mode: 'insensitive' },
+                dob: new Date(dob),
+                parentId
+            }
+        });
+
+        if (existingChild) {
+            return res.status(409).json({ error: 'This child is already registered under your profile.' });
+        }
+
+        // --- Generate Atomic Dedication Number (Concurrency-Safe) ---
+        let counter = await redis.incr('children:dedication:counter');
+        if (counter === 1) {
+            // First time use or Redis reset - sync with DB count
+            const dbCount = await prisma.child.count();
+            if (dbCount > 0) {
+                await redis.set('children:dedication:counter', dbCount + 1);
+                counter = dbCount + 1;
+            }
+        }
+        
+        const formattedDob = new Date(dob).toISOString().split('T')[0].replace(/-/g, '');
+        const dedicationNumber = `| ${counter.toString().padStart(3, '0')} | ${formattedDob} | ${branch.toUpperCase()}`;
+
+        // --- Department Mapping ---
+        const departmentId = await findTargetDepartmentId(new Date(dob), gender);
+
+        // --- Create Child ---
+        const child = await prisma.child.create({
+            data: {
+                name,
+                dob: new Date(dob),
+                gender: gender.toUpperCase(),
+                dedicationNumber,
+                isDedicated,
+                dedicationCardNumber,
+                parentId,
+                branch,
+                departmentId,
+                workflowStatus: isDedicated ? 'DEDICATED' : 'PENDING_DEDICATION'
+            } as any
+        });
+
+        await logAudit(parentId, 'REGISTER_CHILD', 'CHILD', child.id, { name, dedicationNumber });
+        await invalidateCache('ushering:tally');
+        await invalidateCache('children:list:*');
+
+        res.status(201).json({
+            message: 'Child registered successfully.',
+            child
+        });
+    } catch (error: any) {
+        console.error('[Register Child Error]', error);
+        res.status(500).json({ error: 'Failed to register child.' });
+    }
+};
+
+export const getMyChildren = async (req: any, res: Response) => {
+    try {
+        const children = await prisma.child.findMany({
+            where: { parentId: req.user.id },
+            include: { department: { select: { name: true } } }
+        });
+        res.json(children);
+    } catch (error: any) {
+        res.status(500).json({ error: 'Failed to fetch children.' });
+    }
+};
+
+export const getAllChildren = async (req: any, res: Response) => {
+    // Only high roles
+    if (!['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA', 'PASTOR', 'DEPARTMENT_LEADER'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Unauthorized.' });
+    }
+
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+    const take = Number(limit);
+    const cacheKey = `children:list:p${page}:l${limit}`;
+
+    try {
+        const cachedData = await getCachedData(cacheKey);
+        if (cachedData) return res.json(cachedData);
+
+        const [children, total] = await Promise.all([
+            prisma.child.findMany({
+                skip,
+                take,
+                include: { 
+                    parent: { select: { name: true, membershipNumber: true } },
+                    department: { select: { name: true } }
+                },
+                orderBy: { createdAt: 'desc' }
+            }),
+            prisma.child.count()
+        ]);
+
+        const response = {
+            data: children,
+            meta: {
+                total,
+                page: Number(page),
+                limit: take,
+                totalPages: Math.ceil(total / take)
+            }
+        };
+
+        await setCachedData(cacheKey, response, 120);
+        res.json(response);
+    } catch (error: any) {
+        res.status(500).json({ error: 'Failed to fetch children.' });
+    }
+};

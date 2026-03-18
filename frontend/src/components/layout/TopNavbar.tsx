@@ -9,7 +9,7 @@ import {
     LayoutDashboard, Users, Calendar, Bell, 
     MessageCircle, ClipboardList, Briefcase, Heart, 
     Menu as MenuIcon, X, Church, ChevronRight, Coins, LogOut,
-    Search as SearchIcon, Command, Zap, UserCheck
+    Search as SearchIcon, Command, Zap, UserCheck, Baby, TrendingUp
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -19,13 +19,19 @@ import ProfileModal from '../modals/ProfileModal';
 import { useRoutePreloader } from '../../hooks/useRoutePreloader';
 
 
-// Only these show on the top bar
-const primaryNavItems = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+// Base items for admin roles
+const adminNavItems = [
+    { name: 'EXECUTIVE PALACE', href: '/', icon: LayoutDashboard },
     { name: 'Announcements', href: '/announcements', icon: Bell },
     { name: 'Events', href: '/calendar', icon: Calendar },
-    { name: 'Messages', href: '/messages', icon: MessageCircle },
     { name: 'Support', href: '/support', icon: Coins },
+];
+
+// Base items for regular members
+const memberNavItems = [
+    { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+    { name: 'My Profile', href: '/profile', icon: UserCheck },
+    { name: 'Register Child', href: '/register-child', icon: Baby },
 ];
 
 export default function TopNavbar() {
@@ -86,17 +92,29 @@ export default function TopNavbar() {
 
     const unreadCount = (notifications || []).filter((n: any) => !n.read).length || 0;
 
+    const isMember = user?.role === 'MEMBER';
+    const isPastor = user?.role === 'PASTOR' || user?.role === 'ASSOCIATE_PASTOR';
+    const isHighAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'SYSTEM_ADMIN' || user?.role === 'SECRETARY';
+    
+    const primaryNavItems = isMember ? memberNavItems : adminNavItems;
+
     // Everything shows in the drawer
-    const allNavItems = [
-        { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-        ...(user?.role === 'SUPER_ADMIN' || user?.role === 'SYSTEM_ADMIN' ? [{ name: 'Departments', href: '/departments', icon: Users }] : []),
-        { name: 'Projects', href: '/projects', icon: Briefcase },
-        { name: 'Events', href: '/calendar', icon: Calendar },
-        { name: 'Plans', href: '/plans', icon: ClipboardList },
-        { name: 'Messages', href: '/messages', icon: MessageCircle },
-        { name: 'Announcements', href: '/announcements', icon: Bell },
-        { name: 'Support Hub', href: '/support', icon: Coins },
-    ];
+    const allNavItems = isMember
+        ? [
+              { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+              { name: 'Register Child', href: '/register-child', icon: Baby },
+              { name: 'My Profile', href: '/profile', icon: UserCheck },
+          ]
+        : [
+              { name: isPastor ? 'PASTORAL PALACE' : 'EXECUTIVE PALACE', href: '/', icon: LayoutDashboard },
+              ...(isHighAdmin ? [{ name: 'Departments', href: '/departments', icon: Users }] : []),
+              { name: 'Projects', href: '/projects', icon: Briefcase },
+              { name: 'Events', href: '/calendar', icon: Calendar },
+              ...(isHighAdmin ? [{ name: 'Plans', href: '/plans', icon: ClipboardList }] : []),
+              { name: 'Announcements', href: '/announcements', icon: Bell },
+              ...(isHighAdmin ? [{ name: 'Support Hub', href: '/support', icon: Coins }] : []),
+              { name: 'Register Child', href: '/register-child', icon: Baby },
+          ];
 
     const handleDrawerToggle = () => {
         setMobileOpen(!mobileOpen);
@@ -106,7 +124,8 @@ export default function TopNavbar() {
         <Box sx={{ width: 280, pt: 2, height: '100%', bgcolor: 'background.paper' }} role="presentation">
             <Box px={3} pb={2} display="flex" alignItems="center" justifyContent="space-between">
                 <Typography variant="h6" fontWeight="bold" color="primary" display="flex" alignItems="center" gap={1} className="glow-text">
-                    <Church size={24} color="var(--cyan)" /> Hub
+                    <Church size={24} color="var(--cyan)" />
+                    {(!user || (user.role !== 'SUPER_ADMIN' && user.role !== 'SYSTEM_ADMIN' && user.role !== 'SECRETARY')) && "Portal"}
                 </Typography>
                 <IconButton onClick={handleDrawerToggle} sx={{ color: 'text.secondary' }}><X size={20} /></IconButton>
             </Box>
@@ -198,7 +217,7 @@ export default function TopNavbar() {
                             }}
                         >
                             <Church size={28} color="var(--cyan)" />
-                            Prayer Palace
+                            {user?.role === 'MEMBER' ? "PRAYER PALACE | Portal" : user?.role?.includes('PASTOR') ? "PASTORAL PALACE | Portal" : "EXECUTIVE PALACE | Portal"}
                         </Typography>
 
                         {/* Primary Horizontal Navigation */}

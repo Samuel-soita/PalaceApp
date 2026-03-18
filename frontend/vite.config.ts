@@ -7,12 +7,11 @@ export default defineConfig({
     plugins: [
         react(),
         VitePWA({
+            strategies: 'injectManifest',
+            srcDir: 'src',
+            filename: 'sw.ts',
             registerType: 'autoUpdate',
-            includeAssets: ['logo.png', 'favicon.ico', 'apple-touch-icon.png', 'icons/*.png'],
-            devOptions: {
-                enabled: false,
-                type: 'module',
-            },
+            injectRegister: 'auto',
             manifest: {
                 name: 'Prayer Palace Apostolic Ministry',
                 short_name: 'Prayer Palace',
@@ -44,48 +43,9 @@ export default defineConfig({
                     },
                 ],
             },
-            workbox: {
-                cleanupOutdatedCaches: true,
-                // Removed aggressive navigateFallback to prevent dev-mode interruptions
-                navigateFallbackDenylist: [/^\/api\//, /\/auth\//, /^\/uploads\//],
-                
-                // Pre-cache the app shell
-                globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-
-                runtimeCaching: [
-                    // Google Fonts
-                    {
-                        urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-                        handler: 'CacheFirst',
-                        options: {
-                            cacheName: 'google-fonts-cache',
-                            expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
-                            cacheableResponse: { statuses: [0, 200] },
-                        },
-                    },
-                    // Backend API & Uploads — StaleWhileRevalidate for "Instant" UI
-                    {
-                        urlPattern: ({ url }) => 
-                            url.pathname.startsWith('/api') || 
-                            url.pathname.startsWith('/uploads'),
-                        handler: 'StaleWhileRevalidate',
-                        options: {
-                            cacheName: 'api-cache',
-                            expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 }, // 24 hours
-                            cacheableResponse: { statuses: [0, 200] },
-                        },
-                    },
-                    // Images — StaleWhileRevalidate
-                    {
-                        urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/i,
-                        handler: 'StaleWhileRevalidate',
-                        options: {
-                            cacheName: 'image-cache',
-                            expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 30 },
-                            cacheableResponse: { statuses: [0, 200] },
-                        },
-                    },
-                ],
+            devOptions: {
+                enabled: true,
+                type: 'module',
             },
         }),
     ],

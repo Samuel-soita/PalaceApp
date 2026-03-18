@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import api from '../lib/api-client';
@@ -9,11 +9,18 @@ import {
 import {
     Calendar, Users, Briefcase, ChevronRight, CheckCircle2,
     Package, TrendingUp, AlertCircle, ArrowUpRight, ShieldCheck, Plus, MapPin,
-    Heart, FileText, Download, Share2, Edit, Trash2, MessageSquare, Coins, Clock, Zap, Shield
+    Heart, FileText, Download, Share2, Edit, Trash2, MessageSquare, Coins, Clock, Zap, Shield,
+    User, Search, Filter
 } from 'lucide-react';
+import { 
+    Table, TableBody, TableCell, TableContainer, TableHead, TableRow, 
+    InputAdornment, TextField
+} from '@mui/material';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
+import { usePermission } from '../hooks/usePermission';
+import { PERMISSIONS } from '../utils/permissions';
 
 // Modal Imports
 import ProjectFormModal from '../components/modals/ProjectFormModal';
@@ -40,22 +47,42 @@ function TabPanel(props: TabPanelProps) {
 export default function DepartmentDashboard() {
     const { id } = useParams();
     const { user } = useAuth();
+    const { hasPermission } = usePermission();
     const queryClient = useQueryClient();
+    
+    // Permission-based flags
+    const canViewDepartment = hasPermission(PERMISSIONS.VIEW_DEPARTMENT);
+    const canManageDeptProjects = hasPermission(PERMISSIONS.MANAGE_DEPARTMENT_PROJECTS);
+    const canManageDeptEvents = hasPermission(PERMISSIONS.MANAGE_DEPARTMENT_EVENTS);
+    const canManageDeptPlans = hasPermission(PERMISSIONS.MANAGE_DEPARTMENT_PLANS);
+    const canCreateAnnouncements = hasPermission(PERMISSIONS.CREATE_ANNOUNCEMENTS);
+    const canViewGlobalStats = hasPermission(PERMISSIONS.VIEW_GLOBAL_STATS); // Equivalent to high admin
+
     const [tabValue, setTabValue] = useState(0);
+    const [searchTerm, setSearchTerm] = useState('');
     const navigate = useNavigate();
 
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
     const isTablet = useMediaQuery(theme.breakpoints.down('md'));
 
+    const effectiveId = (id && id !== 'undefined') ? id : user?.departmentId;
+
     // Front-end access validation
     useEffect(() => {
-        if (user?.role === 'DEPARTMENT_LEADER' && id && id !== user.departmentId) {
+        if (!canViewDepartment) {
+            navigate('/', { replace: true });
+            return;
+        }
+        
+        // Strict isolation for leaders
+        if (user?.role === 'DEPARTMENT_LEADER' && effectiveId && effectiveId !== user.departmentId) {
             navigate(`/department/${user.departmentId}`, { replace: true });
         }
-    }, [id, user, navigate]);
+    }, [canViewDepartment, effectiveId, user, navigate]);
 
-    const isAuthorized = user?.role === 'SUPER_ADMIN' || user?.role === 'DEPARTMENT_LEADER';
+    const isAuthorized = canManageDeptProjects || canManageDeptEvents || canManageDeptPlans;
+    const isHighAdmin = canViewGlobalStats;
 
     // Modal State
     const [projectModal, setProjectModal] = useState({ open: false, data: null });
@@ -77,45 +104,30 @@ export default function DepartmentDashboard() {
         if (type === 'announcement') deleteAnnMutation.mutate(itemId);
     };
 
-    const effectiveId = (id && id !== 'undefined') ? id : user?.departmentId;
     const isReady = !!effectiveId && effectiveId !== 'undefined';
 
-    const { data: department, isLoading } = useQuery(['department', effectiveId], async () => {
-        const res = await api.get(`/departments/${effectiveId}`);
+    const { data: syncData, isLoading: isSyncLoading } = useQuery(['dashboard-sync', effectiveId], async () => {
+        const res = await api.get('/dashboard/sync', { params: { departmentId: effectiveId } });
         return res.data;
     }, { enabled: isReady });
 
-    const { data: assets } = useQuery(['dept-assets', effectiveId], async () => {
-        const res = await api.get(`/assets/department/${effectiveId}`);
+    const department = syncData?.departments?.find((d: any) => d.id === effectiveId);
+    const assets = syncData?.assets || [];
+    const budgets = syncData?.budgets || [];
+    const announcements = syncData?.announcements || [];
+    const projects = syncData?.projects || [];
+    const events = syncData?.events || [];
+    const plans = syncData?.plans || [];
+    
+    // Ushering specific logic
+    const isUshering = (department?.name?.toLowerCase().includes('ushering') || effectiveId?.includes('ushering')) && (isHighAdmin || user?.departmentId === effectiveId);
+
+    const { data: tally } = useQuery(['ushering-tally'], async () => {
+        const res = await api.get('/departments/tally');
         return res.data;
-    }, { enabled: isReady });
+    }, { enabled: isUshering && isReady });
 
-    const { data: budgets } = useQuery(['dept-budgets', effectiveId], async () => {
-        const res = await api.get(`/budgets?departmentId=${effectiveId}`);
-        return res.data;
-    }, { enabled: isReady });
-
-    const { data: announcements } = useQuery(['dept-announcements', effectiveId], async () => {
-        const res = await api.get(`/announcements?departmentId=${effectiveId}`);
-        return res.data;
-    }, { enabled: isReady });
-
-    const { data: projects } = useQuery(['dept-projects', effectiveId], async () => {
-        const res = await api.get('/projects');
-        return Array.isArray(res.data) ? res.data.filter((p: any) => p.departmentId === effectiveId) : [];
-    }, { enabled: isReady });
-
-    const { data: events } = useQuery(['dept-events', effectiveId], async () => {
-        const res = await api.get('/events');
-        return Array.isArray(res.data) ? res.data.filter((e: any) => e.departmentId === effectiveId) : [];
-    }, { enabled: isReady });
-
-    const { data: plans } = useQuery(['dept-plans', effectiveId], async () => {
-        const res = await api.get('/plans');
-        return Array.isArray(res.data) ? res.data.filter((p: any) => p.departmentId === effectiveId) : [];
-    }, { enabled: isReady });
-
-    if (isLoading) return (
+    if (isSyncLoading) return (
         <DashboardLayout>
             <Box sx={{ mb: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'end' }}>
                 <Box display="flex" gap={2}>
@@ -186,10 +198,10 @@ export default function DepartmentDashboard() {
             <Typography variant="caption" fontWeight="900" sx={{ letterSpacing: 2, color: 'primary.main', mb: 2, display: 'block' }}>MISSION CONTROL TERMINAL</Typography>
             <Grid container spacing={isMobile ? 1 : 2} mb={isMobile ? 4 : 8}>
                 {[
-                    { label: 'New Project', icon: Briefcase, color: 'purple', onClick: () => setProjectModal({ open: true, data: null }) },
-                    { label: 'Host Event', icon: Calendar, color: 'blue', onClick: () => setEventModal({ open: true, data: null }) },
-                    { label: 'Strategic Plan', icon: FileText, color: 'cyan', onClick: () => setPlanModal({ open: true, data: null }) },
-                    { label: 'Broadcast', icon: AlertCircle, color: 'orange', onClick: () => setAnnouncementModal({ open: true, data: null }) },
+                    ...(canManageDeptProjects ? [{ label: 'New Project', icon: Briefcase, color: 'purple', onClick: () => setProjectModal({ open: true, data: null }) }] : []),
+                    ...(canManageDeptEvents ? [{ label: 'Host Event', icon: Calendar, color: 'blue', onClick: () => setEventModal({ open: true, data: null }) }] : []),
+                    ...(canManageDeptPlans ? [{ label: 'Strategic Plan', icon: FileText, color: 'cyan', onClick: () => setPlanModal({ open: true, data: null }) }] : []),
+                    ...(canCreateAnnouncements ? [{ label: 'Broadcast', icon: AlertCircle, color: 'orange', onClick: () => setAnnouncementModal({ open: true, data: null }) }] : []),
                     { label: 'Strategic Alignment', icon: FileText, color: 'blue', href: '/plans' },
                     { label: 'Asset Register', icon: Shield, color: 'amber', href: '#assets' },
                 ].map((action, i) => (
@@ -266,6 +278,7 @@ export default function DepartmentDashboard() {
                     <Tab label="Financial Tactics" />
                     <Tab label="Intelligence Reports" />
                     <Tab label="Initiatives" />
+                    {isUshering && (isHighAdmin || user?.departmentId === effectiveId) && <Tab label="Registry Tally" />}
                 </Tabs>
             </Box>
 
@@ -275,7 +288,7 @@ export default function DepartmentDashboard() {
                         <Typography variant="h6" fontWeight="900" sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 1.5 }}>
                             <Calendar size={20} /> Upcoming Syncs
                         </Typography>
-                        <div className="space-y-4">
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                             {department?.meetings?.length > 0 ? department.meetings.map((meeting: any) => (
                                 <Card key={meeting.id} sx={{
                                     borderRadius: 4,
@@ -283,20 +296,20 @@ export default function DepartmentDashboard() {
                                     borderColor: 'divider',
                                     '&:hover': { borderColor: 'primary.main' }
                                 }} elevation={0}>
-                                    <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 3 }}>
-                                        <Box display="flex" alignItems="center" gap={3}>
-                                            <div className="w-14 h-14 rounded-2xl bg-primary/5 flex flex-col items-center justify-center text-primary border border-primary/10">
-                                                <Typography variant="caption" fontWeight="900">{new Date(meeting.date).toLocaleString('default', { month: 'short' }).toUpperCase()}</Typography>
-                                                <Typography variant="h6" fontWeight="900" sx={{ mt: -0.5 }}>{new Date(meeting.date).getDate()}</Typography>
+                                    <CardContent sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'start', sm: 'center' }, justifyContent: 'space-between', p: isMobile ? 2 : 3, gap: 2 }}>
+                                        <Box display="flex" alignItems="center" gap={isMobile ? 2 : 3}>
+                                            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-primary/5 flex flex-col items-center justify-center text-primary border border-primary/10 shrink-0">
+                                                <Typography variant="caption" fontWeight="900" sx={{ fontSize: '0.6rem' }}>{new Date(meeting.date).toLocaleString('default', { month: 'short' }).toUpperCase()}</Typography>
+                                                <Typography variant={isMobile ? "subtitle1" : "h6"} fontWeight="900" sx={{ mt: -0.5 }}>{new Date(meeting.date).getDate()}</Typography>
                                             </div>
                                             <div>
-                                                <Typography variant="subtitle1" fontWeight="800">{meeting.title}</Typography>
-                                                <Typography variant="body2" color="textSecondary" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                    <MapPin size={14} /> {meeting.venue} • {meeting.time}
+                                                <Typography variant="subtitle1" fontWeight="800" sx={{ fontSize: { xs: '0.9rem', sm: '1rem' } }}>{meeting.title}</Typography>
+                                                <Typography variant="caption" color="textSecondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                    <MapPin size={12} /> {meeting.venue} • {meeting.time}
                                                 </Typography>
                                             </div>
                                         </Box>
-                                        <Button variant="text" color="primary" sx={{ fontWeight: 'bold' }} endIcon={<ChevronRight size={16} />}>
+                                        <Button variant="text" size="small" color="primary" fullWidth={isMobile} sx={{ fontWeight: 'bold' }} endIcon={<ChevronRight size={16} />}>
                                             Details
                                         </Button>
                                     </CardContent>
@@ -306,7 +319,7 @@ export default function DepartmentDashboard() {
                                     <Typography color="textSecondary" fontWeight="medium">No briefings scheduled.</Typography>
                                 </Paper>
                             )}
-                        </div>
+                        </Box>
 
                         <Box display="flex" justifyContent="space-between" alignItems="center" mt={6} mb={3}>
                             <Typography variant="h6" fontWeight="900" sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -332,7 +345,7 @@ export default function DepartmentDashboard() {
                                                 {ann.priority === 'HIGH' && (
                                                     <Chip label="CRITICAL" color="error" size="small" sx={{ fontWeight: 'bold', fontSize: '0.6rem', height: 18 }} />
                                                 )}
-                                                {(user?.role === 'SUPER_ADMIN' || ann.status === 'PENDING') && (
+                                                {(isHighAdmin || canCreateAnnouncements) && (
                                                     <>
                                                         <IconButton size="small" onClick={() => setAnnouncementModal({ open: true, data: ann })}><Edit size={14} /></IconButton>
                                                         <IconButton size="small" color="error" onClick={() => handleDelete('announcement', ann.id)}><Trash2 size={14} /></IconButton>
@@ -430,8 +443,8 @@ export default function DepartmentDashboard() {
                 <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
                     <Typography variant="h6" fontWeight="900">Initiative Tactical Board</Typography>
                     <Box display="flex" gap={1}>
-                        <Button size="small" variant="contained" startIcon={<Plus size={16}/>} onClick={() => setProjectModal({ open: true, data: null })}>PROJECT</Button>
-                        <Button size="small" variant="contained" startIcon={<Plus size={16}/>} onClick={() => setEventModal({ open: true, data: null })}>EVENT</Button>
+                        {canManageDeptProjects && <Button size="small" variant="contained" startIcon={<Plus size={16}/>} onClick={() => setProjectModal({ open: true, data: null })}>PROJECT</Button>}
+                        {canManageDeptEvents && <Button size="small" variant="contained" startIcon={<Plus size={16}/>} onClick={() => setEventModal({ open: true, data: null })}>EVENT</Button>}
                     </Box>
                 </Box>
 
@@ -538,6 +551,81 @@ export default function DepartmentDashboard() {
                         </Grid>
                     </Grid>
                 </Grid>
+            </TabPanel>
+
+            <TabPanel value={tabValue} index={4}>
+                <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+                    <Typography variant="h6" fontWeight="900">Registry Tally & Lineage Mapping</Typography>
+                    <TextField 
+                        size="small"
+                        placeholder="Search members..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <Search size={18} className="text-secondary" />
+                                </InputAdornment>
+                            ),
+                            sx: { bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 2, width: 300 }
+                        }}
+                    />
+                </Box>
+                
+                <TableContainer component={Paper} className="holographic-card" sx={{ maxHeight: 600 }}>
+                    <Table stickyHeader size="small">
+                        <TableHead>
+                            <TableRow>
+                                <TableCell sx={{ bgcolor: '#0c0e14', fontWeight: 900 }}>MEMBER / LINEAGE</TableCell>
+                                <TableCell sx={{ bgcolor: '#0c0e14', fontWeight: 900 }}>PHONE</TableCell>
+                                <TableCell sx={{ bgcolor: '#0c0e14', fontWeight: 900 }}>CARD ID</TableCell>
+                                <TableCell sx={{ bgcolor: '#0c0e14', fontWeight: 900 }}>STATUS</TableCell>
+                            </TableRow>
+                        </TableHead>
+                        <TableBody>
+                            {tally?.details?.users?.filter((u: any) => 
+                                u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                                u.membershipNumber?.toLowerCase().includes(searchTerm.toLowerCase())
+                            ).map((u: any) => (
+                                <React.Fragment key={u.id}>
+                                    <TableRow sx={{ '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' } }}>
+                                        <TableCell sx={{ py: 1.5 }}>
+                                            <Box display="flex" alignItems="center" gap={1.5}>
+                                                <Avatar sx={{ width: 28, height: 28, fontSize: '0.75rem', bgcolor: 'primary.main' }}>
+                                                    {u.name.charAt(0)}
+                                                </Avatar>
+                                                <Box>
+                                                    <Typography variant="body2" fontWeight="800">{u.name}</Typography>
+                                                    <Typography variant="caption" color="textSecondary" fontWeight="bold" sx={{ fontSize: '0.62rem' }}>
+                                                        {u.role.split('_').join(' ')}
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        </TableCell>
+                                        <TableCell sx={{ fontWeight: 600, color: 'var(--cyan)' }}>{u.phoneNumber || '—'}</TableCell>
+                                        <TableCell sx={{ opacity: 0.6, fontSize: '0.75rem' }}>{u.membershipNumber}</TableCell>
+                                        <TableCell>
+                                            <Chip label={u.status} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.6rem', fontWeight: 900 }} />
+                                        </TableCell>
+                                    </TableRow>
+                                    {u.children && u.children.length > 0 && u.children.map((child: any) => (
+                                        <TableRow key={child.id} sx={{ bgcolor: 'rgba(255,255,255,0.01)' }}>
+                                            <TableCell sx={{ pl: 8, py: 0.5 }}>
+                                                <Box display="flex" alignItems="center" gap={1}>
+                                                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'var(--orange)' }} />
+                                                    <Typography variant="caption" fontWeight="bold">
+                                                        Child: {child.name} <span style={{ opacity: 0.4 }}>(Age: {child.age})</span>
+                                                    </Typography>
+                                                </Box>
+                                            </TableCell>
+                                            <TableCell colSpan={3} />
+                                        </TableRow>
+                                    ))}
+                                </React.Fragment>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </TableContainer>
             </TabPanel>
 
             {/* Inline CRUD Modals */}

@@ -28,15 +28,21 @@ export default function Meetings() {
 
     const isSuperAdmin = user?.role === 'SUPER_ADMIN';
 
-    const { data: meetings, isLoading } = useQuery(['meetings'], async () => {
+    const [page, setPage] = useState(1);
+    const limit = 10;
+
+    const { data: meetingsData, isLoading } = useQuery(['meetings', page], async () => {
         const url = isSuperAdmin ? '/meetings' : `/meetings?departmentId=${user?.departmentId}`;
-        const res = await api.get(url);
+        const res = await api.get(url, { params: { page, limit } });
         return res.data;
     });
 
+    const meetings = meetingsData?.data || [];
+    const meta = meetingsData?.meta || { total: 0, totalPages: 1 };
+
     const { data: departments } = useQuery(['departments'], async () => {
         const res = await api.get('/departments');
-        return res.data;
+        return Array.isArray(res.data) ? res.data : (res.data?.data || []);
     }, { enabled: isSuperAdmin });
 
     const createMutation = useMutation((data: any) => api.post('/meetings', data), {
@@ -112,12 +118,12 @@ export default function Meetings() {
 
     return (
         <DashboardLayout>
-            <Box sx={{ mb: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Box sx={{ mb: 6, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2 }}>
                 <div>
-                    <Typography variant="h4" fontWeight="900" sx={{ letterSpacing: -1, mb: 1 }}>
-                        Strategic Briefings
+                    <Typography variant="h3" fontWeight="950" sx={{ letterSpacing: -2, mb: 1, fontSize: { xs: '2rem', sm: '3rem' } }}>
+                        STRATEGIC <span className="text-primary">BRIEFINGS</span>
                     </Typography>
-                    <Typography color="textSecondary" variant="body1">
+                    <Typography color="textSecondary" variant="body1" sx={{ fontSize: { xs: '0.8rem', sm: '1rem' }, opacity: 0.7 }}>
                         Coordinating departmental syncs and executive reviews.
                     </Typography>
                 </div>
@@ -125,9 +131,9 @@ export default function Meetings() {
                     variant="contained"
                     startIcon={<Plus size={20} />}
                     onClick={() => handleOpen()}
-                    sx={{ borderRadius: 2, px: 3, py: 1.5, fontWeight: 'bold' }}
+                    sx={{ width: { xs: '100%', sm: 'auto' }, borderRadius: 3, px: 3, py: 1.5, fontWeight: '900', boxShadow: '0 0 20px var(--primary-glow)' }}
                 >
-                    Schedule Briefing
+                    SCHEDULE BRIEFING
                 </Button>
             </Box>
 
@@ -168,7 +174,8 @@ export default function Meetings() {
                 ))}
             </Grid>
 
-            <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider' }}>
+            {/* Table View - Hidden on Mobile */}
+            <TableContainer component={Paper} elevation={0} sx={{ display: { xs: 'none', md: 'block' }, borderRadius: 4, border: '1px solid', borderColor: 'divider' }}>
                 <Table>
                     <TableHead sx={{ bgcolor: 'action.hover' }}>
                         <TableRow>
@@ -202,7 +209,69 @@ export default function Meetings() {
                 </Table>
             </TableContainer>
 
-            <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 4 } }}>
+            {/* Mobile Cards - Shown only on small screens */}
+            <Box sx={{ display: { xs: 'flex', md: 'none' }, flexDirection: 'column', gap: 2 }}>
+                {meetings?.map((meeting: any) => (
+                    <Card key={meeting.id} sx={{ borderRadius: 3, border: '1px solid var(--glass-border)' }}>
+                        <CardContent sx={{ p: 2 }}>
+                            <Box display="flex" justifyContent="space-between" mb={2}>
+                                <Chip label={meeting.meetingStatus} color={getStatusColor(meeting.meetingStatus) as any} size="small" />
+                                <Box>
+                                    <IconButton onClick={() => handleOpen(meeting)} size="small" color="primary"><Edit size={18} /></IconButton>
+                                    <IconButton onClick={() => deleteMutation.mutate(meeting.id)} size="small" color="error"><Trash2 size={18} /></IconButton>
+                                </Box>
+                            </Box>
+                            <Typography variant="subtitle1" fontWeight="800" sx={{ mb: 1 }}>{meeting.title}</Typography>
+                            <Grid container spacing={1}>
+                                <Grid item xs={12}>
+                                    <Box display="flex" alignItems="center" gap={1} color="text.secondary">
+                                        <Calendar size={14} />
+                                        <Typography variant="caption">{new Date(meeting.date).toDateString()} at {meeting.time}</Typography>
+                                    </Box>
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <Box display="flex" alignItems="center" gap={1} color="text.secondary">
+                                        <MapPin size={14} />
+                                        <Typography variant="caption" noWrap>{meeting.venue}</Typography>
+                                    </Box>
+                                </Grid>
+                            </Grid>
+                        </CardContent>
+                    </Card>
+                ))}
+            </Box>
+
+            {meta.totalPages > 1 && (
+                <Box display="flex" justifyContent="center" mt={4} gap={1}>
+                    <Button 
+                        disabled={page === 1} 
+                        onClick={() => setPage(p => p - 1)}
+                        size="small"
+                        sx={{ fontWeight: 800 }}
+                    >
+                        PREV
+                    </Button>
+                    <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', fontWeight: 900, opacity: 0.5 }}>
+                        {page} / {meta.totalPages}
+                    </Typography>
+                    <Button 
+                        disabled={page >= meta.totalPages}
+                        onClick={() => setPage(p => p + 1)}
+                        size="small"
+                        sx={{ fontWeight: 800 }}
+                    >
+                        NEXT
+                    </Button>
+                </Box>
+            )}
+
+            <Dialog 
+                open={open} 
+                onClose={handleClose} 
+                maxWidth="sm" 
+                fullWidth 
+                PaperProps={{ sx: { borderRadius: 4, width: '95%', m: 1 } }}
+            >
                 <form onSubmit={handleSubmit}>
                     <DialogTitle sx={{ fontWeight: '900', pt: 4, px: 4 }}>
                         {editMeeting ? 'Recalibrate Briefing' : 'Initiate Strategic Briefing'}

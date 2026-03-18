@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
 import { logAudit } from '../../utils/audit.js';
+import { getOrSetCache } from '../../utils/redis.js';
+import redis from '../../utils/redis.js';
 
 export const createBudget = async (req: any, res: Response) => {
     const { title, targetAmount, deadline, departmentId, linkedEventId } = req.body;
@@ -20,6 +22,10 @@ export const createBudget = async (req: any, res: Response) => {
             await logAudit(req.user.id, 'CREATE', 'BUDGET', budget.id, { title, targetAmount });
         }
 
+        // Invalidate Cache
+        const keys = await redis.keys('budgets:*');
+        if (keys.length > 0) await redis.del(...keys);
+
         res.status(201).json(budget);
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Failed to create budget' });
@@ -27,22 +33,48 @@ export const createBudget = async (req: any, res: Response) => {
 };
 
 export const getBudgets = async (req: Request, res: Response) => {
-    const { departmentId } = req.query;
     try {
-        const budgets = await prisma.budget.findMany({
-            where: departmentId ? { departmentId: String(departmentId) } : {},
-            include: {
-                department: { select: { name: true } },
-                contributors: true,
-                _count: { select: { contributors: true } }
-            },
-            orderBy: { createdAt: 'desc' }
+        const { departmentId, page = '1', limit = '10' } = req.query;
+        const user = (req as any).user;
+        const skip = (Number(page) - 1) * Number(limit);
+        const take = Number(limit);
+
+        const where: any = departmentId ? { departmentId: String(departmentId) } : {};
+
+        const cacheKey = `budgets:${user?.role || 'none'}:${departmentId || 'all'}:${page}:${limit}`;
+
+        const result = await getOrSetCache(cacheKey, async () => {
+            const [data, total] = await Promise.all([
+                prisma.budget.findMany({
+                    where,
+                    include: {
+                        department: { select: { name: true } },
+                        contributors: true,
+                        _count: { select: { contributors: true } }
+                    },
+                    orderBy: { createdAt: 'desc' },
+                    skip,
+                    take,
+                }),
+                prisma.budget.count({ where })
+            ]);
+            return { data, total };
+        }, 120);
+
+        res.json({
+            data: result.data,
+            meta: {
+                total: result.total,
+                page: Number(page),
+                limit: Number(limit),
+                totalPages: Math.ceil(result.total / Number(limit))
+            }
         });
-        res.json(budgets);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch budgets' });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || 'Failed to fetch budgets' });
     }
 };
+
 export const updateBudget = async (req: any, res: Response) => {
     try {
         const budget = await prisma.budget.update({
@@ -56,6 +88,10 @@ export const updateBudget = async (req: any, res: Response) => {
         if (req.user) {
             await logAudit(req.user.id, 'UPDATE', 'BUDGET', budget.id, req.body);
         }
+
+        // Invalidate Cache
+        const keys = await redis.keys('budgets:*');
+        if (keys.length > 0) await redis.del(...keys);
 
         res.json(budget);
     } catch (error: any) {
@@ -76,6 +112,11 @@ export const deleteBudget = async (req: any, res: Response) => {
         }
 
         await prisma.budget.delete({ where: { id: req.params.id } });
+
+        // Invalidate Cache
+        const keys = await redis.keys('budgets:*');
+        if (keys.length > 0) await redis.del(...keys);
+
         res.json({ message: 'Budget deleted successfully' });
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Failed to delete budget' });

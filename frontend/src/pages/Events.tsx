@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
+import { isUserManagingDepartment } from '../utils/auth-options';
 
 interface Event {
     id: string;
@@ -47,20 +48,32 @@ export default function Events() {
         pastorIds: [] as string[]
     });
 
-    const isAuthorized = user?.role === 'SUPER_ADMIN';
+    const isGlobalAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(user?.role || '');
+    const isAuthorized = isGlobalAdmin || ['DEPARTMENT_LEADER', 'PASTOR'].includes(user?.role || '');
 
-    const { data: events, isLoading } = useQuery(['events'], async () => {
-        const res = await api.get('/events');
-        const all = Array.isArray(res.data) ? res.data : [];
-        if (user?.role === 'SUPER_ADMIN') return all;
-        // Show all approved events plus user's own pending ones
-        return all.filter((e: any) => e.approvalStatus === 'APPROVED' || e.departmentId === user?.departmentId);
+    const [page, setPage] = useState(1);
+    const limit = 12;
+
+    const { data: eventsData, isLoading } = useQuery(['events', page], async () => {
+        const res = await api.get('/events', { params: { page, limit } });
+        return res.data;
+    });
+
+    const events = eventsData?.data || [];
+    const meta = eventsData?.meta || { total: 0, totalPages: 1 };
+
+    const filteredEvents = events.filter((e: any) => {
+        if (isGlobalAdmin) return true;
+        return e.approvalStatus === 'APPROVED' || isUserManagingDepartment(user, e.departmentId);
     });
 
     const { data: departments } = useQuery(['departments'], async () => {
         const res = await api.get('/departments');
-        return res.data;
+        return Array.isArray(res.data) ? res.data : [];
     });
+
+    const userDepartments = departments?.filter((d: any) => isUserManagingDepartment(user, d.id)) || [];
+    const showDepartmentSelect = isGlobalAdmin || userDepartments.length > 1;
 
     const { data: pastors } = useQuery(['pastors'], async () => {
         const res = await api.get('/users?role=PASTOR');
@@ -115,6 +128,10 @@ export default function Events() {
                 eventType: 'DEPARTMENT_EVENT',
                 pastorIds: []
             });
+            // If they only manage one department and they're not global admin, default it to that department
+            if (!isGlobalAdmin && userDepartments.length === 1) {
+                setFormData(prev => ({ ...prev, departmentId: userDepartments[0].id }));
+            }
         }
         setOpen(true);
     };
@@ -163,12 +180,12 @@ export default function Events() {
 
     return (
         <DashboardLayout>
-            <Box sx={{ mb: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'end' }}>
+            <Box sx={{ mb: 6, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'flex-end' }, gap: 2 }}>
                 <div>
-                    <Typography variant="h3" fontWeight="950" sx={{ mb: 1, letterSpacing: -2 }}>
+                    <Typography variant="h3" fontWeight="950" sx={{ mb: 1, letterSpacing: -2, fontSize: { xs: '2rem', sm: '3rem' } }}>
                         CHURCH <span className="text-primary">CALENDAR</span>
                     </Typography>
-                    <Typography color="textSecondary" fontWeight="medium" sx={{ opacity: 0.7 }}>
+                    <Typography color="textSecondary" fontWeight="medium" sx={{ opacity: 0.7, fontSize: { xs: '0.8rem', sm: '1rem' } }}>
                         Centralized schedule for services, conferences, and department coordination.
                     </Typography>
                 </div>
@@ -177,7 +194,7 @@ export default function Events() {
                         variant="contained"
                         startIcon={<Plus size={18} />}
                         onClick={() => handleOpen()}
-                        sx={{ borderRadius: 3, px: 4, py: 1.5, fontWeight: '900', boxShadow: '0 0 20px var(--primary-glow)' }}
+                        sx={{ width: { xs: '100%', sm: 'auto' }, borderRadius: 3, px: 4, py: 1.5, fontWeight: '900', boxShadow: '0 0 20px var(--primary-glow)' }}
                     >
                         NEW EVENT
                     </Button>
@@ -185,7 +202,7 @@ export default function Events() {
             </Box>
 
             <Grid container spacing={3}>
-                {events?.map((event: Event) => (
+                {filteredEvents?.map((event: Event) => (
                     <Grid item xs={12} md={6} lg={4} key={event.id}>
                         <Card className="holographic-card" sx={{ borderRadius: 4, height: '100%' }}>
                             <CardContent sx={{ p: 4 }}>
@@ -196,7 +213,7 @@ export default function Events() {
                                         color={getEventTypeColor(event.eventType) as any}
                                         sx={{ fontWeight: '900', px: 1 }}
                                     />
-                                    {isAuthorized && (
+                                    {(isGlobalAdmin || isUserManagingDepartment(user, event.departmentId)) && (
                                         <Box display="flex" gap={1}>
                                             <IconButton size="small" onClick={() => handleOpen(event)} sx={{ color: 'primary.main' }}>
                                                 <Edit size={16} />
@@ -245,8 +262,38 @@ export default function Events() {
                 ))}
             </Grid>
 
+            {meta.totalPages > 1 && (
+                <Box display="flex" justifyContent="center" mt={6} gap={2}>
+                    <Button 
+                        disabled={page === 1} 
+                        onClick={() => setPage(p => p - 1)}
+                        variant="outlined"
+                        sx={{ borderRadius: 3, fontWeight: 900 }}
+                    >
+                        PREV
+                    </Button>
+                    <Box display="flex" alignItems="center" px={4} sx={{ bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 3, border: '1px solid var(--glass-border)' }}>
+                        <Typography variant="body2" fontWeight="900" sx={{ opacity: 0.7 }}>CHRONO INDEX: {page} / {meta.totalPages}</Typography>
+                    </Box>
+                    <Button 
+                        disabled={page >= meta.totalPages}
+                        onClick={() => setPage(p => p + 1)}
+                        variant="contained"
+                        sx={{ borderRadius: 3, fontWeight: 900, px: 4 }}
+                    >
+                        NEXT
+                    </Button>
+                </Box>
+            )}
+
             {/* Event CRUD Modal */}
-            <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 4, bgcolor: 'background.paper' } }}>
+            <Dialog 
+                open={open} 
+                onClose={handleClose} 
+                maxWidth="sm" 
+                fullWidth 
+                PaperProps={{ sx: { borderRadius: 4, bgcolor: 'background.paper', width: '95%', m: 1 } }}
+            >
                 <form onSubmit={handleSubmit}>
                     <DialogTitle sx={{ fontWeight: '900', fontSize: '1.5rem', letterSpacing: -1 }}>
                         {editEvent ? 'EDIT EVENT' : 'CREATE EVENT'}
@@ -309,7 +356,7 @@ export default function Events() {
                                 value={formData.description}
                                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                             />
-                            {user?.role === 'SUPER_ADMIN' && (
+                            {showDepartmentSelect && (
                                 <TextField
                                     label="Department"
                                     select
@@ -318,7 +365,7 @@ export default function Events() {
                                     value={formData.departmentId}
                                     onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
                                 >
-                                    {departments?.map((dept: any) => (
+                                    {(isGlobalAdmin ? departments : userDepartments)?.map((dept: any) => (
                                         <MenuItem key={dept.id} value={dept.id}>{dept.name}</MenuItem>
                                     ))}
                                 </TextField>

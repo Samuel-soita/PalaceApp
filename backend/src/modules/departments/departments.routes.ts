@@ -6,6 +6,7 @@ const router = Router();
 
 router.post('/', authenticate, authorize(['SUPER_ADMIN']), deptController.createDepartment);
 router.get('/', authenticate, deptController.getDepartments);
+router.get('/tally', authenticate, deptController.getUsheringTally);
 router.get('/:id', authenticate, deptController.getDepartmentById);
 
 export default router;

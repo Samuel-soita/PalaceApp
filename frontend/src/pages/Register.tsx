@@ -18,6 +18,7 @@ const INITIAL_FORM = {
     name: '',
     idNumber: '',
     membershipNumber: '',
+    phoneNumber: '',
     dob: '',
     gender: '',
 };
@@ -160,6 +161,18 @@ export default function Register() {
                                 placeholder="e.g. 063/001/2026"
                                 error={!!cardError}
                                 helperText={cardError || 'Format: member/branch/year. This number is also your login key.'}
+                            />
+
+                            <Typography variant="overline" color="textSecondary" sx={{ letterSpacing: 2 }}>
+                                Contact Information
+                            </Typography>
+                            <Divider sx={{ mb: 2, borderColor: 'rgba(255,255,255,0.05)' }} />
+
+                            <TextField
+                                fullWidth label="Phone Number" name="phoneNumber" required
+                                variant="outlined" sx={{ mb: 3 }}
+                                value={formData.phoneNumber} onChange={handleChange}
+                                placeholder="e.g. +254 712 345 678"
                             />
 
                             <Button

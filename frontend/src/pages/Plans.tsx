@@ -10,6 +10,7 @@ import { Plus, Edit, Trash2, Calendar, ClipboardList } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import api from '../lib/api-client';
 import { useAuth } from '../contexts/AuthContext';
+import { isUserManagingDepartment } from '../utils/auth-options';
 
 interface Plan {
     id: string;
@@ -34,14 +35,23 @@ export default function Plans() {
         pastorIds: [] as string[]
     });
 
-    const isLeader = user?.role === 'SUPER_ADMIN';
+    const isGlobalAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(user?.role || '');
+    const isLeader = isGlobalAdmin || ['DEPARTMENT_LEADER', 'PASTOR'].includes(user?.role || '');
 
-    const { data: plans, isLoading } = useQuery(['plans'], async () => {
-        const res = await api.get('/plans');
-        const all = Array.isArray(res.data) ? res.data : [];
-        if (user?.role === 'SUPER_ADMIN') return all;
-        // Show approved plans plus user's own pending ones
-        return all.filter((p: any) => p.approvalStatus === 'APPROVED' || p.departmentId === user?.departmentId);
+    const [page, setPage] = useState(1);
+    const limit = 12;
+
+    const { data: plansData, isLoading } = useQuery(['plans', page], async () => {
+        const res = await api.get('/plans', { params: { page, limit } });
+        return res.data;
+    });
+
+    const plans = plansData?.data || [];
+    const meta = plansData?.meta || { total: 0, totalPages: 1 };
+
+    const filteredPlans = plans.filter((p: any) => {
+        if (isGlobalAdmin) return true;
+        return p.approvalStatus === 'APPROVED' || isUserManagingDepartment(user, p.departmentId);
     });
 
     const { data: pastors } = useQuery(['pastors'], async () => {
@@ -50,6 +60,14 @@ export default function Plans() {
             ? res.data.filter((u: any) => u.role === 'PASTOR') 
             : [];
     });
+
+    const { data: departments } = useQuery(['departments'], async () => {
+        const res = await api.get('/departments');
+        return Array.isArray(res.data) ? res.data : [];
+    });
+
+    const userDepartments = departments?.filter((d: any) => isUserManagingDepartment(user, d.id)) || [];
+    const showDepartmentSelect = isGlobalAdmin || userDepartments.length > 1;
 
     const createMutation = useMutation(
         (data: any) => api.post('/plans', data),
@@ -91,6 +109,9 @@ export default function Plans() {
                 departmentId: user?.departmentId || '',
                 pastorIds: []
             });
+            if (!isGlobalAdmin && userDepartments.length === 1) {
+                setFormData(prev => ({ ...prev, departmentId: userDepartments[0].id }));
+            }
         }
         setModalOpen(true);
     };
@@ -124,17 +145,17 @@ export default function Plans() {
 
     return (
         <DashboardLayout>
-            <Box mb={6} display="flex" justifyContent="space-between" alignItems="center">
-                <div>
-                    <Typography variant="h3" fontWeight="950" sx={{ letterSpacing: -2 }}>DEPARTMENT <span className="text-primary">PLANS</span></Typography>
-                    <Typography color="textSecondary" sx={{ opacity: 0.6 }}>Strategic monthly and yearly operational roadmaps.</Typography>
-                </div>
-                {user?.role === 'SUPER_ADMIN' && (
+            <Box mb={6} sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2 }}>
+                <Box>
+                    <Typography variant="h3" fontWeight="950" sx={{ letterSpacing: -2, fontSize: { xs: '2rem', sm: '3rem' } }}>DEPARTMENT <span className="text-primary">PLANS</span></Typography>
+                    <Typography color="textSecondary" sx={{ opacity: 0.6, fontSize: { xs: '0.8rem', sm: '1rem' } }}>Strategic monthly and yearly operational roadmaps.</Typography>
+                </Box>
+                {isLeader && (
                     <Button
                         variant="contained"
                         startIcon={<Plus size={18} />}
                         onClick={() => handleOpen()}
-                        sx={{ borderRadius: 3, py: 1.5, px: 4, fontWeight: '900', boxShadow: '0 0 20px var(--primary-glow)' }}
+                        sx={{ width: { xs: '100%', sm: 'auto' }, borderRadius: 3, py: 1.5, px: 4, fontWeight: '900', boxShadow: '0 0 20px var(--primary-glow)' }}
                     >
                         NEW PLAN
                     </Button>
@@ -142,7 +163,7 @@ export default function Plans() {
             </Box>
 
             <Grid container spacing={3}>
-                {plans?.map((plan: Plan) => (
+                {filteredPlans?.map((plan: Plan) => (
                     <Grid item xs={12} md={6} key={plan.id}>
                         <Card className="holographic-card" sx={{ height: '100%' }}>
                             <CardContent sx={{ p: 4 }}>
@@ -160,7 +181,7 @@ export default function Plans() {
                                         />
                                         <Typography variant="h5" fontWeight="900" sx={{ letterSpacing: -0.5 }}>{plan.title}</Typography>
                                     </div>
-                                    {user?.role === 'SUPER_ADMIN' && (
+                                    {(isGlobalAdmin || isUserManagingDepartment(user, plan.departmentId)) && (
                                         <Box>
                                             <IconButton size="small" onClick={() => handleOpen(plan)} sx={{ color: 'primary.main' }}>
                                                 <Edit size={16} />
@@ -191,8 +212,38 @@ export default function Plans() {
                 ))}
             </Grid>
 
+            {meta.totalPages > 1 && (
+                <Box display="flex" justifyContent="center" mt={6} gap={2}>
+                    <Button 
+                        disabled={page === 1} 
+                        onClick={() => setPage(p => p - 1)}
+                        variant="outlined"
+                        sx={{ borderRadius: 3, fontWeight: 900 }}
+                    >
+                        PREV
+                    </Button>
+                    <Box display="flex" alignItems="center" px={4} sx={{ bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 3, border: '1px solid var(--glass-border)' }}>
+                        <Typography variant="body2" fontWeight="900" sx={{ opacity: 0.7 }}>PHASE: {page} / {meta.totalPages}</Typography>
+                    </Box>
+                    <Button 
+                        disabled={page >= meta.totalPages}
+                        onClick={() => setPage(p => p + 1)}
+                        variant="contained"
+                        sx={{ borderRadius: 3, fontWeight: 900, px: 4 }}
+                    >
+                        NEXT
+                    </Button>
+                </Box>
+            )}
+
             {/* CRUD Modal */}
-            <Dialog open={modalOpen} onClose={handleClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 4, bgcolor: 'background.paper' } }}>
+            <Dialog 
+                open={modalOpen} 
+                onClose={handleClose} 
+                maxWidth="sm" 
+                fullWidth 
+                PaperProps={{ sx: { borderRadius: 4, bgcolor: 'background.paper', width: '95%', m: 1 } }}
+            >
                 <form onSubmit={handleSubmit}>
                     <DialogTitle sx={{ fontWeight: '900', fontSize: '1.5rem', letterSpacing: -1 }}>
                         {editingPlan ? 'EDIT' : 'CREATE'} PLAN
@@ -226,6 +277,20 @@ export default function Plans() {
                                 value={formData.description}
                                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                             />
+                            {showDepartmentSelect && (
+                                <TextField
+                                    select
+                                    fullWidth
+                                    label="Assigned Department"
+                                    required
+                                    value={formData.departmentId}
+                                    onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
+                                >
+                                    {(isGlobalAdmin ? departments : userDepartments)?.map((dept: any) => (
+                                        <MenuItem key={dept.id} value={dept.id}>{dept.name}</MenuItem>
+                                    ))}
+                                </TextField>
+                            )}
                             
                             {!editingPlan && (
                                 <FormControl fullWidth required error={formData.pastorIds.length > 0 && formData.pastorIds.length !== 2}>

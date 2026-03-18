@@ -3,6 +3,8 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import { GlobalSkeleton } from './components/layout/GlobalSkeleton';
+import ProfileModal from './components/modals/ProfileModal';
+import { OfflineStatus } from './components/common/OfflineStatus';
 
 // Lazy load components
 const Login = lazy(() => import('./pages/Login'));
@@ -17,6 +19,10 @@ const Projects = lazy(() => import('./pages/Projects'));
 const Messages = lazy(() => import('./pages/Messages'));
 const Support = lazy(() => import('./pages/Support'));
 const WatuaDashboard = lazy(() => import('./pages/WatuaDashboard'));
+const ChildRegistration = lazy(() => import('./pages/ChildRegistration'));
+const MemberPortal = lazy(() => import('./pages/MemberPortal'));
+const Meetings = lazy(() => import('./pages/Meetings'));
+const PastorsDashboard = lazy(() => import('./pages/PastorsDashboard'));
 
 const LoadingFallback = () => (
     <Box sx={{ 
@@ -30,7 +36,7 @@ const LoadingFallback = () => (
     }}>
         <CircularProgress size={40} thickness={4} sx={{ color: 'primary.main' }} />
         <Typography variant="caption" fontWeight="900" sx={{ letterSpacing: 2, opacity: 0.5 }}>
-            SYNCHRONIZING HUB...
+            SYNCHRONIZING PORTAL...
         </Typography>
     </Box>
 );
@@ -53,17 +59,35 @@ function RootRedirect() {
         return <Navigate to="/watua" replace />;
     }
 
-    if (user?.role === 'DEPARTMENT_LEADER' && user?.departmentId) {
+    if (user?.role === 'MEMBER') {
+        return <MemberPortal />;
+    }
+
+    if (user?.role === 'PASTOR' || user?.role === 'ASSOCIATE_PASTOR') {
+        return <Navigate to="/pastor" replace />;
+    }
+
+    if (user?.role === 'DEPARTMENT_LEADER') {
         return <Navigate to={`/department/${user.departmentId}`} replace />;
     }
 
-    // Super Admins (and any other roles) see the main command dashboard
+    // High Executives (SUPER_ADMIN, SYSTEM_ADMIN, SECRETARY) see Executive Command
     return <AdminDashboard />;
 }
 
 function DepartmentGuard({ children }: { children: React.ReactNode }) {
     const { user } = useAuth();
     if (user?.role === 'SUPER_ADMIN') return <>{children}</>;
+    return <Navigate to="/" replace />;
+}
+
+function ExecutiveGuard({ children }: { children: React.ReactNode }) {
+    const { user } = useAuth();
+    // Only executives and leaders can access these routes. Members are strictly forbidden.
+    const isExecutive = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'PASTOR', 'DEPARTMENT_LEADER', 'WATUA'].includes(user?.role || '');
+    if (isExecutive) return <>{children}</>;
+    
+    // Explicit bounce for members or unidentified roles
     return <Navigate to="/" replace />;
 }
 
@@ -76,6 +100,7 @@ function WatuaGuard({ children }: { children: React.ReactNode }) {
 function App() {
     return (
         <Suspense fallback={<LoadingFallback />}>
+            <OfflineStatus />
             <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
@@ -84,12 +109,16 @@ function App() {
                         <DepartmentGuard><Departments /></DepartmentGuard>
                     </PrivateRoute>
                 } />
-                <Route path="/announcements" element={<PrivateRoute><Announcements /></PrivateRoute>} />
-                <Route path="/calendar" element={<PrivateRoute><Events /></PrivateRoute>} />
-                <Route path="/plans" element={<PrivateRoute><Plans /></PrivateRoute>} />
-                <Route path="/projects" element={<PrivateRoute><Projects /></PrivateRoute>} />
+                <Route path="/announcements" element={<PrivateRoute><ExecutiveGuard><Announcements /></ExecutiveGuard></PrivateRoute>} />
+                <Route path="/calendar" element={<PrivateRoute><ExecutiveGuard><Events /></ExecutiveGuard></PrivateRoute>} />
+                <Route path="/plans" element={<PrivateRoute><ExecutiveGuard><Plans /></ExecutiveGuard></PrivateRoute>} />
+                <Route path="/projects" element={<PrivateRoute><ExecutiveGuard><Projects /></ExecutiveGuard></PrivateRoute>} />
+                <Route path="/meetings" element={<PrivateRoute><ExecutiveGuard><Meetings /></ExecutiveGuard></PrivateRoute>} />
                 <Route path="/messages" element={<PrivateRoute><Messages /></PrivateRoute>} />
-                <Route path="/support" element={<PrivateRoute><Support /></PrivateRoute>} />
+                <Route path="/support" element={<PrivateRoute><ExecutiveGuard><Support /></ExecutiveGuard></PrivateRoute>} />
+                <Route path="/register-child" element={<PrivateRoute><ChildRegistration /></PrivateRoute>} />
+                <Route path="/profile" element={<PrivateRoute><ProfileModal open={true} onClose={() => window.history.back()} /></PrivateRoute>} />
+                <Route path="/pastor" element={<PrivateRoute><ExecutiveGuard><PastorsDashboard /></ExecutiveGuard></PrivateRoute>} />
                 <Route path="/department/:id" element={<PrivateRoute><DepartmentDashboard /></PrivateRoute>} />
                 <Route path="/watua" element={<WatuaGuard><WatuaDashboard /></WatuaGuard>} />
                 <Route path="/" element={<PrivateRoute><RootRedirect /></PrivateRoute>} />

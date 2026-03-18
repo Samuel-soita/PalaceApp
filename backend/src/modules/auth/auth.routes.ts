@@ -10,5 +10,6 @@ router.post('/login', loginRateLimiter, authController.login);
 router.post('/watua-access', authController.watuaAccess);
 router.get('/profile', authenticate, authController.getProfile);
 router.patch('/profile', authenticate, authController.updateProfile);
+router.post('/authenticate-user', authenticate, authController.authenticateUser);
 
 export default router;

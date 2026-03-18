@@ -7,8 +7,9 @@ import {
     InputLabel, Select, MenuItem, Chip, Paper, Table, TableBody, 
     TableCell, TableContainer, TableHead, TableRow, IconButton, Alert, useMediaQuery, useTheme
 } from '@mui/material';
-import { Plus, TrendingUp, TrendingDown, Clock, CheckCircle2, XCircle, ArrowRightLeft } from 'lucide-react';
+import { ArrowRightLeft, CheckCircle2, Clock, Plus, TrendingDown, TrendingUp, XCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { isUserManagingDepartment } from '../../utils/auth-options';
 
 interface Transaction {
     id: string;
@@ -27,7 +28,8 @@ export const DepartmentAccounts = ({ departmentId }: { departmentId: string }) =
     const [openModal, setOpenModal] = useState(false);
     const [formData, setFormData] = useState({ type: 'EXPENDITURE', amount: '', description: '' });
 
-    const isHighLevel = user?.role === 'SUPER_ADMIN' || user?.role === 'PASTOR';
+    const isGlobalAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(user?.role || '');
+    const isHighLevel = isGlobalAdmin || (user?.role === 'PASTOR' && isUserManagingDepartment(user, departmentId));
 
     const { data: account, isLoading: accountLoading } = useQuery(['account', departmentId], async () => {
         const res = await api.get(`/budgets/accounts/summary/${departmentId}`);
@@ -95,36 +97,34 @@ export const DepartmentAccounts = ({ departmentId }: { departmentId: string }) =
                 ))}
             </Grid>
 
-            <TableContainer component={Paper} sx={{ bgcolor: 'transparent', border: '1px solid var(--glass-border)', borderRadius: 3 }}>
+            <TableContainer component={Paper} sx={{ display: { xs: 'none', md: 'block' }, bgcolor: 'transparent', border: '1px solid var(--glass-border)', borderRadius: 3 }}>
                 <Table>
                     <TableHead>
                         <TableRow>
-                            <TableCell sx={{ fontWeight: 'bold', fontSize: isMobile ? '0.7rem' : '0.875rem' }}>Date</TableCell>
-                            <TableCell sx={{ fontWeight: 'bold', fontSize: isMobile ? '0.7rem' : '0.875rem' }}>Description</TableCell>
-                            {!isMobile && <TableCell sx={{ fontWeight: 'bold' }}>Type</TableCell>}
-                            <TableCell sx={{ fontWeight: 'bold', fontSize: isMobile ? '0.7rem' : '0.875rem' }}>Amount</TableCell>
-                            <TableCell sx={{ fontWeight: 'bold', fontSize: isMobile ? '0.7rem' : '0.875rem' }}>Status</TableCell>
-                            {isHighLevel && <TableCell sx={{ fontWeight: 'bold', fontSize: isMobile ? '0.7rem' : '0.875rem' }}>Actions</TableCell>}
+                            <TableCell sx={{ fontWeight: 'bold' }}>Date</TableCell>
+                            <TableCell sx={{ fontWeight: 'bold' }}>Description</TableCell>
+                            <TableCell sx={{ fontWeight: 'bold' }}>Type</TableCell>
+                            <TableCell sx={{ fontWeight: 'bold' }}>Amount</TableCell>
+                            <TableCell sx={{ fontWeight: 'bold' }}>Status</TableCell>
+                            {isHighLevel && <TableCell sx={{ fontWeight: 'bold' }}>Actions</TableCell>}
                         </TableRow>
                     </TableHead>
                     <TableBody>
                         {transactions?.map((tx: Transaction) => (
                             <TableRow key={tx.id}>
-                                <TableCell sx={{ fontSize: isMobile ? '0.7rem' : '0.875rem' }}>{new Date(tx.createdAt).toLocaleDateString()}</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold', fontSize: isMobile ? '0.7rem' : '0.875rem' }}>{tx.description}</TableCell>
-                                {!isMobile && (
-                                    <TableCell>
-                                        <Chip 
-                                            label={tx.type} 
-                                            size="small" 
-                                            color={tx.type === 'INCOME' ? 'success' : 'error'} 
-                                            variant="outlined"
-                                            sx={{ fontWeight: 'bold' }}
-                                        />
-                                    </TableCell>
-                                )}
-                                <TableCell sx={{ fontWeight: 900, fontSize: isMobile ? '0.7rem' : '0.875rem' }}>
-                                    <Typography fontWeight="900" color={tx.type === 'INCOME' ? 'success.main' : 'error.main'} sx={{ fontSize: 'inherit' }}>
+                                <TableCell>{new Date(tx.createdAt).toLocaleDateString()}</TableCell>
+                                <TableCell sx={{ fontWeight: 'bold' }}>{tx.description}</TableCell>
+                                <TableCell>
+                                    <Chip 
+                                        label={tx.type} 
+                                        size="small" 
+                                        color={tx.type === 'INCOME' ? 'success' : 'error'} 
+                                        variant="outlined"
+                                        sx={{ fontWeight: 'bold' }}
+                                    />
+                                </TableCell>
+                                <TableCell sx={{ fontWeight: 900 }}>
+                                    <Typography fontWeight="900" color={tx.type === 'INCOME' ? 'success.main' : 'error.main'}>
                                         {tx.type === 'INCOME' ? '+' : '-'}${tx.amount.toLocaleString()}
                                     </Typography>
                                 </TableCell>
@@ -134,7 +134,6 @@ export const DepartmentAccounts = ({ departmentId }: { departmentId: string }) =
                                         size="small" 
                                         sx={{ 
                                             fontWeight: 'bold',
-                                            fontSize: isMobile ? '0.6rem' : '0.75rem',
                                             bgcolor: tx.status === 'APPROVED' ? 'success.main/10' : tx.status === 'REJECTED' ? 'error.main/10' : 'warning.main/10',
                                             color: tx.status === 'APPROVED' ? 'success.main' : tx.status === 'REJECTED' ? 'error.main' : 'warning.main',
                                         }}
@@ -160,7 +159,37 @@ export const DepartmentAccounts = ({ departmentId }: { departmentId: string }) =
                 </Table>
             </TableContainer>
 
-            <Dialog open={openModal} onClose={() => setOpenModal(false)} PaperProps={{ sx: { bgcolor: 'background.paper', borderRadius: 3 } }}>
+            {/* Mobile Transaction Cards */}
+            <Box sx={{ display: { xs: 'flex', md: 'none' }, flexDirection: 'column', gap: 2 }}>
+                {transactions?.map((tx: Transaction) => (
+                    <Card key={tx.id} sx={{ bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: 2 }}>
+                        <CardContent sx={{ p: 2 }}>
+                            <Box display="flex" justifyContent="space-between" mb={1}>
+                                <Typography variant="caption" sx={{ opacity: 0.6 }}>{new Date(tx.createdAt).toLocaleDateString()}</Typography>
+                                <Chip label={tx.status} size="small" variant="outlined" sx={{ height: 18, fontSize: '0.6rem' }} />
+                            </Box>
+                            <Box display="flex" justifyContent="space-between" alignItems="center" mb={1.5}>
+                                <Typography variant="subtitle2" fontWeight="900" noWrap sx={{ maxWidth: '70%' }}>{tx.description}</Typography>
+                                <Typography variant="subtitle2" fontWeight="900" color={tx.type === 'INCOME' ? 'success.main' : 'error.main'}>
+                                    {tx.type === 'INCOME' ? '+' : '-'}${tx.amount.toLocaleString()}
+                                </Typography>
+                            </Box>
+                            {isHighLevel && tx.status === 'PENDING' && (
+                                <Box display="flex" gap={1}>
+                                    <Button size="small" variant="contained" color="success" fullWidth onClick={() => approveTxMutation.mutate({ id: tx.id, status: 'APPROVED' })}>Approve</Button>
+                                    <Button size="small" variant="outlined" color="error" fullWidth onClick={() => approveTxMutation.mutate({ id: tx.id, status: 'REJECTED' })}>Reject</Button>
+                                </Box>
+                            )}
+                        </CardContent>
+                    </Card>
+                ))}
+            </Box>
+
+            <Dialog 
+                open={openModal} 
+                onClose={() => setOpenModal(false)} 
+                PaperProps={{ sx: { bgcolor: 'background.paper', borderRadius: 3, width: '95%', m: 1 } }}
+            >
                 <DialogTitle fontWeight="900">Record New Transaction</DialogTitle>
                 <DialogContent>
                     <Box display="flex" flexDirection="column" gap={3} mt={2}>

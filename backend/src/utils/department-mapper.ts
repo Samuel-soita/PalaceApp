@@ -11,6 +11,7 @@ export function getDepartmentNameByDob(dob: Date, gender: string): string {
     const age = Math.floor(ageMs / (1000 * 60 * 60 * 24 * 365.25));
 
     if (age < 13) return 'Sunday School';
+    if (age < 18) return 'Teenage';
     if (age <= 32) return 'Youth';
     return gender?.toUpperCase() === 'FEMALE' ? 'Women' : 'Men';
 }

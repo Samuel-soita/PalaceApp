@@ -8,6 +8,7 @@ import {
 import { Bell, Plus, Edit, Trash2, Megaphone, ShieldAlert, Clock, User, Filter } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
+import { isUserManagingDepartment } from '../utils/auth-options';
 
 export default function Announcements() {
     const { user } = useAuth();
@@ -21,22 +22,32 @@ export default function Announcements() {
         departmentId: user?.role === 'SUPER_ADMIN' ? '' : user?.departmentId || ''
     });
 
-    const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+    const isGlobalAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(user?.role || '');
+    const isLeader = isGlobalAdmin || ['DEPARTMENT_LEADER', 'PASTOR'].includes(user?.role || '');
 
-    const { data: announcements, isLoading } = useQuery(['announcements'], async () => {
-        const res = await api.get('/announcements');
-        const all = Array.isArray(res.data) ? res.data : [];
-        if (isSuperAdmin) return all;
-        // Show global ones OR published ones from user's department
-        return all.filter((ann: any) => 
-            ann.isGlobal || (ann.departmentId === user?.departmentId && ann.status === 'PUBLISHED')
-        );
+    const [page, setPage] = useState(1);
+    const limit = 12;
+
+    const { data: announcementsData, isLoading } = useQuery(['announcements', page], async () => {
+        const res = await api.get('/announcements', { params: { page, limit } });
+        return res.data;
+    });
+
+    const announcements = announcementsData?.data || [];
+    const meta = announcementsData?.meta || { total: 0, totalPages: 1 };
+
+    const filteredAnnouncements = announcements.filter((ann: any) => {
+        if (isGlobalAdmin) return true;
+        return ann.isGlobal || ann.isMajor || (isUserManagingDepartment(user, ann.departmentId) && ann.status === 'PUBLISHED');
     });
 
     const { data: departments } = useQuery(['departments'], async () => {
         const res = await api.get('/departments');
-        return res.data;
-    }, { enabled: isSuperAdmin });
+        return Array.isArray(res.data) ? res.data : (res.data?.data || []);
+    });
+
+    const userDepartments = (Array.isArray(departments) ? departments : []).filter((d: any) => isUserManagingDepartment(user, d.id)) || [];
+    const showDepartmentSelect = isGlobalAdmin || userDepartments.length > 1;
 
     const createMutation = useMutation((data: any) => api.post('/announcements', data), {
         onSuccess: () => { queryClient.invalidateQueries(['announcements']); handleClose(); }
@@ -65,8 +76,11 @@ export default function Announcements() {
                 title: '',
                 content: '',
                 priority: 'NORMAL',
-                departmentId: isSuperAdmin ? '' : user?.departmentId || ''
+                departmentId: isGlobalAdmin ? '' : user?.departmentId || ''
             });
+            if (!isGlobalAdmin && userDepartments.length === 1) {
+                setFormData(prev => ({ ...prev, departmentId: userDepartments[0].id }));
+            }
         }
         setOpen(true);
     };
@@ -88,7 +102,7 @@ export default function Announcements() {
                     <Typography variant="h3" fontWeight="950" className="glow-text" sx={{ letterSpacing: -2 }}>STRATEGIC <span className="text-primary/70">ALERTS</span></Typography>
                     <Typography color="textSecondary" sx={{ fontWeight: 500, opacity: 0.6 }}>Mission-critical communications and tactical broadcasts.</Typography>
                 </div>
-                {isSuperAdmin && (
+                {isLeader && (
                     <Button variant="contained" startIcon={<Plus size={20} />} onClick={() => handleOpen()} sx={{ borderRadius: 3, px: 4, py: 1.5, fontWeight: '900', boxShadow: '0 0 20px var(--primary-glow)' }}>
                         NEW BROADCAST
                     </Button>
@@ -98,7 +112,7 @@ export default function Announcements() {
             {isLoading && <LinearProgress sx={{ mb: 4, borderRadius: 1 }} />}
 
             <Grid container spacing={3}>
-                {announcements?.map((ann: any) => (
+                {filteredAnnouncements?.map((ann: any) => (
                     <Grid item xs={12} md={6} lg={4} key={ann.id}>
                         <Card className="holographic-card smooth-tilt" sx={{ height: '100%', borderRadius: 'var(--radius-lg)' }}>
                             <CardContent sx={{ p: 4 }}>
@@ -107,7 +121,7 @@ export default function Announcements() {
                                         <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 1, fontSize: '0.65rem' }}>{ann.priority === 'HIGH' ? 'CRITICAL_ALERT' : 'STANDARD_INTEL'}</Typography>
                                     </div>
                                     <Box>
-                                        {isSuperAdmin && (
+                                        {(isGlobalAdmin || isUserManagingDepartment(user, ann.departmentId)) && (
                                             <>
                                                 <IconButton size="small" onClick={() => handleOpen(ann)} className="tactical-border" sx={{ mr: 1 }}><Edit size={14} /></IconButton>
                                                 <IconButton size="small" color="error" onClick={() => deleteMutation.mutate(ann.id)} className="tactical-border"><Trash2 size={14} /></IconButton>
@@ -136,6 +150,29 @@ export default function Announcements() {
                     </Grid>
                 ))}
             </Grid>
+
+            {meta.totalPages > 1 && (
+                <Box display="flex" justifyContent="center" mt={6} gap={2}>
+                    <Button 
+                        disabled={page === 1} 
+                        onClick={() => setPage(p => p - 1)}
+                        variant="outlined"
+                        sx={{ borderRadius: 2, fontWeight: 900 }}
+                    >
+                        PREV
+                    </Button>
+                    <Box display="flex" alignItems="center" px={3} sx={{ bgcolor: 'rgba(255,255,255,0.05)', borderRadius: 2 }}>
+                        <Typography variant="caption" fontWeight="900">PAGE {page} OF {meta.totalPages}</Typography>
+                    </Box>
+                    <button
+                        disabled={page >= meta.totalPages}
+                        onClick={() => setPage(p => p + 1)}
+                        className={`px-6 py-2 rounded-lg font-black transition-all ${page >= meta.totalPages ? 'opacity-30 cursor-not-allowed bg-white/5' : 'bg-primary text-black hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(var(--primary-rgb),0.3)]'}`}
+                    >
+                        NEXT SESSION
+                    </button>
+                </Box>
+            )}
 
             {announcements?.length === 0 && (
                 <Paper sx={{ p: 10, textAlign: 'center', borderRadius: 4, border: '1px dashed', borderColor: 'divider', bgcolor: 'transparent' }}>
@@ -175,7 +212,7 @@ export default function Announcements() {
                             <MenuItem value="NORMAL">NORMAL</MenuItem>
                             <MenuItem value="HIGH">CRITICAL</MenuItem>
                         </TextField>
-                        {isSuperAdmin && (
+                        {showDepartmentSelect && (
                             <TextField
                                 select
                                 label="Target Sector"
@@ -183,8 +220,8 @@ export default function Announcements() {
                                 value={formData.departmentId}
                                 onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
                             >
-                                <MenuItem value="">GLOBAL COMMAND</MenuItem>
-                                {departments?.map((dept: any) => (
+                                {isGlobalAdmin && <MenuItem value="">GLOBAL COMMAND</MenuItem>}
+                                {(isGlobalAdmin ? departments : userDepartments)?.map((dept: any) => (
                                     <MenuItem key={dept.id} value={dept.id}>{dept.name}</MenuItem>
                                 ))}
                             </TextField>

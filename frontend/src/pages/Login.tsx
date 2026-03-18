@@ -56,6 +56,9 @@ export default function Login() {
 
             if (data.user.role === 'WATUA') return navigate('/watua');
             if (data.user.role === 'SUPER_ADMIN') return navigate('/');
+            if (data.user.role === 'PASTOR' || data.user.role === 'ASSOCIATE_PASTOR') {
+                return navigate('/pastor');
+            }
             if (data.user.role === 'DEPARTMENT_LEADER' && data.user.departmentId) {
                 return navigate(`/department/${data.user.departmentId}`);
             }

@@ -7,7 +7,7 @@ export const getSupportRequests = async (req: any, res: Response) => {
         const requests = await prisma.supportRequest.findMany({
             include: {
                 event: { include: { department: true } },
-                requester: { select: { id: true, name: true, email: true } }
+                requester: { select: { id: true, name: true } }
             },
             orderBy: { createdAt: 'desc' }
         });

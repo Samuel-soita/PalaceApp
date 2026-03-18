@@ -9,6 +9,7 @@ import {
 import { Plus, Edit, Trash2, Briefcase, TrendingUp, Clock } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
+import { isUserManagingDepartment } from '../utils/auth-options';
 
 interface Project {
     id: string;
@@ -37,20 +38,32 @@ export default function Projects() {
         pastorIds: [] as string[]
     });
 
-    const isAuthorized = user?.role === 'SUPER_ADMIN';
+    const isGlobalAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(user?.role || '');
+    const isAuthorized = isGlobalAdmin || ['DEPARTMENT_LEADER', 'PASTOR'].includes(user?.role || '');
 
-    const { data: projects, isLoading } = useQuery(['projects'], async () => {
-        const res = await api.get('/projects');
-        const all = Array.isArray(res.data) ? res.data : [];
-        if (user?.role === 'SUPER_ADMIN') return all;
-        // Show all approved projects, plus user's own pending ones
-        return all.filter((p: any) => p.approvalStatus === 'APPROVED' || p.departmentId === user?.departmentId);
+    const [page, setPage] = useState(1);
+    const limit = 12;
+
+    const { data: projectsData, isLoading } = useQuery(['projects', page], async () => {
+        const res = await api.get('/projects', { params: { page, limit } });
+        return res.data;
+    });
+
+    const projects = projectsData?.data || [];
+    const meta = projectsData?.meta || { total: 0, totalPages: 1 };
+
+    const filteredProjects = projects.filter((p: any) => {
+        if (isGlobalAdmin) return true;
+        return p.approvalStatus === 'APPROVED' || isUserManagingDepartment(user, p.departmentId);
     });
 
     const { data: departments } = useQuery(['departments'], async () => {
         const res = await api.get('/departments');
         return res.data;
     });
+
+    const userDepartments = departments?.filter((d: any) => isUserManagingDepartment(user, d.id)) || [];
+    const showDepartmentSelect = isGlobalAdmin || userDepartments.length > 1;
 
     const { data: pastors } = useQuery(['pastors'], async () => {
         const res = await api.get('/users?role=PASTOR');
@@ -98,6 +111,9 @@ export default function Projects() {
                 departmentId: user?.departmentId || '',
                 pastorIds: []
             });
+            if (!isGlobalAdmin && userDepartments.length === 1) {
+                setFormData(prev => ({ ...prev, departmentId: userDepartments[0].id }));
+            }
         }
         setOpen(true);
     };
@@ -137,12 +153,12 @@ export default function Projects() {
 
     return (
         <DashboardLayout>
-            <Box sx={{ mb: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'end' }}>
+            <Box sx={{ mb: 6, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'flex-end' }, gap: 2 }}>
                 <div>
-                    <Typography variant="h3" fontWeight="950" sx={{ mb: 1, letterSpacing: -2 }}>
+                    <Typography variant="h3" fontWeight="950" sx={{ mb: 1, letterSpacing: -2, fontSize: { xs: '2rem', sm: '3rem' } }}>
                         PROJECT <span className="text-primary">REGISTRY</span>
                     </Typography>
-                    <Typography color="textSecondary" fontWeight="medium" sx={{ opacity: 0.7 }}>
+                    <Typography color="textSecondary" fontWeight="medium" sx={{ opacity: 0.7, fontSize: { xs: '0.8rem', sm: '1rem' } }}>
                         Tactical oversight of departmental initiatives and infrastructure deployments.
                     </Typography>
                 </div>
@@ -151,7 +167,7 @@ export default function Projects() {
                         variant="contained"
                         startIcon={<Plus size={18} />}
                         onClick={() => handleOpen()}
-                        sx={{ borderRadius: 3, px: 4, py: 1.5, fontWeight: '900', boxShadow: '0 0 20px var(--primary-glow)' }}
+                        sx={{ width: { xs: '100%', sm: 'auto' }, borderRadius: 3, px: 4, py: 1.5, fontWeight: '900', boxShadow: '0 0 20px var(--primary-glow)' }}
                     >
                         NEW PROJECT
                     </Button>
@@ -159,7 +175,7 @@ export default function Projects() {
             </Box>
 
             <Grid container spacing={4}>
-                {projects?.map((project: Project) => (
+                {filteredProjects?.map((project: Project) => (
                     <Grid item xs={12} md={6} key={project.id}>
                         <Card className="holographic-card" sx={{ borderRadius: 4 }}>
                             <CardContent sx={{ p: 4 }}>
@@ -167,7 +183,7 @@ export default function Projects() {
                                     <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary border border-primary/20">
                                         <Briefcase size={24} />
                                     </div>
-                                    {isAuthorized && (
+                                    {(isGlobalAdmin || isUserManagingDepartment(user, project.departmentId)) && (
                                         <Box display="flex" gap={1}>
                                             <IconButton size="small" onClick={() => handleOpen(project)} sx={{ color: 'primary.main' }}>
                                                 <Edit size={16} />
@@ -218,8 +234,38 @@ export default function Projects() {
                 ))}
             </Grid>
 
+            {meta.totalPages > 1 && (
+                <Box display="flex" justifyContent="center" mt={6} gap={2}>
+                    <Button 
+                        disabled={page === 1} 
+                        onClick={() => setPage(p => p - 1)}
+                        variant="outlined"
+                        sx={{ borderRadius: 3, fontWeight: 900 }}
+                    >
+                        PREVIOUS
+                    </Button>
+                    <Box display="flex" alignItems="center" px={4} sx={{ bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 3, border: '1px solid var(--glass-border)' }}>
+                        <Typography variant="caption" fontWeight="900" sx={{ opacity: 0.6, letterSpacing: 2 }}>MODULE_{page}/{meta.totalPages}</Typography>
+                    </Box>
+                    <Button 
+                        disabled={page >= meta.totalPages}
+                        onClick={() => setPage(p => p + 1)}
+                        variant="contained"
+                        sx={{ borderRadius: 3, fontWeight: 900, px: 4, boxShadow: '0 0 15px rgba(var(--primary-rgb),0.2)' }}
+                    >
+                        NEXT
+                    </Button>
+                </Box>
+            )}
+
             {/* Project CRUD Modal */}
-            <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 4 } }}>
+            <Dialog 
+                open={open} 
+                onClose={handleClose} 
+                maxWidth="sm" 
+                fullWidth 
+                PaperProps={{ sx: { borderRadius: 4, width: '95%', m: 1 } }}
+            >
                 <form onSubmit={handleSubmit}>
                     <DialogTitle sx={{ fontWeight: '950', fontSize: '1.5rem', letterSpacing: -1 }}>
                         {editProject ? 'RECALIBRATE PROJECT' : 'INITIALIZE PROJECT'}
@@ -279,7 +325,7 @@ export default function Projects() {
                                     }}
                                 />
                             </Box>
-                            {user?.role === 'SUPER_ADMIN' && (
+                            {showDepartmentSelect && (
                                 <TextField
                                     label="Assigned Department"
                                     select
@@ -288,7 +334,7 @@ export default function Projects() {
                                     value={formData.departmentId}
                                     onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
                                 >
-                                    {departments?.map((dept: any) => (
+                                    {(isGlobalAdmin ? departments : userDepartments)?.map((dept: any) => (
                                         <MenuItem key={dept.id} value={dept.id}>{dept.name}</MenuItem>
                                     ))}
                                 </TextField>

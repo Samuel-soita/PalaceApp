@@ -3,45 +3,122 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
-  id                    String                 @id @default(uuid())
-  email                 String                 @unique
-  idNumber              String                 @unique
-  dob                   DateTime
-  gender                String?
-  password              String
-  name                  String
-  avatarUrl             String?
-  membershipNumber      String?                @unique
+  id                        String                 @id @default(uuid())
+  idNumber                  String                 @unique
+  dob                       DateTime
+  gender                    String?
+  name                      String
+  avatarUrl                 String?
+  membershipNumber          String                 @unique
   membershipNumberUpdatedAt DateTime?
-  status                String                 @default("PENDING")
-  role                  String                 @default("MEMBER")
-  departmentId          String?
-  wrongdoingCount       Int                    @default(0)
-  isSuspended           Boolean                @default(false)
-  lastSuspendedAt       DateTime?
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  announcements         Announcement[]
-  announcementApprovals AnnouncementApproval[]
-  auditLogs             AuditLog[]
-  eventApprovals        EventApproval[]
-  meetingsOrganized     Meeting[]              @relation("MeetingOrganizer")
-  assignedFollowUps     Meeting[]              @relation("MeetingFollowUp")
-  meetingApprovals      MeetingApproval[]
-  receivedMessages      Message[]              @relation("MessageReceiver")
-  sentMessages          Message[]              @relation("MessageSender")
-  notifications         Notification[]
-  planApprovals         PlanApproval[]
-  projectApprovals      ProjectApproval[]
-  supportRequests       SupportRequest[]
-  transactionsApproved  Transaction[]          @relation("TransactionApprover")
-  transactionsRequested Transaction[]          @relation("TransactionRequester")
-  department            Department?            @relation("DeptLeader", fields: [departmentId], references: [id])
+  status                    String                 @default("PENDING")
+  role                      String                 @default("MEMBER")
+  departmentId              String?
+  phoneNumber               String?
+  profilePhoto              String?
+  deletionRequested         Boolean                @default(false)
+  authenticatedAt           DateTime?
+  authenticatedById         String?
+  wrongdoingCount           Int                    @default(0)
+  isSuspended               Boolean                @default(false)
+  lastSuspendedAt           DateTime?
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
+  isCardPaid                Boolean                @default(false)
+  isPartner                 Boolean                @default(false)
+  announcements             Announcement[]
+  announcementApprovals     AnnouncementApproval[]
+  auditLogs                 AuditLog[]
+  baptisms                  Baptism[]              @relation("UserBaptisms")
+  children                  Child[]                @relation("ParentChildren")
+  devotionInteractions      DevotionInteraction[]
+  eventApprovals            EventApproval[]
+  assignedFollowUps         Meeting[]              @relation("MeetingFollowUp")
+  meetingsOrganized         Meeting[]              @relation("MeetingOrganizer")
+  meetingApprovals          MeetingApproval[]
+  receivedMessages          Message[]              @relation("MessageReceiver")
+  sentMessages              Message[]              @relation("MessageSender")
+  notifications             Notification[]
+  partnerships              Partnership[]          @relation("UserPartnerships")
+  planApprovals             PlanApproval[]
+  projectApprovals          ProjectApproval[]
+  supportRequests           SupportRequest[]
+  permissionOverrides       PermissionOverride[]   @relation("UserOverrides")
+  transactionsApproved      Transaction[]          @relation("TransactionApprover")
+  transactionsRequested     Transaction[]          @relation("TransactionRequester")
+  authenticator             User?                  @relation("UserAuthenticator", fields: [authenticatedById], references: [id])
+  authenticatedUsers        User[]                 @relation("UserAuthenticator")
+  department                Department?            @relation("DeptLeader", fields: [departmentId], references: [id])
+  managedDepartments        Department[]           @relation("DeptManagers")
+
+  appointmentsByMember     Appointment[]          @relation("MemberAppointments")
+  appointmentsAsTarget     Appointment[]          @relation("TargetAppointments")
+
+  @@index([name])
+  @@index([status])
+  @@index([departmentId])
+  @@index([role])
+  @@index([dob])
+  @@index([gender])
+}
+
+model Child {
+  id                   String      @id @default(uuid())
+  name                 String
+  dob                  DateTime
+  gender               String
+  dedicationNumber     String?     @unique
+  parentId             String
+  departmentId         String?
+  branch               String      @default("HQ")
+  status               String      @default("ACTIVE")
+  workflowStatus       String      @default("PENDING_DEDICATION")
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+  dedicationCardNumber String?
+  isDedicated          Boolean     @default(false)
+  plannedDate          DateTime?
+  plannedTime          String?
+  department           Department? @relation(fields: [departmentId], references: [id])
+  parent               User        @relation("ParentChildren", fields: [parentId], references: [id])
+
+  @@unique([name, dob, branch])
+  @@index([name])
+  @@index([workflowStatus])
+  @@index([parentId])
+  @@index([departmentId])
+  @@index([branch])
+  @@index([dob])
+}
+
+model Devotion {
+  id           String                @id @default(uuid())
+  title        String
+  content      String
+  themeOfMonth String
+  themeOfYear  String
+  date         DateTime              @unique @default(now())
+  createdAt    DateTime              @default(now())
+  interactions DevotionInteraction[]
+}
+
+model DevotionInteraction {
+  id         String   @id @default(uuid())
+  devotionId String
+  userId     String
+  type       String
+  value      String
+  createdAt  DateTime @default(now())
+  devotion   Devotion @relation(fields: [devotionId], references: [id])
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([devotionId])
+  @@index([userId])
 }
 
 model Department {
@@ -53,17 +130,15 @@ model Department {
   updatedAt     DateTime       @updatedAt
   account       Account?
   announcements Announcement[]
-  assets        Asset[]
-  budgets       Budget[]
-  contributors  Contributor[]
+  children      Child[]
   events        Event[]
   meetings      Meeting[]
   messages      Message[]
   plans         Plan[]
   projects      Project[]
-  strategies    Strategy[]
   leaders       User[]         @relation("DeptLeader")
   volunteers    Volunteer[]
+  managers      User[]         @relation("DeptManagers")
 }
 
 model Event {
@@ -88,6 +163,10 @@ model Event {
   approvals         EventApproval[]
   messages          Message[]
   supportRequests   SupportRequest[]
+
+  @@index([status])
+  @@index([approvalStatus])
+  @@index([departmentId])
 }
 
 model Meeting {
@@ -108,41 +187,11 @@ model Meeting {
   attendance       String?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
+  isPartnerOnly    Boolean           @default(false)
   department       Department        @relation(fields: [departmentId], references: [id])
-  organizer        User              @relation("MeetingOrganizer", fields: [organizerId], references: [id])
   followUpPerson   User?             @relation("MeetingFollowUp", fields: [followUpPersonId], references: [id])
+  organizer        User              @relation("MeetingOrganizer", fields: [organizerId], references: [id])
   approvals        MeetingApproval[]
-}
-
-model Budget {
-  id                String        @id @default(uuid())
-  title             String
-  targetAmount      Float
-  amountRaised      Float         @default(0)
-  linkedEventId     String?
-  deadline          DateTime
-  status            String        @default("OPEN")
-  departmentId      String?
-  whatsappGroupLink String?
-  isGlobal          Boolean       @default(false)
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-  department        Department?   @relation(fields: [departmentId], references: [id])
-  contributors      Contributor[]
-}
-
-model Contributor {
-  id            String      @id @default(uuid())
-  name          String
-  amount        Float
-  paymentMethod String
-  date          DateTime    @default(now())
-  budgetId      String
-  departmentId  String?
-  anonymousFlag Boolean     @default(false)
-  notes         String?
-  budget        Budget      @relation(fields: [budgetId], references: [id])
-  department    Department? @relation(fields: [departmentId], references: [id])
 }
 
 model Announcement {
@@ -161,8 +210,12 @@ model Announcement {
   author       User                   @relation(fields: [authorId], references: [id])
   department   Department?            @relation(fields: [departmentId], references: [id])
   approvals    AnnouncementApproval[]
-}
 
+  @@index([status])
+  @@index([departmentId])
+  @@index([isGlobal])
+  @@index([isMajor])
+}
 
 model Volunteer {
   id           String     @id @default(uuid())
@@ -175,31 +228,6 @@ model Volunteer {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   department   Department @relation(fields: [departmentId], references: [id])
-}
-
-model Asset {
-  id                  String     @id @default(uuid())
-  name                String
-  condition           String
-  assignedTo          String?
-  maintenanceSchedule String?
-  departmentId        String
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
-  department          Department @relation(fields: [departmentId], references: [id])
-}
-
-model Strategy {
-  id             String     @id @default(uuid())
-  title          String
-  actionItems    String
-  assignedPerson String?
-  deadline       DateTime?
-  status         String     @default("PENDING")
-  departmentId   String
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-  department     Department @relation(fields: [departmentId], references: [id])
 }
 
 model Project {
@@ -220,6 +248,10 @@ model Project {
   department        Department        @relation(fields: [departmentId], references: [id])
   approvals         ProjectApproval[]
   updates           ProjectUpdate[]
+
+  @@index([status])
+  @@index([approvalStatus])
+  @@index([departmentId])
 }
 
 model ProjectUpdate {
@@ -242,6 +274,9 @@ model Plan {
   isMajor        Boolean        @default(false)
   department     Department     @relation(fields: [departmentId], references: [id])
   approvals      PlanApproval[]
+
+  @@index([approvalStatus])
+  @@index([departmentId])
 }
 
 model Message {
@@ -258,9 +293,9 @@ model Message {
   flagReason   String?
   chatType     String      @default("DEPARTMENT")
   createdAt    DateTime    @default(now())
+  department   Department? @relation(fields: [departmentId], references: [id])
   event        Event?      @relation(fields: [eventId], references: [id])
   project      Project?    @relation(fields: [projectId], references: [id])
-  department   Department? @relation(fields: [departmentId], references: [id])
   receiver     User?       @relation("MessageReceiver", fields: [receiverId], references: [id])
   sender       User        @relation("MessageSender", fields: [senderId], references: [id])
 }
@@ -288,9 +323,9 @@ model Transaction {
   date          DateTime @default(now())
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  account       Account  @relation(fields: [accountId], references: [id])
   approver      User?    @relation("TransactionApprover", fields: [approvedById], references: [id])
   requester     User     @relation("TransactionRequester", fields: [requestedById], references: [id])
-  account       Account  @relation(fields: [accountId], references: [id])
 }
 
 model Notification {
@@ -310,8 +345,8 @@ model MeetingApproval {
   role      String
   approved  Boolean  @default(false)
   createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
   meeting   Meeting  @relation(fields: [meetingId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
 
   @@unique([meetingId, userId])
 }
@@ -322,8 +357,8 @@ model AnnouncementApproval {
   userId         String
   role           String
   createdAt      DateTime     @default(now())
-  user           User         @relation(fields: [userId], references: [id])
   announcement   Announcement @relation(fields: [announcementId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
 
   @@unique([announcementId, userId])
 }
@@ -339,8 +374,8 @@ model SupportRequest {
   status         String   @default("OPEN")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  requester      User     @relation(fields: [requesterId], references: [id])
   event          Event    @relation(fields: [eventId], references: [id])
+  requester      User     @relation(fields: [requesterId], references: [id])
 }
 
 model EventApproval {
@@ -349,8 +384,8 @@ model EventApproval {
   userId    String
   role      String
   createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
   event     Event    @relation(fields: [eventId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
 
   @@unique([eventId, userId])
 }
@@ -361,8 +396,8 @@ model ProjectApproval {
   userId    String
   role      String
   createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
   project   Project  @relation(fields: [projectId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
 
   @@unique([projectId, userId])
 }
@@ -373,8 +408,8 @@ model PlanApproval {
   userId    String
   role      String
   createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
   plan      Plan     @relation(fields: [planId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
 
   @@unique([planId, userId])
 }
@@ -388,4 +423,114 @@ model AuditLog {
   details    String?
   createdAt  DateTime @default(now())
   user       User     @relation(fields: [userId], references: [id])
+
+  @@index([entityType])
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model Baptism {
+  id         String    @id @default(uuid())
+  userId     String
+  status     String    @default("PENDING_PASTOR_APPROVAL")
+  recordedAt DateTime?
+  notes      String?
+  plannedDate DateTime?
+  plannedTime String?
+  baptismCardNumber String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  user       User      @relation("UserBaptisms", fields: [userId], references: [id])
+}
+
+model MinistrySettings {
+  id           String   @id @default("GLOBAL")
+  themeOfYear  String   @default("YEAR OF DIVINE ESTABLISHMENT")
+  themeOfMonth String   @default("MONTH OF NEW BEGINNINGS")
+  updatedAt    DateTime @updatedAt
+  churchBudget Float    @default(0)
+}
+
+model Affirmation {
+  id        String   @id @default(uuid())
+  content   String
+  date      DateTime @unique @default(now())
+  createdAt DateTime @default(now())
+}
+
+model Partnership {
+  id              String    @id @default(uuid())
+  userId          String
+  amount          Float     // Committed/Enrollment Amount
+  paidAmount      Float     @default(0)
+  balance         Float     @default(0)
+  lastPaymentDate DateTime?
+  frequency       String    @default("MONTHLY")
+  status          String    @default("ACTIVE")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  user            User      @relation("UserPartnerships", fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model Appointment {
+  id            String   @id @default(uuid())
+  memberId      String
+  member        User     @relation("MemberAppointments", fields: [memberId], references: [id])
+  targetId      String?  // Optional: specific pastor/bishop
+  target        User?    @relation("TargetAppointments", fields: [targetId], references: [id])
+  targetRole    String   // BISHOP, PASTOR, ASSOCIATE_PASTOR
+  type          String   // PRAYER, MEETING, COUNSELING, DELIVERANCE
+  reason        String
+  status        String   @default("PENDING") // PENDING, APPROVED, COMPLETED, CANCELLED
+  preferredDate DateTime
+  preferredTime String
+  approvedDate  DateTime?
+  approvedTime  String?
+  adminNotes    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([memberId])
+  @@index([targetId])
+  @@index([status])
+}
+
+model Role {
+  id          String           @id @default(uuid())
+  name        String           @unique // e.g., "SUPER_ADMIN"
+  description String?
+  permissions RolePermission[]
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  code        String           @unique // e.g., "VIEW_GLOBAL_STATS"
+  description String?
+  roles       RolePermission[]
+  overrides   PermissionOverride[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+}
+
+model PermissionOverride {
+  id           String     @id @default(uuid())
+  userId       String
+  permissionId String
+  granted      Boolean    @default(true) // true = grant, false = revoke
+  expiresAt    DateTime?
+  reason       String?
+  creatorId    String
+  user         User       @relation("UserOverrides", fields: [userId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@unique([userId, permissionId])
 }

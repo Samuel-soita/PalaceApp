@@ -44,7 +44,8 @@ export default function Messages() {
     const { data: messages, isLoading } = useQuery(['messages', effectiveDeptId], async () => {
         const url = effectiveDeptId ? `/messages?departmentId=${effectiveDeptId}` : '/messages';
         const res = await api.get(url);
-        return res.data;
+        // Handle both raw arrays and paginated objects
+        return Array.isArray(res.data) ? res.data : (res.data?.data || []);
     }, { enabled: !!user });
 
     // Fetch Department Info
@@ -57,7 +58,7 @@ export default function Messages() {
     // Fetch All Departments for Mentions
     const { data: allDepartments } = useQuery(['all-departments'], async () => {
         const res = await api.get('/departments');
-        return res.data;
+        return Array.isArray(res.data) ? res.data : (res.data?.data || []);
     });
 
     const createMessageMutation = useMutation(
@@ -200,13 +201,13 @@ export default function Messages() {
 
             <Card className="holographic-card" sx={{ height: 'calc(100vh - 220px)', display: 'flex', flexDirection: 'column' }}>
                 <Box sx={{ flexGrow: 1, overflowY: 'auto', p: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    {messages?.length === 0 ? (
+                    {(Array.isArray(messages) ? messages : []).length === 0 ? (
                         <Box m="auto" textAlign="center" sx={{ opacity: 0.5 }}>
                             <MessageSquare size={48} className="mx-auto mb-4" />
                             <Typography>No communications yet. Start the transmission.</Typography>
                         </Box>
                     ) : (
-                        messages?.map((msg: Message, i: number) => {
+                        (Array.isArray(messages) ? messages : []).map((msg: Message, i: number) => {
                             const isMe = msg.senderId === user?.id;
                             const showHeader = i === 0 || messages[i - 1].senderId !== msg.senderId;
                             

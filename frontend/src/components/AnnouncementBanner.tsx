@@ -7,7 +7,7 @@ import { AlertTriangle, Info } from 'lucide-react';
 export default function AnnouncementBanner() {
     const { data: globalAnnouncements } = useQuery(['global-announcements'], async () => {
         const res = await api.get('/announcements?isGlobal=true');
-        return res.data;
+        return res.data.data || [];
     });
 
     if (!globalAnnouncements || globalAnnouncements.length === 0) return null;
