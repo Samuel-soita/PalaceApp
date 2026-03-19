@@ -8,7 +8,7 @@ export const getDashboardSync = async (req: any, res: Response) => {
         const { departmentId } = req.query;
 
         // Effective department ID for filtering
-        const isAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(role);
+        const isAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA', 'PASTOR'].includes(role);
         const effectiveDeptId = (isAdmin && departmentId) ? departmentId : (isAdmin ? null : userDeptId);
 
         const isLeader = ['PASTOR', 'DEPARTMENT_LEADER'].includes(role);
@@ -25,7 +25,15 @@ export const getDashboardSync = async (req: any, res: Response) => {
 
             // Helper to build relevant 'where' clause for members
             const getWhere = (majField: string = 'isMajor') => {
-                if (isAdmin) return effectiveDeptId ? { departmentId: effectiveDeptId } : {};
+                if (isAdmin) {
+                    return effectiveDeptId ? { departmentId: effectiveDeptId } : {};
+                }
+                
+                // If member/leader has no department, only show major/global items
+                if (!userDeptId) {
+                    return { [majField]: true };
+                }
+
                 // Members see their department OR major global items
                 return { OR: [{ departmentId: userDeptId }, { [majField]: true }] };
             };

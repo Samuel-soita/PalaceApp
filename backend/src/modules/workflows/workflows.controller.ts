@@ -65,6 +65,15 @@ export const updateBaptismStatus = async (req: any, res: Response) => {
             return res.status(403).json({ error: 'You are not authorized to advance this workflow phase.' });
         }
 
+        if (plannedDate) {
+            const dateObj = new Date(plannedDate);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (dateObj < today) {
+                return res.status(400).json({ error: 'Baptism cannot be scheduled for past dates.' });
+            }
+        }
+
         const baptism = await prisma.baptism.update({
             where: { id },
             data: { 
@@ -135,6 +144,15 @@ export const updateChildDedicationStatus = async (req: any, res: Response) => {
 
         if (!canUpdate) {
             return res.status(403).json({ error: 'Unauthorized to advance dedication phase.' });
+        }
+
+        if (plannedDate) {
+            const dateObj = new Date(plannedDate);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (dateObj < today) {
+                return res.status(400).json({ error: 'Child dedication cannot be scheduled for past dates.' });
+            }
         }
 
         const child = await prisma.child.update({

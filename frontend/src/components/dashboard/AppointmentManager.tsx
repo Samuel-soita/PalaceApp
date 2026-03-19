@@ -188,16 +188,18 @@ export default function AppointmentManager({ open, onClose }: { open: boolean, o
                                                     value={approvedDate}
                                                     onChange={(e) => setApprovedDate(e.target.value)}
                                                     InputLabelProps={{ shrink: true }}
+                                                    inputProps={{ min: new Date().toISOString().split('T')[0] }}
                                                     sx={{ '& .MuiInputBase-root': { borderRadius: 2, bgcolor: 'rgba(255,255,255,0.02)' } }}
                                                 />
                                             </Grid>
                                             <Grid item xs={6}>
                                                 <TextField
                                                     fullWidth
+                                                    type="time"
                                                     label="Authorized Time"
-                                                    placeholder="e.g. 2:30 PM"
                                                     value={approvedTime}
                                                     onChange={(e) => setApprovedTime(e.target.value)}
+                                                    InputLabelProps={{ shrink: true }}
                                                     sx={{ '& .MuiInputBase-root': { borderRadius: 2, bgcolor: 'rgba(255,255,255,0.02)' } }}
                                                 />
                                             </Grid>

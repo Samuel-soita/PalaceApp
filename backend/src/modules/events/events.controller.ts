@@ -104,6 +104,13 @@ export const createEvent = async (req: any, res: Response) => {
         return res.status(400).json({ error: 'You must select exactly 2 Pastors to approve this event.' });
     }
 
+    const eventDate = new Date(date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (eventDate < today) {
+        return res.status(400).json({ error: 'Events cannot be scheduled for past dates.' });
+    }
+
     try {
         const conflict = await prisma.event.findFirst({
             where: {

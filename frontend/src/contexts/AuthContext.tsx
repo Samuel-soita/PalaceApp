@@ -55,6 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
         setToken(null);
         localStorage.removeItem('token');
+        sessionStorage.removeItem('welcome-splash-shown');
     };
 
     const updateUser = (data: any) => {

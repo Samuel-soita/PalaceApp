@@ -292,6 +292,7 @@ export default function Meetings() {
                                     fullWidth
                                     required
                                     InputLabelProps={{ shrink: true }}
+                                    inputProps={!editMeeting ? { min: new Date().toISOString().split('T')[0] } : {}}
                                     value={formData.date}
                                     onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                                 />

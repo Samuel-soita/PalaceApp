@@ -195,16 +195,18 @@ export default function DedicationManager({ open, onClose }: { open: boolean, on
                                                         value={plannedDate}
                                                         onChange={(e) => setPlannedDate(e.target.value)}
                                                         InputLabelProps={{ shrink: true }}
+                                                        inputProps={{ min: new Date().toISOString().split('T')[0] }}
                                                         sx={{ '& .MuiInputBase-root': { borderRadius: 2, bgcolor: 'rgba(255,255,255,0.02)' } }}
                                                     />
                                                 </Grid>
                                                 <Grid item xs={6}>
                                                     <TextField
                                                         fullWidth
+                                                        type="time"
                                                         label="Planned Time"
-                                                        placeholder="e.g. 11:30 AM"
                                                         value={plannedTime}
                                                         onChange={(e) => setPlannedTime(e.target.value)}
+                                                        InputLabelProps={{ shrink: true }}
                                                         sx={{ '& .MuiInputBase-root': { borderRadius: 2, bgcolor: 'rgba(255,255,255,0.02)' } }}
                                                     />
                                                 </Grid>

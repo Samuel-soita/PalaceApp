@@ -10,6 +10,13 @@ export const createAppointment = async (req: any, res: Response) => {
         return res.status(400).json({ error: 'Missing required appointment fields (include date and time).' });
     }
 
+    const apptDate = new Date(preferredDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (apptDate < today) {
+        return res.status(400).json({ error: 'Appointments cannot be requested for past dates.' });
+    }
+
     try {
         const appointment = await (prisma as any).appointment.create({
             data: {
@@ -105,6 +112,12 @@ export const updateAppointmentStatus = async (req: any, res: Response) => {
         if (status === 'APPROVED') {
             if (!approvedDate || !approvedTime) {
                 return res.status(400).json({ error: 'Approved appointment must include date and time.' });
+            }
+            const apptDate = new Date(approvedDate);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (apptDate < today) {
+                return res.status(400).json({ error: 'Appointments cannot be approved for past dates.' });
             }
             updateData.approvedDate = new Date(approvedDate);
             updateData.approvedTime = approvedTime;

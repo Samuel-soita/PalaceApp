@@ -396,8 +396,8 @@ export const enrollPartnership = async (req: any, res: Response) => {
     const { id: userId } = req.user;
     const { amount } = req.body;
 
-    if (!amount || amount < 500) {
-        return res.status(400).json({ error: 'Partnership enrollment requires a minimum seed of 500.' });
+    if (!amount || amount < 700) {
+        return res.status(400).json({ error: 'Partnership enrollment requires a minimum seed of 700 KES.' });
     }
 
     try {

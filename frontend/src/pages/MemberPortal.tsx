@@ -23,7 +23,7 @@ export default function MemberPortal() {
     const [calendarModalOpen, setCalendarModalOpen] = useState(false);
     const [enrollModalOpen, setEnrollModalOpen] = useState(false);
     const [appointmentModalOpen, setAppointmentModalOpen] = useState(false);
-    const [enrollAmount, setEnrollAmount] = useState<number>(500);
+    const [enrollAmount, setEnrollAmount] = useState<number>(700);
     const [toast, setToast] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({
         open: false,
         message: '',
@@ -156,11 +156,11 @@ export default function MemberPortal() {
             <Container maxWidth="xl" sx={{ mt: 2 }}>
                 <Box sx={{ mb: 8, textAlign: 'center', maxWidth: 900, mx: 'auto' }}>
                     <Typography variant="h2" fontWeight="950" className="glow-text" sx={{ letterSpacing: -3, mb: 1, fontSize: { xs: '2.5rem', md: '4rem' } }}>
-                        EXECUTIVE <span className="text-cyan/70">PALACE PORTAL</span>
+                        PRAYER <span className="text-cyan/70">PALACE PORTAL</span>
                     </Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
                         <Typography variant="subtitle1" fontWeight="800" color="textSecondary">
-                            SOLDIER OF CHRIST: <span style={{ color: 'var(--cyan)' }}>{user?.name?.toUpperCase()}</span>
+                            WELCOME, <span style={{ color: 'var(--cyan)' }}>{user?.name?.toUpperCase()}</span>
                         </Typography>
                         {user?.department?.name && (
                             <Chip 
@@ -508,16 +508,16 @@ export default function MemberPortal() {
                                                     <Grid container spacing={1} mb={2}>
                                                         <Grid item xs={6}>
                                                             <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>COMMITTED</Typography>
-                                                            <Typography variant="h6" fontWeight={950}>${syncData?.partnership?.amount || 0}</Typography>
+                                                            <Typography variant="h6" fontWeight={950}>{syncData?.partnership?.amount || 0} KES</Typography>
                                                         </Grid>
                                                         <Grid item xs={6}>
                                                             <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>PAID TO DATE</Typography>
-                                                            <Typography variant="h6" fontWeight={950} color="success.main">${syncData?.partnership?.paidAmount || 0}</Typography>
+                                                            <Typography variant="h6" fontWeight={950} color="success.main">{syncData?.partnership?.paidAmount || 0} KES</Typography>
                                                         </Grid>
                                                         <Grid item xs={12}>
                                                             <Box sx={{ mt: 1, p: 1.5, bgcolor: 'rgba(255,0,0,0.05)', border: '1px solid rgba(255,0,0,0.1)', textAlign: 'center' }}>
                                                                 <Typography variant="caption" fontWeight={900} color="error" sx={{ display: 'block' }}>
-                                                                    OUTSTANDING BALANCE: ${syncData?.partnership?.balance || 0}
+                                                                    OUTSTANDING BALANCE: {syncData?.partnership?.balance || 0} KES
                                                                 </Typography>
                                                                 <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 700, opacity: 0.7, mt: 0.5, display: 'block' }}>
                                                                     KINDLY PURPOSE TO COMPLETE YOUR PARTNERSHIP AMOUNT FOR THE CHURCH BUDGET
@@ -674,12 +674,12 @@ export default function MemberPortal() {
 
                         <Typography variant="body2" sx={{ mb: 4, opacity: 0.7, lineHeight: 1.6 }}>
                             "Honor the Lord with your wealth and with the firstfruits of all your produce." <br/>
-                            Enroll with a minimum monthly seed of <b>$500</b> to fuel the global mission.
+                            Enroll with a minimum monthly seed of <b>700 KES</b> to fuel the global mission.
                         </Typography>
 
                         <Stack spacing={3}>
                             <Box>
-                                <Typography variant="caption" fontWeight="900" sx={{ mb: 1, display: 'block', opacity: 0.5 }}>AMOUNT TO PARTNER WITH (MIN $500)</Typography>
+                                <Typography variant="caption" fontWeight="900" sx={{ mb: 1, display: 'block', opacity: 0.5 }}>AMOUNT TO PARTNER WITH (MIN 700 KES)</Typography>
                                 <input 
                                     type="number" 
                                     value={enrollAmount}
@@ -695,15 +695,15 @@ export default function MemberPortal() {
                                         outline: 'none'
                                     }}
                                 />
-                                {enrollAmount < 500 && (
-                                    <Typography variant="caption" color="error" sx={{ mt: 0.5, display: 'block', fontWeight: 800 }}>Minimum amount is $500</Typography>
+                                {enrollAmount < 700 && (
+                                    <Typography variant="caption" color="error" sx={{ mt: 0.5, display: 'block', fontWeight: 800 }}>Minimum amount is 700 KES</Typography>
                                 )}
                             </Box>
 
                             <Button 
                                 variant="contained" 
                                 fullWidth 
-                                disabled={enrollAmount < 500 || enrollPartnershipMutation.isLoading}
+                                disabled={enrollAmount < 700 || enrollPartnershipMutation.isLoading}
                                 onClick={() => enrollPartnershipMutation.mutate(enrollAmount)}
                                 sx={{ 
                                     bgcolor: 'orange', 
@@ -813,6 +813,7 @@ export default function MemberPortal() {
                                         type="date" 
                                         name="preferredDate"
                                         required
+                                        min={new Date().toISOString().split('T')[0]}
                                         style={{ 
                                             width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)',
                                             color: '#fff', padding: '12px', fontSize: '1rem', fontWeight: 800, outline: 'none'
