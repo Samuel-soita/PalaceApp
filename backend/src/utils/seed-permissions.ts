@@ -1,7 +1,7 @@
 import { prisma } from './prisma.js';
 import { PERMISSIONS } from './permissions.js';
 
-async function seedPermissions() {
+export async function seedPermissions() {
     console.log('🚀 Starting Permission Engine Seed...');
 
     // 1. Seed Permissions
@@ -70,28 +70,42 @@ async function seedPermissions() {
     };
 
     for (const [roleName, permCodes] of Object.entries(roleMap)) {
-        const role = await prisma.role.findUnique({ where: { name: roleName } });
+        const role = await prisma.role.findUnique({ 
+            where: { name: roleName },
+            include: { permissions: true }
+        });
         if (!role) continue;
 
-        const perms = allPermissions.filter(p => permCodes.includes(p.code as any));
-        
-        await prisma.rolePermission.deleteMany({ where: { roleId: role.id } });
-        await prisma.rolePermission.createMany({
-            data: perms.map(p => ({
-                roleId: role.id,
-                permissionId: p.id
-            }))
-        });
+        // CRITICAL PROTECTION: Only sync if no permissions exist OR if it's the WATUA/SUPER_ADMIN account
+        // This ensures manual changes in the UI are NOT overwritten by system re-syncs.
+        const hasExistingPerms = role.permissions.length > 0;
+        const isSystemRestricted = roleName === 'WATUA' || roleName === 'SUPER_ADMIN';
+
+        if (!hasExistingPerms || isSystemRestricted) {
+            const perms = allPermissions.filter(p => permCodes.includes(p.code as any));
+            
+            await prisma.rolePermission.deleteMany({ where: { roleId: role.id } });
+            await prisma.rolePermission.createMany({
+                data: perms.map(p => ({
+                    roleId: role.id,
+                    permissionId: p.id
+                })),
+                skipDuplicates: true
+            });
+            console.log(`📡 Linked ${perms.length} baseline capabilities to role: ${roleName}`);
+        }
     }
 
     console.log('🏁 Permission Engine Seed Complete!');
 }
 
-seedPermissions()
-    .catch(e => {
-        console.error('❌ Seed Failed:', e);
-        process.exit(1);
-    })
-    .finally(async () => {
-        await prisma.$disconnect();
-    });
+if (import.meta.url.endsWith(process.argv[1]) || process.argv[1]?.endsWith('seed-permissions.ts')) {
+    seedPermissions()
+        .catch(e => {
+            console.error('❌ Seed Failed:', e);
+            process.exit(1);
+        })
+        .finally(async () => {
+            await prisma.$disconnect();
+        });
+}

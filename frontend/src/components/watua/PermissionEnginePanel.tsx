@@ -45,6 +45,16 @@ export default function PermissionEnginePanel() {
         }
     });
 
+    const reSeedMutation = useMutation(async () => {
+        return await api.post('/permissions/re-seed');
+    }, {
+        onSuccess: () => {
+            queryClient.invalidateQueries(['permissions-roles']);
+            queryClient.invalidateQueries(['permissions-all']);
+            queryClient.invalidateQueries(['permissions-audit']);
+        }
+    });
+
     // ─── HANDLERS ─────────────────────────────────────────────────────────────
     const handleToggle = (role: any, perm: any, active: boolean) => {
         const currentPermIds = role.permissions.map((p: any) => p.permissionId);
@@ -86,7 +96,15 @@ export default function PermissionEnginePanel() {
                         CENTRAL PERMISSION MANAGEMENT & ROLE-CAPABILITY MATRIX
                     </Typography>
                 </Box>
-                <Box sx={{ display: 'flex', gap: 2 }}>
+                    <Button 
+                        variant="outlined" 
+                        color="warning"
+                        onClick={() => reSeedMutation.mutate()}
+                        disabled={reSeedMutation.isLoading}
+                        startIcon={reSeedMutation.isLoading ? <CircularProgress size={18} /> : <RefreshCcw size={18} />}
+                    >
+                        Re-Sync Engine
+                    </Button>
                     <Button 
                         variant={tab === 'MATRIX' ? 'contained' : 'outlined'} 
                         onClick={() => setTab('MATRIX')}
@@ -101,7 +119,6 @@ export default function PermissionEnginePanel() {
                     >
                         Audit Logs
                     </Button>
-                </Box>
             </Box>
 
             {tab === 'MATRIX' ? (
@@ -167,19 +184,19 @@ export default function PermissionEnginePanel() {
                                     <TableCell>
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                             <Shield size={14} color="var(--cyan)" />
-                                            {log.user.name}
+                                            {log.actor?.name || 'SYSTEM_KERNEL'}
                                         </Box>
                                     </TableCell>
                                     <TableCell>
                                         <Chip 
-                                            label={log.action} 
+                                            label={log.actionType} 
                                             size="small" 
-                                            color={log.action.includes('UPDATE') ? 'primary' : 'secondary'}
+                                            color={log.actionType?.includes('UPDATE') ? 'primary' : 'secondary'}
                                             sx={{ fontWeight: 900, borderRadius: 0, fontSize: '0.6rem' }}
                                         />
                                     </TableCell>
                                     <TableCell sx={{ color: 'text.secondary', fontSize: '0.8rem' }}>
-                                        {log.details}
+                                        {log.metadata?.details || log.details || 'Operational state change recorded.'}
                                     </TableCell>
                                 </TableRow>
                             ))}

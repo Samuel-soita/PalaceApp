@@ -66,16 +66,20 @@ import {
     PenTool,
     Key,
     ToggleLeft,
-    TrendingUp
+    TrendingUp,
+    DownloadCloud,
+    UploadCloud,
+    UserMinus
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import api from '../lib/api-client';
+import { exportQueue, importQueue } from '../lib/pwa-sync';
 import PermissionEnginePanel from '../components/watua/PermissionEnginePanel.js';
 
 interface User {
     id: string;
     name: string;
-    role: 'WATUA' | 'SUPER_ADMIN' | 'SYSTEM_ADMIN' | 'SECRETARY' | 'DEPARTMENT_LEADER' | 'MEMBER' | 'PASTOR';
+    role: 'WATUA' | 'SUPER_ADMIN' | 'SYSTEM_ADMIN' | 'SECRETARY' | 'DEPARTMENT_LEADER' | 'MEMBER' | 'PASTOR' | 'ASSOCIATE_PASTOR';
     status: string;
     isSuspended: boolean;
     membershipNumber: string;
@@ -523,14 +527,20 @@ export default function WatuaDashboard() {
                                                     <IconButton sx={{ color: '#4f8bff' }} onClick={() => setPromoteDialog({ open: true, userId: user.id, name: user.name })} title="Appoint Leader">
                                                         <UserCheck size={18} />
                                                     </IconButton>
-                                                    <IconButton sx={{ color: '#c175ff' }} onClick={() => handleAction(user.id, 'MAKE_SUPER_ADMIN')} title="Appoint Bishop">
+                                                    <IconButton sx={{ color: '#c175ff' }} onClick={() => handleAction(user.id, 'MAKE_SUPER_ADMIN')} title="Appoint Bishop (SUPER_ADMIN)">
                                                         <ShieldCheck size={18} />
                                                     </IconButton>
-                                                    <IconButton sx={{ color: '#00d4ff' }} onClick={() => handleAction(user.id, 'MAKE_SYSTEM_ADMIN')} title="Appoint Church Admin">
+                                                    <IconButton sx={{ color: '#00d4ff' }} onClick={() => handleAction(user.id, 'MAKE_SYSTEM_ADMIN')} title="Appoint Church Admin (SYSTEM_ADMIN)">
                                                         <Briefcase size={18} />
                                                     </IconButton>
                                                     <IconButton sx={{ color: '#94a3b8' }} onClick={() => handleAction(user.id, 'MAKE_SECRETARY')} title="Appoint Secretary">
                                                         <PenTool size={18} />
+                                                    </IconButton>
+                                                    <IconButton sx={{ color: '#22c55e' }} onClick={() => handleAction(user.id, 'MAKE_PASTOR')} title="Appoint Pastor">
+                                                        <Shield size={18} />
+                                                    </IconButton>
+                                                    <IconButton sx={{ color: '#0ea5e9' }} onClick={() => handleAction(user.id, 'MAKE_ASSOCIATE_PASTOR')} title="Appoint Associate Pastor">
+                                                        <UserMinus size={18} />
                                                     </IconButton>
                                                     <IconButton sx={{ color: '#ffcc00' }} onClick={() => {
                                                         setSelectedUser(user);
@@ -805,7 +815,78 @@ export default function WatuaDashboard() {
             )}
 
             {tab === 4 && (
-                <PermissionEnginePanel />
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <PermissionEnginePanel />
+                    <Card sx={{ bgcolor: '#161925', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 2 }}>
+                        <CardContent>
+                            <Box display="flex" alignItems="center" gap={2} mb={3}>
+                                <Database size={24} color="#00d4ff" />
+                                <Box>
+                                    <Typography variant="h6" color="#f8fafc">Offline Recovery Hub</Typography>
+                                    <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                                        Manage local device synchronization queue and mission integrity.
+                                    </Typography>
+                                </Box>
+                            </Box>
+                            
+                            <Grid container spacing={3}>
+                                <Grid item xs={12} md={6}>
+                                    <Box p={3} sx={{ bgcolor: 'rgba(0,212,255,0.03)', border: '1px dashed rgba(0,212,255,0.2)', borderRadius: 2 }}>
+                                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>Export Mission Queue</Typography>
+                                        <Typography variant="caption" display="block" sx={{ mb: 2, opacity: 0.7 }}>
+                                            Download all currently queued offline actions as a JSON backup for manual recovery.
+                                        </Typography>
+                                        <Button 
+                                            variant="outlined" 
+                                            startIcon={<DownloadCloud size={16} />}
+                                            onClick={exportQueue}
+                                            sx={{ color: '#00d4ff', borderColor: '#00d4ff' }}
+                                        >
+                                            Export JSON Backup
+                                        </Button>
+                                    </Box>
+                                </Grid>
+                                
+                                <Grid item xs={12} md={6}>
+                                    <Box p={3} sx={{ bgcolor: 'rgba(193,117,255,0.03)', border: '1px dashed rgba(193,117,255,0.2)', borderRadius: 2 }}>
+                                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>Import & Restore Hub</Typography>
+                                        <Typography variant="caption" display="block" sx={{ mb: 2, opacity: 0.7 }}>
+                                            Restore a mission queue from a JSON file. Warning: This will overwrite local pending actions.
+                                        </Typography>
+                                        <Button 
+                                            variant="outlined" 
+                                            component="label"
+                                            startIcon={<UploadCloud size={16} />}
+                                            sx={{ color: '#c175ff', borderColor: '#c175ff' }}
+                                        >
+                                            Upload & Restore
+                                            <input
+                                                type="file"
+                                                hidden
+                                                accept=".json"
+                                                onChange={async (e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file) {
+                                                        const reader = new FileReader();
+                                                        reader.onload = async (event) => {
+                                                            const success = await importQueue(event.target?.result as string);
+                                                            if (success) {
+                                                                alert('Mission queue restored successfully. Dispatching pending actions...');
+                                                            } else {
+                                                                alert('Failed to import recovery file. Ensure the format is a valid Palace Dispatch JSON.');
+                                                            }
+                                                        };
+                                                        reader.readAsText(file);
+                                                    }
+                                                }}
+                                            />
+                                        </Button>
+                                    </Box>
+                                </Grid>
+                            </Grid>
+                        </CardContent>
+                    </Card>
+                </Box>
             )}
 
             {tab === 5 && (
@@ -884,7 +965,7 @@ export default function WatuaDashboard() {
                         </Grid>
                     </CardContent>
                 </Card>
-            )}            {tab === 8 && (
+            )}            {tab === 7 && (
                 <Box>
                     {loading ? (
                         <Box display="flex" justifyContent="center" alignItems="center" height="50vh">
@@ -956,7 +1037,7 @@ export default function WatuaDashboard() {
                                                     />
                                                     <YAxis stroke="rgba(255,255,255,0.3)" fontSize={10} />
                                                     <Tooltip 
-                                                        contentStyle={{ bgcolor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }}
+                                                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }}
                                                         itemStyle={{ color: '#00d4ff' }}
                                                     />
                                                     <Area 

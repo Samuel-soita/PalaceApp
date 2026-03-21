@@ -1,198 +1,68 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OFFLINE DISCONTINUED</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
-
-    body {
-      font-family: 'Inter', system-ui, sans-serif;
-      background: #0c0e14;
-      color: #f8fafc;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-    }
-
-    /* Animated background grid */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(79,139,255,0.04) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(79,139,255,0.04) 1px, transparent 1px);
-      background-size: 40px 40px;
-      pointer-events: none;
-    }
-
-    .card {
-      background: rgba(22, 25, 37, 0.9);
-      border: 1px solid rgba(79, 139, 255, 0.2);
-      border-radius: 0;
-      backdrop-filter: blur(20px);
-      padding: 60px 50px;
-      text-align: center;
-      max-width: 460px;
-      width: 90%;
-      position: relative;
-      box-shadow: 0 0 60px rgba(79, 139, 255, 0.08), inset 0 1px 0 rgba(255,255,255,0.05);
-    }
-
-    .card::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, #4f8bff, #c175ff, transparent);
-    }
-
-    .icon-wrap {
-      width: 80px;
-      height: 80px;
-      margin: 0 auto 28px;
-      background: rgba(79, 139, 255, 0.1);
-      border: 1px solid rgba(79, 139, 255, 0.3);
-      border-radius: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .icon-wrap svg {
-      width: 40px;
-      height: 40px;
-      color: #4f8bff;
-    }
-
-    .label {
-      font-size: 0.65rem;
-      font-weight: 900;
-      letter-spacing: 3px;
-      color: #4f8bff;
-      text-transform: uppercase;
-      margin-bottom: 12px;
-    }
-
-    h1 {
-      font-size: 2rem;
-      font-weight: 900;
-      letter-spacing: -1px;
-      margin-bottom: 12px;
-      line-height: 1;
-    }
-
-    h1 span { color: #4f8bff; }
-
-    p {
-      font-size: 0.875rem;
-      color: #94a3b8;
-      line-height: 1.6;
-      margin-bottom: 36px;
-    }
-
-    .retry-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      background: rgba(79, 139, 255, 0.15);
-      border: 1px solid rgba(79, 139, 255, 0.4);
-      color: #f8fafc;
-      font-family: inherit;
-      font-size: 0.8rem;
-      font-weight: 900;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-      padding: 14px 32px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      border-radius: 0;
-    }
-
-    .retry-btn:hover {
-      background: rgba(79, 139, 255, 0.3);
-      box-shadow: 0 0 20px rgba(79, 139, 255, 0.3);
-      transform: translateY(-1px);
-    }
-
-    .features {
-      margin-top: 40px;
-      padding-top: 28px;
-      border-top: 1px solid rgba(255,255,255,0.07);
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      text-align: left;
-    }
-
-    .feature-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      font-size: 0.78rem;
-      color: #64748b;
-    }
-
-    .feature-row .dot {
-      width: 6px; height: 6px;
-      border-radius: 50%;
-      background: #4f8bff;
-      flex-shrink: 0;
-    }
-
-    .pulse {
-      animation: pulse 2s ease-in-out infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline | Prayer Palace</title>
+    <style>
+        body {
+            background: #0a0a0a;
+            color: #fff;
+            font-family: sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        .container {
+            text-align: center;
+            padding: 40px;
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.02);
+            backdrop-filter: blur(20px);
+            max-width: 400px;
+        }
+        .logo {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 24px;
+            opacity: 0.5;
+        }
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 900;
+            letter-spacing: -1px;
+            margin-bottom: 12px;
+            color: #00e5ff;
+        }
+        p {
+            font-size: 0.9rem;
+            opacity: 0.6;
+            line-height: 1.6;
+        }
+        .btn {
+            display: inline-block;
+            margin-top: 24px;
+            padding: 12px 24px;
+            background: #00e5ff;
+            color: #000;
+            text-decoration: none;
+            font-weight: 900;
+            font-size: 0.8rem;
+            letter-spacing: 1px;
+        }
+    </style>
 </head>
 <body>
-  <div class="card">
-    <div class="icon-wrap">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 2L3 7l9 5 9-5-9-5z"/>
-        <path d="M3 17l9 5 9-5"/>
-        <path d="M3 12l9 5 9-5"/>
-      </svg>
+    <div class="container">
+        <svg class="logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+        </svg>
+        <h1>MISSION INTERRUPTED</h1>
+        <p>You are currently operating in a zero-connectivity environment. The Palace Portal is cached, but this specific page requires a live link.</p>
+        <a href="/" class="btn">RETRY DASHBOARD</a>
     </div>
-
-    <div class="label pulse">Signal Lost</div>
-    <h1>You're <span>Offline</span></h1>
-    <p>Prayer Palace requires an active connection to sync with the command center. Check your network and try again.</p>
-
-    <button class="retry-btn" onclick="window.location.reload()">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <path d="M3 12a9 9 0 0112.9-8.1M21 12a9 9 0 01-12.9 8.1"/>
-        <polyline points="21 3 21 9 15 9"/>
-        <polyline points="3 21 3 15 9 15"/>
-      </svg>
-      Reconnect
-    </button>
-
-    <div class="features">
-      <div class="feature-row">
-        <div class="dot"></div>
-        <span>Previously visited pages are available offline</span>
-      </div>
-      <div class="feature-row">
-        <div class="dot"></div>
-        <span>Cached data from your last session is preserved</span>
-      </div>
-      <div class="feature-row">
-        <div class="dot"></div>
-        <span>Changes will sync when connection is restored</span>
-      </div>
-    </div>
-  </div>
 </body>
 </html>

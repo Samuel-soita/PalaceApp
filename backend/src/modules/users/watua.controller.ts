@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
+import { Prisma } from '@prisma/client';
 import { logAction } from '../../utils/audit.service.js';
 
 /**
@@ -20,8 +21,8 @@ export const initiateCriticalAction = async (req: any, res: Response) => {
                 engineerId: actorId,
                 actionType,
                 targetEntity,
-                beforeState: payload ? JSON.stringify(payload) : null,
-                approvalChain: JSON.stringify([{ id: actorId, role: req.user.role, date: new Date().toISOString(), type: 'INITIATOR' }]),
+                beforeState: payload || Prisma.JsonNull,
+                approvalChain: [{ id: actorId, role: req.user.role, date: new Date().toISOString(), type: 'INITIATOR' }] as any,
                 executed: false
             }
         });
@@ -54,13 +55,13 @@ export const approveCriticalAction = async (req: any, res: Response) => {
             return res.status(403).json({ error: 'Security Protocol Violation: Self-approval is strictly prohibited.' });
         }
 
-        const chain = JSON.parse(log.approvalChain as string);
+        const chain = log.approvalChain as any[];
         chain.push({ id: approverId, role: approverRole, date: new Date().toISOString(), type: 'APPROVER' });
 
         const finalized = await prisma.watuaActionLog.update({
             where: { id },
             data: { 
-                approvalChain: JSON.stringify(chain),
+                approvalChain: chain,
                 executed: true // Flagged as cleared for execution
             }
         });

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
     Dialog, DialogTitle, DialogContent, DialogActions, Box, TextField,
     MenuItem, Typography, Button, LinearProgress, FormControl, InputLabel,
-    Select, Checkbox, ListItemText
+    Select, Checkbox, ListItemText, Chip
 } from '@mui/material';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import api from '../../lib/api-client';
@@ -61,9 +61,8 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess }: 
 
     const { data: pastors } = useQuery(['pastors'], async () => {
         const res = await api.get('/users?role=PASTOR');
-        return Array.isArray(res.data) 
-            ? res.data.filter((u: any) => u.role === 'PASTOR') 
-            : [];
+        const userData = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        return userData.filter((u: any) => u.role === 'PASTOR');
     }, { enabled: open && !project });
 
     const mutation = useMutation(
@@ -88,9 +87,22 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess }: 
     };
 
     return (
-        <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 4 } }}>
+        <Dialog 
+            open={open} 
+            onClose={onClose} 
+            maxWidth="sm" 
+            fullWidth 
+            PaperProps={{ 
+                className: "holographic-card",
+                sx: { 
+                    borderRadius: 0,
+                    border: '1px solid var(--glass-border)',
+                    bgcolor: 'background.paper'
+                } 
+            }}
+        >
             <form onSubmit={handleSubmit}>
-                <DialogTitle sx={{ fontWeight: '950', fontSize: '1.5rem' }}>
+                <DialogTitle sx={{ fontWeight: '950', fontSize: '1.5rem', letterSpacing: -1 }}>
                     {project ? 'EDIT PROJECT' : 'INITIALIZE PROJECT'}
                 </DialogTitle>
                 <DialogContent>
@@ -134,11 +146,22 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess }: 
                         </Box>
                         
                         <Box>
-                            <Typography variant="caption" fontWeight="bold">PROGRESS: {formData.progress}%</Typography>
+                            <Typography variant="caption" fontWeight="900" sx={{ letterSpacing: 1, color: 'text.secondary' }}>
+                                PROGRESS: {formData.progress}%
+                            </Typography>
                             <LinearProgress
                                 variant="determinate"
                                 value={formData.progress}
-                                sx={{ height: 8, borderRadius: 4, mt: 1, cursor: 'pointer' }}
+                                sx={{ 
+                                    height: 10, 
+                                    borderRadius: 0, 
+                                    mt: 1, 
+                                    cursor: 'pointer',
+                                    bgcolor: 'rgba(255,255,255,0.05)',
+                                    '& .MuiLinearProgress-bar': {
+                                        boxShadow: '0 0 10px var(--primary-glow)'
+                                    }
+                                }}
                                 onClick={(e) => {
                                     const rect = e.currentTarget.getBoundingClientRect();
                                     const percentage = Math.round(((e.clientX - rect.left) / rect.width) * 100);
@@ -176,20 +199,36 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess }: 
                         
                         {!project && (
                             <FormControl fullWidth required>
-                                <InputLabel>Select 2 Pastors</InputLabel>
+                                <InputLabel id="pastors-label" sx={{ fontWeight: 700 }}>CHOOSE 2 AUTHORIZING PASTORS</InputLabel>
                                 <Select
+                                    labelId="pastors-label"
+                                    id="pastors-select"
                                     multiple
+                                    label="CHOOSE 2 AUTHORIZING PASTORS"
                                     value={formData.pastorIds}
+                                    sx={{ borderRadius: 0 }}
                                     onChange={(e) => {
                                         const val = e.target.value as string[];
                                         if (val.length <= 2) setFormData({ ...formData, pastorIds: val });
                                     }}
-                                    renderValue={(sel) => pastors?.filter((p: any) => sel.includes(p.id)).map((p: any) => p.name).join(', ')}
+                                    renderValue={(sel) => (
+                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                            {pastors?.filter((p: any) => sel.includes(p.id)).map((p: any) => (
+                                                <Chip 
+                                                    key={p.id} 
+                                                    label={p.name} 
+                                                    size="small" 
+                                                    sx={{ borderRadius: 0, fontWeight: 900, bgcolor: 'rgba(79, 139, 255, 0.2)', border: '1px solid var(--primary-glow)' }} 
+                                                />
+                                            ))}
+                                        </Box>
+                                    )}
                                 >
+                                    {pastors?.length === 0 && <MenuItem disabled>No Pastors found</MenuItem>}
                                     {pastors?.map((p: any) => (
-                                        <MenuItem key={p.id} value={p.id}>
-                                            <Checkbox checked={formData.pastorIds.includes(p.id)} />
-                                            <ListItemText primary={p.name} />
+                                        <MenuItem key={p.id} value={p.id} sx={{ py: 1.5 }}>
+                                            <Checkbox checked={formData.pastorIds.includes(p.id)} sx={{ color: 'var(--cyan)' }} />
+                                            <ListItemText primary={p.name} primaryTypographyProps={{ fontWeight: 700 }} />
                                         </MenuItem>
                                     ))}
                                 </Select>
@@ -197,10 +236,21 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess }: 
                         )}
                     </Box>
                 </DialogContent>
-                <DialogActions sx={{ p: 4 }}>
-                    <Button onClick={onClose}>CANCEL</Button>
-                    <Button type="submit" variant="contained" disabled={mutation.isLoading} sx={{ borderRadius: 2 }}>
-                        {project ? 'UPDATE' : 'CREATE'}
+                <DialogActions sx={{ p: 4, gap: 2 }}>
+                    <Button onClick={onClose} sx={{ fontWeight: 900, color: 'text.secondary' }}>ABORT</Button>
+                    <Button 
+                        type="submit" 
+                        variant="contained" 
+                        disabled={mutation.isLoading} 
+                        sx={{ 
+                            borderRadius: 0, 
+                            fontWeight: 900, 
+                            px: 4, 
+                            py: 1.5,
+                            boxShadow: '0 0 20px var(--primary-glow)' 
+                        }}
+                    >
+                        {project ? 'SAVE CHANGES' : 'DEPLOY PROJECT'}
                     </Button>
                 </DialogActions>
             </form>

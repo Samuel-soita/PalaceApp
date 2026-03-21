@@ -343,17 +343,24 @@ export const watuaAccess = async (req: Request, res: Response) => {
             { expiresIn: '30d' }
         );
         console.log('[WatuaAccess] Token signed');
-
-        // Create WATUA session
-        await (prisma as any).session.create({
-            data: {
-                userId: engineer.id,
-                token,
-                deviceInfo: 'WATUA_TERMINAL',
-                ipAddress: req.ip || 'Unknown IP',
-                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+        
+        // --- 4. CREATE SESSION (Safe-Fail Logic) ---
+        try {
+            if ((prisma as any).session) {
+                await (prisma as any).session.create({
+                    data: {
+                        userId: engineer.id,
+                        token,
+                        deviceInfo: 'WATUA_TERMINAL',
+                        ipAddress: req.ip || 'Unknown IP',
+                        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+                    }
+                });
+                console.log('[WatuaAccess] Session established');
             }
-        });
+        } catch (sessionErr) {
+            console.warn('[WatuaAccess] Session storage failed (Non-Blocking):', sessionErr);
+        }
 
         res.json({ user: engineer, token });
         console.log('[WatuaAccess] Success response sent');

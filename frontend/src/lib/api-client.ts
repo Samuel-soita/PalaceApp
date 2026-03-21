@@ -21,35 +21,49 @@ api.interceptors.response.use(
     async (error) => {
         const { config, response } = error;
         
-        // Only queue mutating requests (POST, PUT, DELETE)
+        // 1. CLASSIFY ERROR
         const isMutation = ['post', 'put', 'delete'].includes(config?.method?.toLowerCase() || '');
-        
-        // Queue if offline (no response) or server is temporarily unavailable (503, 504)
-        const isNetworkError = !response;
-        const isServerError = response?.status === 503 || response?.status === 504;
+        const isNetworkError = !response || response.status >= 500;
+        const isValidationError = response?.status >= 400 && response?.status < 500;
 
-        if (isMutation && (isNetworkError || isServerError)) {
-            console.warn('[API-Client] Offline or server error detected for mutation. Queuing action...', config.url);
+        // 2. STRATEGIC QUEUEING (Enterprise Logic)
+        if (isMutation && isNetworkError && !isValidationError) {
+            console.warn('[Palace-Portal] Mission Interrupted. Queuing for Resilient Dispatch...', config.url);
             
             try {
-                await queueAction({
-                    url: config.url || '',
+                // Generate Idempotency Key for this specific request
+                const idempotencyKey = crypto.randomUUID();
+                
+                // Determine Priority (High for financial/strategic, Medium for general updates)
+                const priority: 'HIGH' | 'MEDIUM' | 'LOW' = 
+                    config.url?.includes('/partnerships') || config.url?.includes('/plans') ? 'HIGH' : 'MEDIUM';
+
+                const queuedUrl = config.url?.startsWith('http') || config.url?.startsWith('/') ? config.url : `/api/${config.url}`;
+
+                const action = await queueAction({
+                    url: queuedUrl || '',
+                    idempotencyKey,
                     method: config.method?.toUpperCase() as any,
-                    data: config.data ? JSON.parse(config.data) : null,
-                    headers: config.headers,
+                    payload: config.data ? JSON.parse(config.data) : null,
+                    headers: {
+                        ...config.headers,
+                        'X-Idempotency-Key': idempotencyKey
+                    } as any,
+                    priority
                 });
 
-                // Return a fake success response to prevent UI from breaking
-                // This is an "Optimistic" approach. The user gets immediate feedback.
+                if (!action) return Promise.reject(error); // Queue overflow
+
+                // Return Optimistic Success (202 Accepted)
                 return Promise.resolve({
-                    data: { _queued: true, message: 'Action queued for offline sync' },
+                    data: { _queued: true, actionId: action.id, message: 'Mission Queued' },
                     status: 202,
                     statusText: 'Accepted (Queued)',
                     headers: {},
                     config,
                 });
             } catch (queueError) {
-                console.error('[API-Client] Failed to queue action:', queueError);
+                console.error('[Palace-Portal] Dispatch Failure:', queueError);
             }
         }
 

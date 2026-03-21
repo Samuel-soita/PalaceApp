@@ -22,8 +22,6 @@ import { useRoutePreloader } from '../../hooks/useRoutePreloader';
 // Base items for admin roles
 const adminNavItems = [
     { name: 'EXECUTIVE PALACE', href: '/', icon: LayoutDashboard },
-    { name: 'Announcements', href: '/announcements', icon: Bell },
-    { name: 'Events', href: '/calendar', icon: Calendar },
     { name: 'Support', href: '/support', icon: Coins },
 ];
 
@@ -94,9 +92,14 @@ export default function TopNavbar() {
 
     const isMember = user?.role === 'MEMBER';
     const isPastor = user?.role === 'PASTOR' || user?.role === 'ASSOCIATE_PASTOR';
+    const isDeptLeader = user?.role === 'DEPARTMENT_LEADER';
     const isHighAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'SYSTEM_ADMIN' || user?.role === 'SECRETARY';
     
-    const primaryNavItems = isMember ? memberNavItems : adminNavItems;
+    const primaryNavItems = isMember 
+        ? memberNavItems 
+        : (isPastor || isDeptLeader 
+            ? [{ name: 'EXECUTIVE PALACE', href: '/executive', icon: LayoutDashboard }]
+            : adminNavItems);
 
     // Everything shows in the drawer
     const allNavItems = isMember
@@ -106,14 +109,13 @@ export default function TopNavbar() {
               { name: 'My Profile', href: '/profile', icon: UserCheck },
           ]
         : [
-              { name: isPastor ? 'PASTORAL PALACE' : 'EXECUTIVE PALACE', href: '/', icon: LayoutDashboard },
-              ...(isHighAdmin ? [{ name: 'Departments', href: '/departments', icon: Users }] : []),
-              { name: 'Projects', href: '/projects', icon: Briefcase },
-              { name: 'Events', href: '/calendar', icon: Calendar },
-              ...(isHighAdmin ? [{ name: 'Plans', href: '/plans', icon: ClipboardList }] : []),
-              { name: 'Announcements', href: '/announcements', icon: Bell },
-              ...(isHighAdmin ? [{ name: 'Support Hub', href: '/support', icon: Coins }] : []),
-              { name: 'Register Child', href: '/register-child', icon: Baby },
+              // Restricted roles: link to /executive (triple-track view), not / (which redirects to their own dashboard)
+              { name: (isPastor || isDeptLeader) ? 'EXECUTIVE PALACE' : 'EXECUTIVE PALACE', href: (isPastor || isDeptLeader) ? '/executive' : '/', icon: LayoutDashboard },
+              ...(isHighAdmin ? [
+                  { name: 'Departments', href: '/departments', icon: Users },
+                  { name: 'Support Hub', href: '/support', icon: Coins }
+              ] : []),
+              ...(!isPastor && !isDeptLeader ? [{ name: 'Register Child', href: '/register-child', icon: Baby }] : []),
           ];
 
     const handleDrawerToggle = () => {
@@ -217,7 +219,7 @@ export default function TopNavbar() {
                             }}
                         >
                             <Church size={28} color="var(--cyan)" />
-                            {user?.role === 'MEMBER' ? "PRAYER PALACE | Portal" : user?.role?.includes('PASTOR') ? "PASTORAL PALACE | Portal" : "EXECUTIVE PALACE | Portal"}
+                            {user?.role === 'MEMBER' ? "PRAYER PALACE | Portal" : "EXECUTIVE PALACE | Portal"}
                         </Typography>
 
                         {/* Primary Horizontal Navigation */}

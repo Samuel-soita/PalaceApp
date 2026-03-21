@@ -12,6 +12,7 @@ export interface AuthRequest extends Request {
         managedDepartments?: { id: string }[];
         status?: string;
         isSuspended?: boolean;
+        canManagePartnerships?: boolean;
     };
 }
 
@@ -53,7 +54,8 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
         
         req.user = {
             ...decoded,
-            managedDepartments: user.managedDepartments || []
+            managedDepartments: (user as any).managedDepartments || [],
+            canManagePartnerships: (user as any).canManagePartnerships || false
         };
         next();
     } catch (error) {

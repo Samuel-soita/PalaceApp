@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Box, Typography, TextField, IconButton, Paper, Avatar, Drawer, Badge, useMediaQuery, useTheme } from '@mui/material';
-import { Send, MessageSquare, X, Users } from 'lucide-react';
+import { Send, MessageSquare, X, Users, Shield } from 'lucide-react';
 import { socket, connectSocket } from '../../utils/socket';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../lib/api-client';
@@ -33,17 +33,21 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
         ? (departmentId ? `dept-${departmentId}` : projectId ? `proj-${projectId}` : eventId ? `event-${eventId}` : 'church-wide')
         : [user?.id, selectedUser?.id].sort().join('-');
 
-    const { data: messages } = useQuery(['messages', roomId], async () => {
+    const { data: messages, error: messagesError } = useQuery(['messages', roomId], async () => {
         const params = activeTab === 'ROOM' 
             ? { departmentId, projectId, eventId, chatType: departmentId ? 'DEPARTMENT' : projectId ? 'PROJECT' : eventId ? 'EVENT' : 'GLOBAL' }
             : { receiverId: selectedUser?.id, chatType: 'PRIVATE' };
-        const res = await api.get('/messages', { params });
-        return res.data;
-    }, { enabled: open && (activeTab === 'ROOM' || !!selectedUser) });
+        try {
+            const res = await api.get('/messages', { params });
+            return res.data;
+        } catch (err: any) {
+            if (err.response?.status === 403) return [];
+            throw err;
+        }
+    }, { enabled: open && (activeTab === 'ROOM' || !!selectedUser), retry: false });
 
     const { data: users } = useQuery(['leaders'], async () => {
-        const res = await api.get('/users', { params: { roles: ['SUPER_ADMIN', 'PASTOR', 'DEPARTMENT_LEADER'] } });
-        // Correcting mapping: API returns { data: [...], meta: {...} }
+        const res = await api.get('/users', { params: { role: ['SUPER_ADMIN', 'PASTOR', 'DEPARTMENT_LEADER'] } });
         const userList = Array.isArray(res.data) ? res.data : (res.data.data || []);
         return userList.filter((u: any) => u.id !== user?.id);
     }, { enabled: open && activeTab === 'PRIVATE' });
@@ -229,6 +233,16 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
                                 <IconButton size="small" onClick={() => setSelectedUser(null)} sx={{ alignSelf: 'flex-start' }}>
                                     <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 900 }}>← BACK</Typography>
                                 </IconButton>
+                            )}
+                            {messagesError && (
+                                <Box sx={{ p: 4, textAlign: 'center', opacity: 0.5 }}>
+                                    <Shield size={48} style={{ opacity: 0.2, marginBottom: 16 }} />
+                                    <Typography variant="caption" fontWeight="1000" sx={{ display: 'block', letterSpacing: 1 }}>AUTHENTICATION ERROR</Typography>
+                                    <Typography variant="caption" sx={{ fontSize: '0.65rem' }}>LEADERSHIP SECURE CHANNEL DISCONNECTED</Typography>
+                                </Box>
+                            )}
+                            {!messagesError && messages?.length === 0 && (
+                                <Typography variant="caption" sx={{ textAlign: 'center', opacity: 0.3, py: 8, fontWeight: 900 }}>NO MESSAGES IN THIS FREQUENCY</Typography>
                             )}
                             {messages?.map((msg: any) => (
                                 <Box key={msg.id} sx={{ alignSelf: msg.senderId === user?.id ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>

@@ -48,18 +48,14 @@ export default function AdminDashboard() {
     const [deptFilter, setDeptFilter] = useState<string>('ALL');
     const navigate = useNavigate();
 
-    // ─── Direct Redirects for Non-Authorized Users ───────────────────────────
+    const isRestrictedRole = role === 'PASTOR' || role === 'ASSOCIATE_PASTOR' || role === 'DEPARTMENT_LEADER';
+
+    // ─── Direct Redirects for Unauthorized Users ─────────────────────────────
     useEffect(() => {
-        if (!canViewStats) {
-            if (role === 'PASTOR' || role === 'ASSOCIATE_PASTOR') {
-                navigate('/pastor', { replace: true });
-            } else if (role === 'DEPARTMENT_LEADER') {
-                navigate(`/department/${authUser?.departmentId}`, { replace: true });
-            } else {
-                navigate('/', { replace: true });
-            }
+        if (!canViewStats && !isRestrictedRole) {
+            navigate('/', { replace: true });
         }
-    }, [canViewStats, role, authUser, navigate]);
+    }, [canViewStats, isRestrictedRole, navigate]);
     const [toast, setToast] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
         open: false, message: '', severity: 'success'
     });
@@ -146,9 +142,9 @@ export default function AdminDashboard() {
 
     // ─── Stats ───────────────────────────────────────────────────────────────
 
-    const isOperationsExec = role === 'SUPER_ADMIN' || role === 'SYSTEM_ADMIN';
+    const isOperationsExec = role === 'SUPER_ADMIN' || role === 'SYSTEM_ADMIN' || isRestrictedRole;
 
-    const stats = [
+    const stats = isRestrictedRole ? [] : [
         ...(isOperationsExec ? [
             { title: 'Upcoming Events', value: filterByDept(events).filter((e: any) => new Date(e.date) >= new Date()).length, icon: Calendar, color: 'blue' },
             { title: 'Active Projects', value: filterByDept(projects).filter((p: any) => p.status === 'IN_PROGRESS').length, icon: Briefcase, color: 'purple' },
@@ -211,7 +207,7 @@ export default function AdminDashboard() {
             </Box>
 
             {/* ── Admin Quick-Action Terminal ── */}
-            {canViewStats && (
+            {canViewStats && !isRestrictedRole && (
                 <>
                     <Typography variant="caption" fontWeight="900" sx={{ letterSpacing: 2, color: 'primary.main', mb: 2, display: 'block' }}>
                         MISSION ACTION TERMINAL
@@ -279,7 +275,7 @@ export default function AdminDashboard() {
             )}
 
             {/* ── Stats Grid (Executive Only) ── */}
-            {canViewStats && (
+            {!isRestrictedRole && stats.length > 0 && (
                 <Grid container spacing={2} mb={5}>
                     {stats.map((stat) => (
                         <Grid item xs={6} sm={4} md={2} key={stat.title}>
@@ -309,7 +305,8 @@ export default function AdminDashboard() {
             )}
 
             {/* ── Department Filter ── */}
-            <Box display="flex" alignItems="center" gap={2} mb={3}>
+            {!isRestrictedRole && (
+                <Box display="flex" alignItems="center" gap={2} mb={3}>
                 <Filter size={14} color="var(--primary)" />
                 <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 1.5, color: 'primary.main' }}>FILTER BY SECTOR</Typography>
                 <FormControl size="small" sx={{ minWidth: 180 }}>
@@ -326,6 +323,7 @@ export default function AdminDashboard() {
                     </Select>
                 </FormControl>
             </Box>
+            )}
 
             {/* ── Operational Timeline ── */}
             {isOperationsExec && (
@@ -333,7 +331,7 @@ export default function AdminDashboard() {
                     <CardContent sx={{ p: { xs: 2, md: 3 } }}>
                         <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
                             <Box>
-                                <Typography variant="h6" fontWeight="950" sx={{ letterSpacing: -0.5, mb: 0.5 }}>
+                                <Typography variant="h6" fontWeight="1000" sx={{ letterSpacing: 1.5, mb: 0.5 }}>
                                     MASTER OPERATIONS TRACK
                                 </Typography>
                                 <Typography variant="caption" color="textSecondary" fontWeight="800" sx={{ letterSpacing: 1 }}>
@@ -353,10 +351,10 @@ export default function AdminDashboard() {
                     <CardContent sx={{ p: { xs: 2, md: 3 } }}>
                         <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
                             <Box>
-                                <Typography variant="h6" fontWeight="950" sx={{ letterSpacing: -0.5, mb: 0.3 }}>ALL BROADCASTS</Typography>
+                                <Typography variant="h6" fontWeight="1000" sx={{ letterSpacing: 1.5, mb: 0.3 }}>ALL BROADCASTS</Typography>
                                 <Typography variant="caption" color="textSecondary" fontWeight="800" sx={{ letterSpacing: 1 }}>URGENT · HIGH · NORMAL — COLOR CODED BY PRIORITY</Typography>
                             </Box>
-                            {canManageUsers && (
+                            {canManageUsers && !isRestrictedRole && (
                                 <Button component={Link} to="/announcements" size="small" variant="outlined"
                                     sx={{ fontSize: '0.65rem', fontWeight: 900, borderColor: 'var(--orange)', color: 'var(--orange)', '&:hover': { bgcolor: 'rgba(255,152,0,0.1)' } }}>
                                     MANAGE
@@ -374,10 +372,10 @@ export default function AdminDashboard() {
                     <CardContent sx={{ p: { xs: 2, md: 3 } }}>
                         <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
                             <Box>
-                                <Typography variant="h6" fontWeight="950" sx={{ letterSpacing: -0.5, mb: 0.3 }}>STRATEGIC INITIATIVES</Typography>
+                                <Typography variant="h6" fontWeight="1000" sx={{ letterSpacing: 1.5, mb: 0.3 }}>STRATEGIC INITIATIVES</Typography>
                                 <Typography variant="caption" color="textSecondary" fontWeight="800" sx={{ letterSpacing: 1 }}>PROJECTS — COLOR CODED BY STATUS</Typography>
                             </Box>
-                            {canManageUsers && (
+                            {canManageUsers && !isRestrictedRole && (
                                 <Button component={Link} to="/projects" size="small" variant="outlined"
                                     sx={{ fontSize: '0.65rem', fontWeight: 900, borderColor: 'var(--purple)', color: 'var(--purple)', '&:hover': { bgcolor: 'rgba(124,58,237,0.1)' } }}>
                                     MANAGE

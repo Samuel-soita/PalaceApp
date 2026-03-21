@@ -120,8 +120,10 @@ function App() {
                 <Route path="/profile" element={<PrivateRoute><ProfileModal open={true} onClose={() => window.history.back()} /></PrivateRoute>} />
                 <Route path="/pastor" element={<PrivateRoute><ExecutiveGuard><PastorsDashboard /></ExecutiveGuard></PrivateRoute>} />
                 <Route path="/department/:id" element={<PrivateRoute><DepartmentDashboard /></PrivateRoute>} />
+                <Route path="/executive" element={<PrivateRoute><ExecutiveGuard><AdminDashboard /></ExecutiveGuard></PrivateRoute>} />
                 <Route path="/watua" element={<WatuaGuard><WatuaDashboard /></WatuaGuard>} />
                 <Route path="/" element={<PrivateRoute><RootRedirect /></PrivateRoute>} />
+                <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
         </Suspense>
     );

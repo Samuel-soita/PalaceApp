@@ -1,24 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import api from '../lib/api-client';
 import {
     Typography, Grid, Card, CardContent, Box, Button, Chip, Divider, LinearProgress,
-    Avatar, Tooltip, Paper, Tabs, Tab, IconButton, Skeleton, useMediaQuery, useTheme
+    Avatar, Tooltip, Paper, IconButton, Skeleton, useMediaQuery, useTheme,
+    Table, TableBody, TableCell, TableContainer, TableHead, TableRow, 
+    InputAdornment, TextField, Modal, Backdrop, Fade, Stack, Snackbar, Alert, Badge, Container
 } from '@mui/material';
 import {
     Calendar, Users, Briefcase, ChevronRight, CheckCircle2,
     Package, TrendingUp, AlertCircle, ArrowUpRight, ShieldCheck, Plus, MapPin,
     Heart, FileText, Download, Share2, Edit, Trash2, MessageSquare, Coins, Clock, Zap, Shield,
-    User, Search, Filter
+    User, Search, Filter, Sparkles, ThumbsUp, Smile, Quote, Star, Bell, Megaphone, BookOpen, Droplet
 } from 'lucide-react';
-import { 
-    Table, TableBody, TableCell, TableContainer, TableHead, TableRow, 
-    InputAdornment, TextField
-} from '@mui/material';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
-import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { usePermission } from '../hooks/usePermission';
 import { PERMISSIONS } from '../utils/permissions';
 
@@ -27,632 +24,462 @@ import ProjectFormModal from '../components/modals/ProjectFormModal';
 import EventFormModal from '../components/modals/EventFormModal';
 import PlanFormModal from '../components/modals/PlanFormModal';
 import AnnouncementFormModal from '../components/modals/AnnouncementFormModal';
-import { DepartmentAccounts } from '../components/dashboard/DepartmentAccounts';
-
-interface TabPanelProps {
-    children?: React.ReactNode;
-    index: number;
-    value: number;
-}
-
-function TabPanel(props: TabPanelProps) {
-    const { children, value, index, ...other } = props;
-    return (
-        <div role="tabpanel" hidden={value !== index} {...other}>
-            {value === index && <Box sx={{ py: 3 }}>{children}</Box>}
-        </div>
-    );
-}
 
 export default function DepartmentDashboard() {
     const { id } = useParams();
     const { user } = useAuth();
     const { hasPermission } = usePermission();
     const queryClient = useQueryClient();
-    
-    // Permission-based flags
-    const canViewDepartment = hasPermission(PERMISSIONS.VIEW_DEPARTMENT);
-    const canManageDeptProjects = hasPermission(PERMISSIONS.MANAGE_DEPARTMENT_PROJECTS);
-    const canManageDeptEvents = hasPermission(PERMISSIONS.MANAGE_DEPARTMENT_EVENTS);
-    const canManageDeptPlans = hasPermission(PERMISSIONS.MANAGE_DEPARTMENT_PLANS);
-    const canCreateAnnouncements = hasPermission(PERMISSIONS.CREATE_ANNOUNCEMENTS);
-    const canViewGlobalStats = hasPermission(PERMISSIONS.VIEW_GLOBAL_STATS); // Equivalent to high admin
-
-    const [tabValue, setTabValue] = useState(0);
-    const [searchTerm, setSearchTerm] = useState('');
     const navigate = useNavigate();
-
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-    const isTablet = useMediaQuery(theme.breakpoints.down('md'));
 
     const effectiveId = (id && id !== 'undefined') ? id : user?.departmentId;
 
-    // Front-end access validation
+    // Permission-based flags
+    const canViewDepartment = hasPermission(PERMISSIONS.VIEW_DEPARTMENT);
+
+    // Access validation
     useEffect(() => {
         if (!canViewDepartment) {
             navigate('/', { replace: true });
             return;
         }
-        
-        // Strict isolation for leaders
         if (user?.role === 'DEPARTMENT_LEADER' && effectiveId && effectiveId !== user.departmentId) {
             navigate(`/department/${user.departmentId}`, { replace: true });
         }
     }, [canViewDepartment, effectiveId, user, navigate]);
 
-    const isAuthorized = canManageDeptProjects || canManageDeptEvents || canManageDeptPlans;
-    const isHighAdmin = canViewGlobalStats;
-
-    // Modal State
+    // Modal & Toast State
     const [projectModal, setProjectModal] = useState({ open: false, data: null });
     const [eventModal, setEventModal] = useState({ open: false, data: null });
     const [planModal, setPlanModal] = useState({ open: false, data: null });
     const [announcementModal, setAnnouncementModal] = useState({ open: false, data: null });
-
-    // Delete Mutations
-    const deleteProjectMutation = useMutation((id: string) => api.delete(`/projects/${id}`), { onSuccess: () => queryClient.invalidateQueries(['dept-projects', effectiveId]) });
-    const deleteEventMutation = useMutation((id: string) => api.delete(`/events/${id}`), { onSuccess: () => queryClient.invalidateQueries(['dept-events', effectiveId]) });
-    const deletePlanMutation = useMutation((id: string) => api.delete(`/plans/${id}`), { onSuccess: () => queryClient.invalidateQueries(['dept-plans', effectiveId]) });
-    const deleteAnnMutation = useMutation((id: string) => api.delete(`/announcements/${id}`), { onSuccess: () => queryClient.invalidateQueries(['dept-announcements', effectiveId]) });
-
-    const handleDelete = (type: string, itemId: string) => {
-        if (!window.confirm(`Are you sure you want to terminate this ${type}?`)) return;
-        if (type === 'project') deleteProjectMutation.mutate(itemId);
-        if (type === 'event') deleteEventMutation.mutate(itemId);
-        if (type === 'plan') deletePlanMutation.mutate(itemId);
-        if (type === 'announcement') deleteAnnMutation.mutate(itemId);
-    };
+    const [enrollModalOpen, setEnrollModalOpen] = useState(false);
+    const [enrollAmount, setEnrollAmount] = useState<number>(700);
+    const [toast, setToast] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({
+        open: false, message: '', severity: 'info'
+    });
 
     const isReady = !!effectiveId && effectiveId !== 'undefined';
 
     const { data: syncData, isLoading: isSyncLoading } = useQuery(['dashboard-sync', effectiveId], async () => {
         const res = await api.get('/dashboard/sync', { params: { departmentId: effectiveId } });
         return res.data;
-    }, { enabled: isReady });
+    }, { enabled: isReady, refetchInterval: 10000 });
+
+    const { data: devotion, isLoading: isDevotionLoading } = useQuery(['daily-devotion'], async () => {
+        const res = await api.get('/devotions/daily');
+        return res.data;
+    });
+
+    const devotionMutation = useMutation(async ({ type, value }: { type: string, value: string }) => {
+        return await api.post(`/devotions/${devotion?.id}/interact`, { type, value });
+    }, {
+        onSuccess: () => queryClient.invalidateQueries(['daily-devotion'])
+    });
+
+    const enrollPartnershipMutation = useMutation(
+        async (amount: number) => api.post('/users/partnership/enroll', { amount }),
+        {
+            onSuccess: (data: any) => {
+                queryClient.invalidateQueries(['dashboard-sync', effectiveId]);
+                setEnrollModalOpen(false);
+                setToast({ open: true, message: data.data.message, severity: 'success' });
+            },
+            onError: (err: any) => {
+                setToast({ open: true, message: err.response?.data?.error || 'Enrollment failed.', severity: 'error' });
+            }
+        }
+    );
+
+    if (isSyncLoading || isDevotionLoading) return (
+        <DashboardLayout>
+            <Box p={4} display="flex" flexDirection="column" gap={3}>
+                <Skeleton variant="rectangular" height={150} sx={{ borderRadius: 0 }} />
+                <Grid container spacing={4}>
+                    <Grid item xs={12} lg={7}><Skeleton variant="rectangular" height={400} sx={{ borderRadius: 0 }} /></Grid>
+                    <Grid item xs={12} lg={5}><Skeleton variant="rectangular" height={400} sx={{ borderRadius: 0 }} /></Grid>
+                </Grid>
+            </Box>
+        </DashboardLayout>
+    );
 
     const department = syncData?.departments?.find((d: any) => d.id === effectiveId);
-    const assets = syncData?.assets || [];
-    const budgets = syncData?.budgets || [];
     const announcements = syncData?.announcements || [];
     const projects = syncData?.projects || [];
     const events = syncData?.events || [];
     const plans = syncData?.plans || [];
+    const isPartner = syncData?.isPartner;
+    const settings = syncData?.ministrySettings;
+    const account = syncData?.account;
     
-    // Ushering specific logic
-    const isUshering = (department?.name?.toLowerCase().includes('ushering') || effectiveId?.includes('ushering')) && (isHighAdmin || user?.departmentId === effectiveId);
-
-    const { data: tally } = useQuery(['ushering-tally'], async () => {
-        const res = await api.get('/departments/tally');
-        return res.data;
-    }, { enabled: isUshering && isReady });
-
-    if (isSyncLoading) return (
-        <DashboardLayout>
-            <Box sx={{ mb: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'end' }}>
-                <Box display="flex" gap={2}>
-                    <Skeleton variant="circular" width={60} height={60} />
-                    <Box>
-                        <Skeleton variant="text" width={200} height={40} />
-                        <Skeleton variant="text" width={100} height={20} />
-                    </Box>
-                </Box>
-                <Skeleton variant="rectangular" width={200} height={40} sx={{ borderRadius: 2 }} />
-            </Box>
-            
-            <Grid container spacing={3} mb={4}>
-                {[1, 2, 3, 4].map(i => (
-                    <Grid item xs={12} sm={6} md={3} key={`skeleton-stat-${i}`}>
-                        <Skeleton variant="rectangular" height={120} sx={{ borderRadius: 4 }} />
-                    </Grid>
-                ))}
-            </Grid>
-            
-            <Skeleton variant="rectangular" width="100%" height={400} sx={{ borderRadius: 4 }} />
-        </DashboardLayout>
-    );
-
-    const activeProjectsCount = projects?.filter((p: any) => p.status === 'IN_PROGRESS' || p.approvalStatus === 'APPROVED').length || 0;
-    const upcomingEventsCount = events?.filter((e: any) => new Date(e.date) >= new Date() && (e.status === 'SCHEDULED' || e.approvalStatus === 'APPROVED')).length || 0;
-    
-    // Calculate total budget progression
-    const totalBudgetTarget = budgets?.reduce((acc: number, b: any) => acc + (b.targetAmount || 0), 0) || 0;
-    const totalBudgetRaised = budgets?.reduce((acc: number, b: any) => acc + (b.amountRaised || 0), 0) || 0;
-    const budgetProgressStr = totalBudgetTarget > 0 ? `${Math.round((totalBudgetRaised / totalBudgetTarget) * 100)}%` : '0%';
-
-    // Mock volunteers (since there is no volunteer model yet, we show personnel count from users endpoint ideally, but we use a placeholder for now to match the user request)
-    const volunteersCount = 12;
-
-    const stats = [
-        { title: 'Projects Active', value: activeProjectsCount, icon: Briefcase, color: 'blue' },
-        { title: 'Upcoming Events', value: upcomingEventsCount, icon: Calendar, color: 'purple' },
-        { title: 'Budget Progress', value: budgetProgressStr, icon: TrendingUp, color: 'green' },
-        { title: 'Volunteers', value: volunteersCount, icon: Users, color: 'orange' },
-    ];
-
     return (
         <DashboardLayout>
-            <Box sx={{ mb: 6, display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'start', md: 'end' }, gap: 3 }}>
-                <div>
-                    <Box display="flex" alignItems="center" gap={2} mb={1}>
-                        <div className="p-2 sm:p-3 bg-primary/10 rounded-2xl text-primary shadow-[0_0_20px_rgba(var(--primary-h),var(--primary-s),var(--primary-l),0.2)]">
-                            <ShieldCheck size={isMobile ? 28 : 36} />
-                        </div>
-                        <div>
-                            <Typography variant={isMobile ? "h5" : "h3"} fontWeight="900" className="glow-text" sx={{ letterSpacing: isMobile ? -1 : -2 }}>
-                                {department?.name} <span className="text-primary/70">Sector</span>
-                            </Typography>
-                            <Box display="flex" alignItems="center" gap={1.5}>
-                                <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-500/10 border border-green-500/20">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                                    <Typography className="neon-label" sx={{ color: 'success.main', fontSize: '0.6rem !important' }}>Operational</Typography>
-                                </div>
-                                <Typography variant="caption" color="textSecondary" sx={{ fontWeight: 800, opacity: 0.5, letterSpacing: 1 }}>HUB_CMD_v2.4</Typography>
-                            </Box>
-                        </div>
-                    </Box>
-                </div>
-            </Box>
+            <style>
+                {`
+                    @keyframes fade-in-up {
+                        from { opacity: 0; transform: translateY(30px); }
+                        to { opacity: 1; transform: translateY(0); }
+                    }
+                    .animate-fade-in-up {
+                        animation: fade-in-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+                    }
+                    @keyframes marquee-leader {
+                        0% { transform: translateX(0); }
+                        100% { transform: translateX(-50%); }
+                    }
+                    .mission-marquee-leader {
+                        display: flex;
+                        gap: 16px;
+                        animation: marquee-leader 300s linear infinite;
+                        width: max-content;
+                    }
+                    .mission-marquee-leader:hover {
+                        animation-play-state: paused;
+                    }
+                    @keyframes shine {
+                        to { background-position: 200% center; }
+                    }
+                    /* Relying on global holographic-card styles from index.css for shimmer/hover */
+                    .divine-text-premium {
+                        background: linear-gradient(90deg, #fff, var(--cyan), #fff);
+                        background-size: 200% auto;
+                        color: transparent;
+                        -webkit-background-clip: text;
+                        animation: shine 3s linear infinite;
+                        font-weight: 950;
+                    }
+                    .divine-mandate-card-leader {
+                        background: linear-gradient(135deg, rgba(0,0,0,0.6), rgba(79, 139, 255, 0.1)) !important;
+                        border: 1px solid rgba(79, 139, 255, 0.3) !important;
+                    }
+                `}
+            </style>
 
-            {/* POS QUICK ACTION GRID */}
-            <Typography variant="caption" fontWeight="900" sx={{ letterSpacing: 2, color: 'primary.main', mb: 2, display: 'block' }}>MISSION CONTROL TERMINAL</Typography>
-            <Grid container spacing={isMobile ? 1 : 2} mb={isMobile ? 4 : 8}>
-                {[
-                    ...(canManageDeptProjects ? [{ label: 'New Project', icon: Briefcase, color: 'purple', onClick: () => setProjectModal({ open: true, data: null }) }] : []),
-                    ...(canManageDeptEvents ? [{ label: 'Host Event', icon: Calendar, color: 'blue', onClick: () => setEventModal({ open: true, data: null }) }] : []),
-                    ...(canManageDeptPlans ? [{ label: 'Strategic Plan', icon: FileText, color: 'cyan', onClick: () => setPlanModal({ open: true, data: null }) }] : []),
-                    ...(canCreateAnnouncements ? [{ label: 'Broadcast', icon: AlertCircle, color: 'orange', onClick: () => setAnnouncementModal({ open: true, data: null }) }] : []),
-                    { label: 'Strategic Alignment', icon: FileText, color: 'blue', href: '/plans' },
-                    { label: 'Asset Register', icon: Shield, color: 'amber', href: '#assets' },
-                ].map((action, i) => (
-                    <Grid item xs={6} sm={4} md={2} key={i}>
-                        <Button
-                            fullWidth
-                            component={action.href ? Link : 'button'}
-                            to={action.href}
-                            onClick={action.onClick}
-                            sx={{
-                                height: isMobile ? 80 : 100,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: isMobile ? 1 : 1.5,
-                                bgcolor: 'rgba(255,255,255,0.03)',
-                                border: '1px solid var(--glass-border)',
-                                borderRadius: isMobile ? 2 : 3,
-                                color: 'white',
-                                textTransform: 'none',
-                                transition: 'all 0.3s',
-                                '&:hover': {
-                                    bgcolor: `rgba(var(--${action.color}-rgb), 0.1)`,
-                                    borderColor: `var(--${action.color})`,
-                                    transform: 'translateY(-4px)',
-                                    boxShadow: `0 8px 24px rgba(var(--${action.color}-rgb), 0.2)`
-                                }
-                            }}
-                        >
-                            <action.icon size={isMobile ? 20 : 24} color={`var(--${action.color})`} />
-                            <Typography variant="caption" fontWeight="bold" sx={{ fontSize: isMobile ? '0.65rem' : '0.75rem' }}>{action.label}</Typography>
-                        </Button>
-                    </Grid>
-                ))}
-            </Grid>
-
-            <Grid container spacing={isMobile ? 2 : 3} mb={4}>
-                {stats.map((stat) => (
-                    <Grid item xs={12} sm={6} md={3} key={stat.title}>
-                        <Card sx={{
-                            borderRadius: isMobile ? 3 : 4,
-                            border: '1px solid',
-                            borderColor: 'divider',
-                            bgcolor: 'background.paper'
-                        }}>
-                            <CardContent sx={{ p: isMobile ? 2 : 3 }}>
-                                <Box display="flex" justifyContent="space-between" alignItems="start" mb={isMobile ? 1 : 2}>
-                                    <div className={`p-1.5 sm:p-2 rounded-xl bg-${stat.color}-500/10 text-${stat.color}-600`}>
-                                        <stat.icon size={isMobile ? 18 : 20} />
-                                    </div>
-                                    <ArrowUpRight size={14} className="text-muted-foreground opacity-50" />
-                                </Box>
-                                <Typography variant={isMobile ? "h5" : "h4"} fontWeight="800" sx={{ mb: 0.5 }}>{stat.value}</Typography>
-                                <Typography variant="caption" fontWeight="bold" sx={{ color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5, fontSize: isMobile ? '0.6rem' : '0.75rem' }}>
-                                    {stat.title}
-                                </Typography>
-                            </CardContent>
-                        </Card>
-                    </Grid>
-                ))}
-            </Grid>
-
-            <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2, overflowX: 'auto' }}>
-                <Tabs 
-                    value={tabValue} 
-                    onChange={(_, v) => setTabValue(v)} 
-                    variant={isMobile ? "scrollable" : "standard"}
-                    scrollButtons={isMobile ? "auto" : false}
-                    sx={{
-                        '& .MuiTab-root': { fontWeight: 'bold', textTransform: 'none', minWidth: isMobile ? 100 : 120, fontSize: isMobile ? '0.8rem' : '0.875rem' },
-                        '& .Mui-selected': { color: 'primary.main' }
-                    }}
-                >
-                    <Tab label="Strategic Briefing" />
-                    <Tab label="Financial Tactics" />
-                    <Tab label="Intelligence Reports" />
-                    <Tab label="Initiatives" />
-                    {isUshering && (isHighAdmin || user?.departmentId === effectiveId) && <Tab label="Registry Tally" />}
-                </Tabs>
-            </Box>
-
-            <TabPanel value={tabValue} index={0}>
-                <Grid container spacing={4}>
-                    <Grid item xs={12} lg={8}>
-                        <Typography variant="h6" fontWeight="900" sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                            <Calendar size={20} /> Upcoming Syncs
+            <Container maxWidth="xl" sx={{ mt: 2 }} className="animate-fade-in-up">
+                {/* Header Section - Exactly as PastorsDashboard */}
+                <Box sx={{ mb: 6, textAlign: 'center', maxWidth: 900, mx: 'auto' }}>
+                    <Typography variant="h2" fontWeight="1000" sx={{ 
+                        background: 'linear-gradient(45deg, #fff, var(--cyan))',
+                        WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                        mb: 1, letterSpacing: -3, fontSize: { xs: '2.5rem', md: '4rem' }
+                    }}>
+                        {department?.name?.toUpperCase()}
+                    </Typography>
+                    
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+                        <Typography variant="subtitle1" fontWeight="800" color="textSecondary">
+                            <span style={{ color: 'var(--cyan)' }}>{user?.name?.toUpperCase()}</span>
                         </Typography>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            {department?.meetings?.length > 0 ? department.meetings.map((meeting: any) => (
-                                <Card key={meeting.id} sx={{
-                                    borderRadius: 4,
-                                    border: '1px solid',
-                                    borderColor: 'divider',
-                                    '&:hover': { borderColor: 'primary.main' }
-                                }} elevation={0}>
-                                    <CardContent sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'start', sm: 'center' }, justifyContent: 'space-between', p: isMobile ? 2 : 3, gap: 2 }}>
-                                        <Box display="flex" alignItems="center" gap={isMobile ? 2 : 3}>
-                                            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-primary/5 flex flex-col items-center justify-center text-primary border border-primary/10 shrink-0">
-                                                <Typography variant="caption" fontWeight="900" sx={{ fontSize: '0.6rem' }}>{new Date(meeting.date).toLocaleString('default', { month: 'short' }).toUpperCase()}</Typography>
-                                                <Typography variant={isMobile ? "subtitle1" : "h6"} fontWeight="900" sx={{ mt: -0.5 }}>{new Date(meeting.date).getDate()}</Typography>
-                                            </div>
-                                            <div>
-                                                <Typography variant="subtitle1" fontWeight="800" sx={{ fontSize: { xs: '0.9rem', sm: '1rem' } }}>{meeting.title}</Typography>
-                                                <Typography variant="caption" color="textSecondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                    <MapPin size={12} /> {meeting.venue} • {meeting.time}
-                                                </Typography>
-                                            </div>
-                                        </Box>
-                                        <Button variant="text" size="small" color="primary" fullWidth={isMobile} sx={{ fontWeight: 'bold' }} endIcon={<ChevronRight size={16} />}>
-                                            Details
-                                        </Button>
-                                    </CardContent>
-                                </Card>
-                            )) : (
-                                <Paper sx={{ p: 6, textAlign: 'center', borderRadius: 4, border: '1px dashed', borderColor: 'divider', bgcolor: 'transparent' }}>
-                                    <Typography color="textSecondary" fontWeight="medium">No briefings scheduled.</Typography>
-                                </Paper>
-                            )}
-                        </Box>
+                        <Chip label={user?.role?.replace('_', ' ')} size="small" sx={{ bgcolor: 'rgba(0, 255, 255, 0.1)', color: 'var(--cyan)', fontWeight: 900, borderRadius: 0 }} />
+                        {isPartner && (
+                            <Chip 
+                                icon={<Star size={12} />}
+                                label="COVENANT PARTNER" 
+                                size="small" 
+                                sx={{ bgcolor: 'rgba(255, 165, 0, 0.1)', color: 'orange', fontWeight: 950, borderRadius: 0, border: '1px solid rgba(255, 165, 0, 0.3)', '.MuiChip-icon': { color: 'orange' } }} 
+                            />
+                        )}
+                    </Box>
 
-                        <Box display="flex" justifyContent="space-between" alignItems="center" mt={6} mb={3}>
-                            <Typography variant="h6" fontWeight="900" sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                <AlertCircle size={20} className="text-primary" /> Department Announcements
-                            </Typography>
-                            {isAuthorized && (
-                                <IconButton size="small" onClick={() => setAnnouncementModal({ open: true, data: null })}><Plus size={20} /></IconButton>
-                            )}
-                        </Box>
-                        <div className="space-y-4">
-                            {announcements?.length > 0 ? announcements.map((ann: any) => (
-                                <Card key={ann.id} sx={{
-                                    borderRadius: 4,
-                                    border: '1px solid',
-                                    borderColor: 'divider',
-                                    bgcolor: ann.priority === 'HIGH' ? 'error.main/5' : 'transparent',
-                                    '&:hover': { borderColor: 'primary.main' }
-                                }} elevation={0}>
-                                    <CardContent sx={{ p: 3 }}>
-                                        <Box display="flex" justifyContent="space-between" alignItems="start" mb={1}>
-                                            <Typography variant="subtitle1" fontWeight="900">{ann.title}</Typography>
-                                            <Box display="flex" gap={1} alignItems="center">
-                                                {ann.priority === 'HIGH' && (
-                                                    <Chip label="CRITICAL" color="error" size="small" sx={{ fontWeight: 'bold', fontSize: '0.6rem', height: 18 }} />
-                                                )}
-                                                {(isHighAdmin || canCreateAnnouncements) && (
-                                                    <>
-                                                        <IconButton size="small" onClick={() => setAnnouncementModal({ open: true, data: ann })}><Edit size={14} /></IconButton>
-                                                        <IconButton size="small" color="error" onClick={() => handleDelete('announcement', ann.id)}><Trash2 size={14} /></IconButton>
-                                                    </>
-                                                )}
-                                            </Box>
-                                        </Box>
-                                        <Typography variant="body2" color="textSecondary" sx={{ mb: 2, opacity: 0.8 }}>{ann.content}</Typography>
-                                        <Box display="flex" justifyContent="space-between" alignItems="center">
-                                            <Box display="flex" alignItems="center" gap={1}>
-                                                <Avatar sx={{ width: 20, height: 20, fontSize: '0.6rem' }}>{ann.author?.name?.charAt(0)}</Avatar>
-                                                <Typography variant="caption" fontWeight="bold">{ann.author?.name}</Typography>
-                                            </Box>
-                                            <Typography variant="caption" color="textSecondary">{new Date(ann.createdAt).toLocaleDateString()}</Typography>
-                                        </Box>
-                                    </CardContent>
-                                </Card>
-                            )) : (
-                                <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 4, border: '1px dashed', borderColor: 'divider', bgcolor: 'transparent' }}>
-                                    <Typography color="textSecondary" variant="body2">No tactical alerts at this time.</Typography>
-                                </Paper>
-                            )}
-                        </div>
-                    </Grid>
-                    <Grid item xs={12} lg={4}>
-                        <Typography variant="h6" fontWeight="900" sx={{ mb: 3 }}>Command Insight</Typography>
-                        <Card sx={{
-                            borderRadius: 4,
-                            bgcolor: 'primary.dark',
-                            backgroundImage: 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 100%)',
-                            color: 'white',
-                            p: 3
-                        }}>
-                            <Box display="flex" alignItems="center" gap={2} mb={4}>
-                                <Avatar 
-                                    src={department?.leaders?.[0]?.avatarUrl || user?.avatarUrl}
-                                    sx={{ width: 50, height: 50, bgcolor: 'white/10' }}
-                                >
-                                    {!(department?.leaders?.[0]?.avatarUrl || user?.avatarUrl) && (department?.leaders?.[0]?.name?.charAt(0) || user?.name?.charAt(0))}
-                                </Avatar>
-                                <div>
-                                    <Typography variant="h6" fontWeight="900">{department?.leaders?.[0]?.name || user?.name}</Typography>
-                                    <Typography variant="caption" sx={{ opacity: 0.6, fontWeight: 'bold' }}>Department Commander</Typography>
-                                </div>
-                            </Box>
-                            <Box display="flex" flexDirection="column" gap={2}>
-                                <div className="flex justify-between items-center text-sm p-2 rounded-lg bg-white/5 border border-white/10">
-                                    <span className="opacity-70">Deployment Level</span>
-                                    <span className="font-bold">Active</span>
-                                </div>
-                                <div className="flex justify-between items-center text-sm p-2 rounded-lg bg-white/5 border border-white/10">
-                                    <span className="opacity-70">Tech Index</span>
-                                    <span className="font-bold text-green-400">Stable</span>
-                                </div>
-                            </Box>
-                        </Card>
-                    </Grid>
-                </Grid>
-            </TabPanel>
-
-            <TabPanel value={tabValue} index={1}>
-                <DepartmentAccounts departmentId={effectiveId as string} />
-            </TabPanel>
-
-            <TabPanel value={tabValue} index={2}>
-                <Typography variant="h6" fontWeight="900" sx={{ mb: 3 }}>Command Intelligence</Typography>
-                <div className="space-y-4">
-                    {[
-                        { title: 'Monthly Strategic Report', date: 'Feb 2026', size: '2.4 MB' },
-                        { title: 'Personnel Readiness Audit', date: 'Jan 2026', size: '1.2 MB' },
-                        { title: 'Quarterly Financial Prospectus', date: 'Q1 2026', size: '3.8 MB' },
-                    ].map((report, i) => (
-                        <Card key={i} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider' }}>
-                            <CardContent sx={{ p: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <Box display="flex" alignItems="center" gap={3}>
-                                    <div className="p-2 bg-action-hover rounded-lg">
-                                        <FileText size={24} className="text-primary" />
-                                    </div>
-                                    <div>
-                                        <Typography fontWeight="800">{report.title}</Typography>
-                                        <Typography variant="caption" color="textSecondary">{report.date} • {report.size}</Typography>
-                                    </div>
-                                </Box>
-                                <Box display="flex" gap={1}>
-                                    <IconButton size="small"><Download size={18} /></IconButton>
-                                    <IconButton size="small"><Share2 size={18} /></IconButton>
-                                </Box>
-                            </CardContent>
-                        </Card>
-                    ))}
-                </div>
-            </TabPanel>
-
-            <TabPanel value={tabValue} index={3}>
-                <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
-                    <Typography variant="h6" fontWeight="900">Initiative Tactical Board</Typography>
-                    <Box display="flex" gap={1}>
-                        {canManageDeptProjects && <Button size="small" variant="contained" startIcon={<Plus size={16}/>} onClick={() => setProjectModal({ open: true, data: null })}>PROJECT</Button>}
-                        {canManageDeptEvents && <Button size="small" variant="contained" startIcon={<Plus size={16}/>} onClick={() => setEventModal({ open: true, data: null })}>EVENT</Button>}
+                    <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
+                        <Chip 
+                            label={`YEAR: ${settings?.themeOfYear || 'YEAR OF DIVINE ESTABLISHMENT'}`} 
+                            size="small" 
+                            sx={{ bgcolor: 'rgba(79, 139, 255, 0.1)', color: 'var(--primary)', fontWeight: 900, borderRadius: 0 }} 
+                        />
+                        <Chip 
+                            label={`MONTH: ${settings?.themeOfMonth || 'MONTH OF NEW BEGINNINGS'}`} 
+                            size="small" 
+                            sx={{ bgcolor: 'rgba(0, 180, 216, 0.1)', color: 'var(--cyan)', fontWeight: 900, borderRadius: 0 }} 
+                        />
                     </Box>
                 </Box>
 
                 <Grid container spacing={4}>
-                    {/* PENDING APPROVALS */}
-                    <Grid item xs={12}>
-                        <Typography variant="subtitle2" fontWeight="900" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main', letterSpacing: 1 }}>
-                            <Clock size={16} /> PENDING AUTHORIZATION
-                        </Typography>
-                        <Grid container spacing={2}>
-                            {[
-                                ...(projects?.filter((p: any) => p.approvalStatus === 'PENDING_APPROVAL') || []),
-                                ...(events?.filter((e: any) => e.approvalStatus === 'PENDING_APPROVAL') || []),
-                                ...(plans?.filter((pl: any) => pl.approvalStatus === 'PENDING_APPROVAL') || []),
-                                ...(announcements?.filter((a: any) => a.status === 'PENDING') || [])
-                            ].map((item: any, i: number) => (
-                                <Grid item xs={12} sm={6} md={4} lg={3} key={`pending-${i}`}>
-                                    <Card sx={{ borderRadius: 3, border: '1px solid var(--glass-border)', bgcolor: 'rgba(255,152,0,0.03)' }}>
-                                        <CardContent sx={{ p: 2 }}>
-                                            <Box display="flex" justifyContent="space-between" alignItems="start">
-                                                <Typography variant="body2" fontWeight="800" noWrap sx={{ maxWidth: '70%' }}>{item.title}</Typography>
-                                                <Chip label={item.isMajor ? "MAJOR" : "LOCAL"} size="small" variant="outlined" sx={{ height: 16, fontSize: '0.6rem', fontWeight: 'bold' }} />
-                                            </Box>
-                                            <Typography variant="caption" color="textSecondary" display="block" sx={{ mt: 0.5 }}>{item.isMajor ? "Requires Bishop + 2 Pastors" : "Requires 2 Pastors"}</Typography>
-                                            <Box display="flex" justifyContent="space-between" mt={2} alignItems="center">
-                                                <Chip label="Awaiting Signatures" size="small" sx={{ height: 18, fontSize: '0.6rem' }} />
-                                                <Box>
-                                                    <IconButton size="small" onClick={() => {
-                                                        if (item.budget !== undefined) setProjectModal({ open: true, data: item });
-                                                        else if (item.date) setEventModal({ open: true, data: item });
-                                                        else if (item.type) setPlanModal({ open: true, data: item });
-                                                        else setAnnouncementModal({ open: true, data: item });
-                                                    }}><Edit size={12}/></IconButton>
-                                                </Box>
-                                            </Box>
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-                            ))}
-                            {[
-                                ...(projects?.filter((p: any) => p.approvalStatus === 'PENDING_APPROVAL') || []),
-                                ...(events?.filter((e: any) => e.approvalStatus === 'PENDING_APPROVAL') || []),
-                                ...(plans?.filter((pl: any) => pl.approvalStatus === 'PENDING_APPROVAL') || []),
-                                ...(announcements?.filter((a: any) => a.status === 'PENDING') || [])
-                            ].length === 0 && (
-                                <Grid item xs={12}>
-                                    <Typography variant="caption" sx={{ opacity: 0.5 }}>No items pending authorization.</Typography>
-                                </Grid>
-                            )}
-                        </Grid>
-                        <Divider sx={{ my: 4 }} />
-                    </Grid>
+                    {/* LEFT COLUMN (7): SPIRITUAL & LOCAL TACTICAL */}
+                    <Grid item xs={12} lg={7}>
+                        <Stack spacing={4}>
+                            {/* INTERACTIVE DEVOTION - Now Holographic */}
+                            <Card className="holographic-card" sx={{ borderRadius: 0 }}>
+                                <CardContent sx={{ p: isMobile ? 3 : 4 }}>
+                                    <Box display="flex" alignItems="center" gap={2} mb={2}>
+                                        <Sparkles size={24} color="var(--cyan)" />
+                                        <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>MINISTERIAL DEVOTION</Typography>
+                                    </Box>
+                                    <Chip 
+                                        label={devotion?.themeOfMonth?.toUpperCase() || settings?.themeOfMonth?.toUpperCase()} 
+                                        size="small" variant="outlined" 
+                                        sx={{ color: 'var(--cyan)', borderColor: 'var(--cyan-glow)', fontWeight: 900, mb: 3 }} 
+                                    />
+                                    
+                                    <Typography variant="h4" fontWeight="950" sx={{ mb: 2, color: 'primary.main', opacity: 0.9 }}>{devotion?.title}</Typography>
+                                    <Typography variant="body1" sx={{ mb: 4, lineHeight: 1.8, fontSize: '1.1rem', opacity: 0.8, fontStyle: 'italic' }}>
+                                        "{devotion?.content}"
+                                    </Typography>
 
-                    {/* ACTIVE INITIATIVES */}
-                    <Grid item xs={12}>
-                        <Typography variant="subtitle2" fontWeight="900" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1, color: 'success.main', letterSpacing: 1 }}>
-                            <Zap size={16} /> ACTIVE MISSIONS
-                        </Typography>
-                        <Grid container spacing={2}>
-                            {[
-                                ...(projects?.filter((p: any) => p.approvalStatus === 'APPROVED' && p.status !== 'COMPLETED') || []),
-                                ...(events?.filter((e: any) => e.approvalStatus === 'APPROVED' && e.status !== 'COMPLETED' && new Date(e.date) >= new Date()) || []),
-                                ...(plans?.filter((pl: any) => pl.approvalStatus === 'APPROVED') || [])
-                            ].map((item: any, i: number) => (
-                                <Grid item xs={12} sm={6} md={4} lg={3} key={`active-${i}`}>
-                                    <Card sx={{ borderRadius: 3, border: '1px solid var(--glass-border)', bgcolor: 'rgba(76,175,80,0.03)' }}>
-                                        <CardContent sx={{ p: 2 }}>
-                                            <Box display="flex" justifyContent="space-between" alignItems="start">
-                                                <Typography variant="body2" fontWeight="800" noWrap sx={{ maxWidth: '70%' }}>{item.title}</Typography>
-                                                {item.isMajor && <Chip label="MAJOR" color="primary" size="small" sx={{ height: 16, fontSize: '0.6rem', fontWeight: 'bold' }} />}
-                                            </Box>
-                                            <Box display="flex" justifyContent="space-between" mt={2} alignItems="center">
-                                                <Chip label={item.status || "ACTIVE"} size="small" color="success" sx={{ height: 18, fontSize: '0.6rem' }} />
-                                                <Typography variant="caption" color="textSecondary">{item.date ? new Date(item.date).toLocaleDateString() : (item.progress !== undefined ? `${item.progress}%` : '')}</Typography>
-                                            </Box>
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-                            ))}
-                        </Grid>
-                        <Divider sx={{ my: 4 }} />
-                    </Grid>
+                                    <Divider sx={{ mb: 3, opacity: 0.1 }} />
 
-                    {/* COMPLETED INITIATIVES */}
-                    <Grid item xs={12}>
-                        <Typography variant="subtitle2" fontWeight="900" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1, opacity: 0.6, letterSpacing: 1 }}>
-                            <CheckCircle2 size={16} /> ARCHIVED / COMPLETED
-                        </Typography>
-                        <Grid container spacing={2}>
-                            {[
-                                ...(projects?.filter((p: any) => p.status === 'COMPLETED') || []),
-                                ...(events?.filter((e: any) => e.status === 'COMPLETED' || new Date(e.date) < new Date()) || []),
-                                ...(announcements?.filter((a: any) => a.status === 'PUBLISHED') || [])
-                            ].slice(0, 8).map((item: any, i: number) => (
-                                <Grid item xs={12} sm={6} md={3} key={`completed-${i}`}>
-                                    <Card sx={{ borderRadius: 2, border: '1px solid var(--glass-border)', opacity: 0.6 }}>
-                                        <CardContent sx={{ p: 2 }}>
-                                            <Typography variant="caption" fontWeight="bold" noWrap display="block">{item.title}</Typography>
-                                            <Typography variant="caption" color="textSecondary">{item.date ? new Date(item.date).toLocaleDateString() : 'ARCHIVED'}</Typography>
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-                            ))}
-                        </Grid>
-                    </Grid>
-                </Grid>
-            </TabPanel>
+                                    <Box display="flex" justifyContent="space-between" alignItems="center">
+                                        <Stack direction="row" spacing={1}>
+                                            {[
+                                                { icon: ThumbsUp, label: 'Amen', value: 'AMEN', type: 'AMEN' },
+                                                { icon: Smile, label: 'Blessed', value: '😊', type: 'EMOJI' },
+                                                { icon: Heart, label: 'Love', value: '❤️', type: 'EMOJI' },
+                                            ].map((btn) => {
+                                                const count = devotion?.interactions?.filter((i: any) => i.value === btn.value).length || 0;
+                                                const isActive = devotion?.interactions?.some((i: any) => i.value === btn.value && i.userId === user?.id);
+                                                return (
+                                                    <Button key={btn.value} size="small" startIcon={<btn.icon size={16} />} onClick={() => devotionMutation.mutate({ type: btn.type, value: btn.value })}
+                                                        sx={{ 
+                                                            borderRadius: 20, px: 2, 
+                                                            bgcolor: isActive ? 'rgba(0,180,216,0.2)' : 'rgba(255,255,255,0.03)', 
+                                                            color: isActive ? 'var(--cyan)' : 'inherit', 
+                                                            border: isActive ? '1px solid var(--cyan)' : '1px solid transparent',
+                                                            '&:hover': { bgcolor: 'rgba(0,180,216,0.1)' }
+                                                        }}
+                                                    >
+                                                        {btn.label} {count > 0 && `(${count})`}
+                                                    </Button>
+                                                );
+                                            })}
+                                        </Stack>
+                                        <Typography variant="caption" fontWeight="900" sx={{ opacity: 0.4 }}>{new Date().toLocaleDateString()}</Typography>
+                                    </Box>
+                                </CardContent>
+                            </Card>
 
-            <TabPanel value={tabValue} index={4}>
-                <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-                    <Typography variant="h6" fontWeight="900">Registry Tally & Lineage Mapping</Typography>
-                    <TextField 
-                        size="small"
-                        placeholder="Search members..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        InputProps={{
-                            startAdornment: (
-                                <InputAdornment position="start">
-                                    <Search size={18} className="text-secondary" />
-                                </InputAdornment>
-                            ),
-                            sx: { bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 2, width: 300 }
-                        }}
-                    />
-                </Box>
-                
-                <TableContainer component={Paper} className="holographic-card" sx={{ maxHeight: 600 }}>
-                    <Table stickyHeader size="small">
-                        <TableHead>
-                            <TableRow>
-                                <TableCell sx={{ bgcolor: '#0c0e14', fontWeight: 900 }}>MEMBER / LINEAGE</TableCell>
-                                <TableCell sx={{ bgcolor: '#0c0e14', fontWeight: 900 }}>PHONE</TableCell>
-                                <TableCell sx={{ bgcolor: '#0c0e14', fontWeight: 900 }}>CARD ID</TableCell>
-                                <TableCell sx={{ bgcolor: '#0c0e14', fontWeight: 900 }}>STATUS</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {tally?.details?.users?.filter((u: any) => 
-                                u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                                u.membershipNumber?.toLowerCase().includes(searchTerm.toLowerCase())
-                            ).map((u: any) => (
-                                <React.Fragment key={u.id}>
-                                    <TableRow sx={{ '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' } }}>
-                                        <TableCell sx={{ py: 1.5 }}>
-                                            <Box display="flex" alignItems="center" gap={1.5}>
-                                                <Avatar sx={{ width: 28, height: 28, fontSize: '0.75rem', bgcolor: 'primary.main' }}>
-                                                    {u.name.charAt(0)}
-                                                </Avatar>
-                                                <Box>
-                                                    <Typography variant="body2" fontWeight="800">{u.name}</Typography>
-                                                    <Typography variant="caption" color="textSecondary" fontWeight="bold" sx={{ fontSize: '0.62rem' }}>
-                                                        {u.role.split('_').join(' ')}
-                                                    </Typography>
-                                                </Box>
-                                            </Box>
-                                        </TableCell>
-                                        <TableCell sx={{ fontWeight: 600, color: 'var(--cyan)' }}>{u.phoneNumber || '—'}</TableCell>
-                                        <TableCell sx={{ opacity: 0.6, fontSize: '0.75rem' }}>{u.membershipNumber}</TableCell>
-                                        <TableCell>
-                                            <Chip label={u.status} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.6rem', fontWeight: 900 }} />
-                                        </TableCell>
-                                    </TableRow>
-                                    {u.children && u.children.length > 0 && u.children.map((child: any) => (
-                                        <TableRow key={child.id} sx={{ bgcolor: 'rgba(255,255,255,0.01)' }}>
-                                            <TableCell sx={{ pl: 8, py: 0.5 }}>
-                                                <Box display="flex" alignItems="center" gap={1}>
-                                                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'var(--orange)' }} />
-                                                    <Typography variant="caption" fontWeight="bold">
-                                                        Child: {child.name} <span style={{ opacity: 0.4 }}>(Age: {child.age})</span>
-                                                    </Typography>
-                                                </Box>
-                                            </TableCell>
-                                            <TableCell colSpan={3} />
-                                        </TableRow>
+                            {/* TACTICAL PROGRESSION GRID */}
+                            <Box>
+                                <Typography variant="caption" fontWeight="900" sx={{ letterSpacing: 2, color: 'var(--cyan)', mb: 2, display: 'block', textAlign: 'center' }}>TACTICAL MISSIONS</Typography>
+                                <Grid container spacing={2}>
+                                    {[
+                                        { label: 'NEW PROJECT', icon: Briefcase, color: 'cyan', onClick: () => setProjectModal({ open: true, data: null }) },
+                                        { label: 'HOST EVENT', icon: Calendar, color: 'primary', onClick: () => setEventModal({ open: true, data: null }) },
+                                        { label: 'STRATEGIC PLAN', icon: FileText, color: 'cyan', onClick: () => setPlanModal({ open: true, data: null }) },
+                                    ].map((action, i) => (
+                                        <Grid item xs={12} sm={4} key={i}>
+                                            <Button fullWidth onClick={action.onClick}
+                                                className="holographic-card"
+                                                sx={{ 
+                                                    height: 90, display: 'flex', flexDirection: 'column', gap: 1, 
+                                                    border: '1px solid var(--glass-border)', borderRadius: 0, color: 'white',
+                                                    '&:hover': { bgcolor: 'rgba(0,255,255,0.05)', borderColor: 'var(--cyan)', transform: 'translateY(-2px)' }
+                                                }}
+                                            >
+                                                <action.icon size={20} color={`var(--${action.color})`} />
+                                                <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>{action.label}</Typography>
+                                            </Button>
+                                        </Grid>
                                     ))}
-                                </React.Fragment>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
-            </TabPanel>
+                                </Grid>
+                            </Box>
 
-            {/* Inline CRUD Modals */}
-            <ProjectFormModal
-                open={projectModal.open}
-                onClose={() => setProjectModal({ open: false, data: null })}
-                project={projectModal.data}
-                onSuccess={() => queryClient.invalidateQueries(['dept-projects', effectiveId])}
-            />
-            <EventFormModal
-                open={eventModal.open}
-                onClose={() => setEventModal({ open: false, data: null })}
-                event={eventModal.data}
-                onSuccess={() => queryClient.invalidateQueries(['dept-events', effectiveId])}
-            />
-            <PlanFormModal
-                open={planModal.open}
-                onClose={() => setPlanModal({ open: false, data: null })}
-                plan={planModal.data}
-                onSuccess={() => queryClient.invalidateQueries(['dept-plans', effectiveId])}
-            />
-            <AnnouncementFormModal
-                open={announcementModal.open}
-                onClose={() => setAnnouncementModal({ open: false, data: null })}
-                announcement={announcementModal.data}
-                onSuccess={() => queryClient.invalidateQueries(['dept-announcements', effectiveId])}
-            />
+                            {/* MISSION STREAM MARQUEE - Exactly as PastorsDashboard */}
+                            <Box sx={{ mb: 4, overflow: 'hidden' }}>
+                                <Typography variant="caption" fontWeight="900" sx={{ letterSpacing: 2, color: 'var(--cyan)', mb: 2, display: 'block' }}>CHURCH-WIDE TELEMETRY</Typography>
+                                <Box className="mission-marquee-leader">
+                                    {[...announcements, ...events, ...projects].map((item: any, i) => (
+                                        <Box key={`mq-${i}`} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2 }}>
+                                            <div className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
+                                            <Typography variant="caption" fontWeight="1000" sx={{ whiteSpace: 'nowrap', opacity: 0.8 }}>
+                                                {item.intelType || 'MISSION'}: {item.title?.toUpperCase()}
+                                            </Typography>
+                                        </Box>
+                                    ))}
+                                </Box>
+                            </Box>
+
+                             {/* SECTOR FINANCIAL TELEMETRY - Restored & Holographic */}
+                             <Card className="holographic-card" sx={{ borderRadius: 0, border: '1px solid var(--glass-border)', background: 'linear-gradient(to right, rgba(0,255,0,0.03), transparent)' }}>
+                                <CardContent sx={{ p: 4 }}>
+                                    <Box display="flex" alignItems="center" gap={1.5} mb={2}>
+                                        <Coins size={20} color="var(--cyan)" />
+                                        <Typography variant="caption" fontWeight="1000" sx={{ letterSpacing: 2 }}>FINANCIAL LEDGER</Typography>
+                                    </Box>
+                                    <Grid container spacing={2}>
+                                        <Grid item xs={6}>
+                                            <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>AVAILABLE BUDGET</Typography>
+                                            <Typography variant="h4" fontWeight="950" sx={{ color: 'success.main', letterSpacing: -1 }}>
+                                                KES {account?.balance?.toLocaleString() || '0'}
+                                            </Typography>
+                                        </Grid>
+                                        <Grid item xs={6}>
+                                            <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>TOTAL ALLOCATED</Typography>
+                                            <Typography variant="h4" fontWeight="950" sx={{ opacity: 0.8 }}>
+                                                KES {account?.totalIncome?.toLocaleString() || '0'}
+                                            </Typography>
+                                        </Grid>
+                                    </Grid>
+                                    <Box sx={{ mt: 4, bgcolor: 'rgba(0,0,0,0.2)', p: 2, borderRadius: 0, border: '1px solid rgba(255,255,255,0.05)' }}>
+                                        <Box display="flex" justifyContent="space-between" mb={1}>
+                                            <Typography variant="caption" fontWeight="900" sx={{ opacity: 0.6 }}>BUDGET UTILIZATION</Typography>
+                                            <Typography variant="caption" fontWeight="900" color="success.main">
+                                                {account?.totalIncome ? Math.round((account.totalExpenditure / account.totalIncome) * 100) : 0}%
+                                            </Typography>
+                                        </Box>
+                                        <LinearProgress 
+                                            variant="determinate" 
+                                            value={account?.totalIncome ? (account.totalExpenditure / account.totalIncome) * 100 : 0} 
+                                            sx={{ height: 4, borderRadius: 0, bgcolor: 'rgba(255,255,255,0.03)', '& .MuiLinearProgress-bar': { bgcolor: 'var(--cyan)' } }} 
+                                        />
+                                    </Box>
+                                </CardContent>
+                            </Card>
+                        </Stack>
+                    </Grid>
+
+                    {/* RIGHT COLUMN (5): OPERATIONS & GLOBAL INTELLIGENCE */}
+                    <Grid item xs={12} lg={5}>
+                        <Stack spacing={4}>
+                            {/* LATEST CHURCH INTEL - Unified Card Structure */}
+                            <Card className="holographic-card" sx={{ p: 0, borderRadius: 0 }}>
+                                <CardContent sx={{ p: 3 }}>
+                                    <Box display="flex" alignItems="center" gap={1.5} mb={3}>
+                                        <Bell size={20} color="var(--primary)" />
+                                        <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 2 }}>LATEST MISSION COMMAND INTEL</Typography>
+                                    </Box>
+                                    <Stack spacing={2}>
+                                        {(() => {
+                                            const globalIntel = [
+                                                ...(announcements || []).filter((a: any) => a.isGlobal).map((a: any) => ({ ...a, intelType: 'CHURCH UPDATE', icon: Megaphone, color: 'cyan' })),
+                                                ...(events || []).filter((e: any) => e.isMajor).map((e: any) => ({ ...e, intelType: 'MAJOR EVENT', icon: Calendar, color: 'primary' })),
+                                                ...(projects || []).filter((p: any) => p.isMajor).map((p: any) => ({ ...p, intelType: 'STRATEGIC PROJECT', icon: Star, color: 'cyan' })),
+                                                ...(plans || []).filter((p: any) => p.isMajor).map((p: any) => ({ ...p, intelType: 'MINISTRY PLAN', icon: BookOpen, color: 'orange' })),
+                                            ].sort((a,b) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime()).slice(0, 10);
+
+                                            if (globalIntel.length === 0) return <Typography variant="caption" sx={{ textAlign: 'center', opacity: 0.3, py: 4, fontWeight: 900 }}>NO GLOBAL INTEL REPORTED</Typography>;
+
+                                            return globalIntel.map((intel) => (
+                                                <Card key={`${intel.intelType}-${intel.id}`} sx={{ p: 0, bgcolor: 'rgba(255,255,255,0.02)', borderLeft: `3px solid var(--${intel.color})`, borderRadius: 0, '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' } }}>
+                                                    <CardContent sx={{ p: 2 }}>
+                                                        <Box display="flex" alignItems="center" gap={1} mb={0.5}>
+                                                            <intel.icon size={12} color={`var(--${intel.color})`} />
+                                                            <Typography variant="caption" fontWeight="950" sx={{ color: `var(--${intel.color})` }}>{intel.intelType}</Typography>
+                                                        </Box>
+                                                        <Typography variant="subtitle2" fontWeight="950" sx={{ lineHeight: 1.2 }}>{intel.title?.toUpperCase()}</Typography>
+                                                        <Box display="flex" justifyContent="space-between" alignItems="center" mt={1}>
+                                                            <Typography variant="caption" sx={{ opacity: 0.4, fontSize: '0.6rem', fontWeight: 700 }}>{new Date(intel.createdAt || intel.date).toLocaleDateString()}</Typography>
+                                                            <Button size="small" sx={{ p: 0, minWidth: 0, color: 'var(--cyan)', fontWeight: 900, fontSize: '0.65rem', '&:hover': { color: 'white' } }}>DETAILS</Button>
+                                                        </Box>
+                                                    </CardContent>
+                                                </Card>
+                                            ));
+                                        })()}
+                                    </Stack>
+                                </CardContent>
+                            </Card>
+
+                            {/* DIVINE MANDATE - Matched Classes */}
+                            <Card className="holographic-card divine-mandate-card-leader" sx={{ p: 4, borderRadius: 0 }}>
+                                <Typography variant="h6" fontWeight="950" mb={1} sx={{ color: 'var(--cyan)', letterSpacing: 2 }}>DIVINE MANDATE</Typography>
+                                <Typography variant="h5" className="divine-text-premium" sx={{ opacity: 0.9, lineHeight: 1.4, fontStyle: 'italic' }}>
+                                    "{settings?.themeOfMonth?.toUpperCase() || "WALKING IN DIVINE AUTHORITY"}"
+                                </Typography>
+                            </Card>
+
+                            {/* BROADCAST CENTER TERMINAL - Holographic */}
+                            <Card className="holographic-card" sx={{ borderRadius: 0, border: '1px solid var(--glass-border)', bgcolor: 'rgba(255,165,0,0.02)' }}>
+                                <CardContent sx={{ p: 3 }}>
+                                    <Typography variant="caption" fontWeight="1000" sx={{ letterSpacing: 2, mb: 2, display: 'block' }}>COMMS TERMINAL</Typography>
+                                    <Button fullWidth onClick={() => setAnnouncementModal({ open: true, data: null })}
+                                        sx={{ 
+                                            height: 60, bgcolor: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: 0, 
+                                            color: 'orange', fontWeight: 900, '&:hover': { bgcolor: 'rgba(255,165,0,0.2)', transform: 'translateY(-2px)', borderColor: '#fff' } 
+                                        }}
+                                    > BROADCAST ALERT </Button>
+                                </CardContent>
+                            </Card>
+
+                            {/* PARTNER CTA - Right Column Sidebar as well */}
+                            <Card className="holographic-card" sx={{ borderRadius: 0, border: '1px solid rgba(255, 165, 0, 0.4)', background: 'rgba(255, 165, 0, 0.05)' }}>
+                                <CardContent sx={{ p: 3 }}>
+                                    <Box display="flex" alignItems="center" gap={2} mb={1}>
+                                        <Avatar sx={{ bgcolor: 'orange', width: 32, height: 32 }}><Star size={16} /></Avatar>
+                                        <Typography variant="caption" fontWeight="900" sx={{ color: 'orange' }}>PARTNERSHIP VISION</Typography>
+                                    </Box>
+                                    <Typography variant="subtitle2" fontWeight="950" sx={{ mb: 1 }}>BECOME A PRAYER PALACE PARTNER</Typography>
+                                    <Button variant="outlined" fullWidth size="small" onClick={() => setEnrollModalOpen(true)}
+                                        sx={{ borderColor: 'orange', color: 'orange', fontWeight: 900, borderRadius: 0, fontSize: '0.65rem', '&:hover': { bgcolor: 'orange', color: 'black' } }}
+                                    > ENROLL IN PARTNERSHIP </Button>
+                                </CardContent>
+                            </Card>
+                        </Stack>
+                    </Grid>
+                </Grid>
+            </Container>
+
+            {/* Modals - Aligned with PastorsDashboardraw terminal feel */}
+            <ProjectFormModal open={projectModal.open} onClose={() => setProjectModal({ open: false, data: null })} project={projectModal.data} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} />
+            <EventFormModal open={eventModal.open} onClose={() => setEventModal({ open: false, data: null })} event={eventModal.data} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} />
+            <PlanFormModal open={planModal.open} onClose={() => setPlanModal({ open: false, data: null })} plan={planModal.data} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} />
+            <AnnouncementFormModal open={announcementModal.open} onClose={() => setAnnouncementModal({ open: false, data: null })} announcement={announcementModal.data} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} />
+
+            {/* 💰 COVENANT PARTNERSHIP ENROLLMENT MODAL - pixel-perfect from PastorsDashboard */}
+            <Modal
+                open={enrollModalOpen}
+                onClose={() => setEnrollModalOpen(false)}
+                closeAfterTransition
+                BackdropComponent={Backdrop}
+                BackdropProps={{ timeout: 500, sx: { backdropFilter: 'blur(12px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
+            >
+                <Fade in={enrollModalOpen}>
+                    <Box sx={{ 
+                        position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                        width: { xs: '90%', sm: 400 },
+                        bgcolor: '#0a0a0a', border: '1px solid orange',
+                        p: 4, outline: 'none', boxShadow: '0 0 60px rgba(255, 165, 0, 0.3)',
+                        borderRadius: 0
+                    }}>
+                        <Box display="flex" alignItems="center" gap={2} mb={3}>
+                            <Avatar sx={{ bgcolor: 'orange', width: 48, height: 48 }}><Star size={24} /></Avatar>
+                            <Box>
+                                <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>COVENANT PARTNERSHIP</Typography>
+                                <Typography variant="caption" sx={{ color: 'orange', fontWeight: 900 }}>STRATEGIC SEED ENROLLMENT</Typography>
+                            </Box>
+                        </Box>
+
+                        <Typography variant="body2" sx={{ mb: 4, opacity: 0.7, lineHeight: 1.6 }}>
+                            "Honor the Lord with your wealth and with the firstfruits of all your produce." <br/>
+                            Enroll with a minimum monthly seed of <b>700 KES</b> to fuel the global mission.
+                        </Typography>
+
+                        <Stack spacing={3}>
+                            <Box>
+                                <Typography variant="caption" fontWeight="900" sx={{ mb: 1, display: 'block', opacity: 0.5 }}>AMOUNT TO PARTNER WITH (MIN 700 KES)</Typography>
+                                <input 
+                                    type="number" value={enrollAmount} onChange={(e) => setEnrollAmount(Number(e.target.value))}
+                                    style={{ 
+                                        width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255, 165, 0, 0.3)', 
+                                        color: '#fff', padding: '12px', fontSize: '1.2rem', fontWeight: 900, outline: 'none'
+                                    }}
+                                />
+                                {enrollAmount < 700 && (
+                                    <Typography variant="caption" color="error" sx={{ mt: 0.5, display: 'block', fontWeight: 800 }}>Minimum amount is 700 KES</Typography>
+                                )}
+                            </Box>
+
+                            <Button 
+                                variant="contained" fullWidth 
+                                disabled={enrollAmount < 700 || enrollPartnershipMutation.isLoading}
+                                onClick={() => enrollPartnershipMutation.mutate(enrollAmount)}
+                                sx={{ bgcolor: 'orange', color: '#000', fontWeight: 950, py: 1.5, borderRadius: 0, '&:hover': { bgcolor: '#ffb347' }, '&:disabled': { opacity: 0.5 } }}
+                            >
+                                {enrollPartnershipMutation.isLoading ? 'COMMITTING SEED...' : 'ENROLL AS PARTNER'}
+                            </Button>
+
+                            <Button fullWidth variant="text" onClick={() => setEnrollModalOpen(false)}
+                                sx={{ color: 'rgba(255,255,255,0.4)', fontWeight: 800, fontSize: '0.7rem' }}
+                            > DISMISS FOR NOW </Button>
+                        </Stack>
+                    </Box>
+                </Fade>
+            </Modal>
+
+            <Snackbar open={toast.open} autoHideDuration={6000} onClose={() => setToast({ ...toast, open: false })} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
+                <Alert severity={toast.severity} sx={{ width: '100%', fontWeight: 'bold', borderRadius: 0 }}>{toast.message}</Alert>
+            </Snackbar>
         </DashboardLayout>
     );
 }

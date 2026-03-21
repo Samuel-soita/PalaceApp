@@ -24,6 +24,7 @@ import budgetsRoutes from './modules/budgets/budgets.routes.js';
 import settingsRoutes from './modules/settings/settings.routes.js';
 import partnershipsRoutes from './modules/partnerships/partnerships.routes.js';
 import permissionsRoutes from './modules/permissions/permissions.routes.js';
+import { bootstrapSystem } from './utils/bootstrap.js';
 import recoveryRoutes from './modules/recovery/recovery.routes.js';
 import cluster from 'cluster';
 import os from 'os';
@@ -57,7 +58,7 @@ app.use(express.json());
 // One dashboard load = ~9 API calls. 400 users = 3,600 calls capacity needed.
 const limiter = rateLimit({
     windowMs: 1 * 60 * 1000, // 1 minute
-    max: 5000, // Increased for 600-user advanced audit
+    max: 20000, // Enterprise-Scale for 1000+ concurrent mission bursts
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests from this IP, please try again after a minute.' }
@@ -141,9 +142,28 @@ if (useCluster && cluster.isPrimary) {
         });
     });
 
+    // --- GLOBAL ERROR HANDLING ---
+    app.use((err: any, req: any, res: any, next: any) => {
+        console.error('[GLOBAL_ERROR]', err);
+        res.status(500).json({
+            error: 'Mission Integrity Compromised: System Error Detected.',
+            details: err.message || 'Unknown internal failure',
+            path: req.path
+        });
+    });
+
     const PORT = process.env.PORT || 4000;
-    httpServer.listen(PORT, () => {
+    httpServer.listen(PORT, async () => {
         console.log(`[worker]: Worker ${process.pid} started. API running at http://localhost:${PORT}`);
+        
+        // --- HYBRID INITIALIZATION: Self-Healing System Bootstrap ---
+        try {
+            await bootstrapSystem();
+            console.log('[worker]: System Bootstrap successful.');
+        } catch (error) {
+            console.error('[worker]: System Bootstrap failed critical mission:', error);
+        }
+
         if (!useCluster) {
             BackgroundJobWorker.ignite();
             TelemetryEngine.ignite();

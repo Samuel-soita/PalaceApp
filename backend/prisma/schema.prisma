@@ -31,6 +31,7 @@ model User {
   updatedAt                 DateTime               @updatedAt
   isCardPaid                Boolean                @default(false)
   isPartner                 Boolean                @default(false)
+  canManagePartnerships     Boolean                @default(false)
   
   // Architecture 3.2: Final Resilience
   version                   Int                    @default(0)

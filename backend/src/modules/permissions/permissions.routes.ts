@@ -3,6 +3,7 @@ import { prisma } from '../../utils/prisma.js';
 import { authenticate } from '../../middleware/auth.middleware.js';
 import { authorize } from '../../middleware/permissions.middleware.js';
 import { PERMISSIONS } from '../../utils/permissions.js';
+import { seedPermissions } from '../../utils/seed-permissions.js';
 
 const router = Router();
 
@@ -92,6 +93,18 @@ router.post('/overrides', authorize(PERMISSIONS.MANAGE_PERMISSIONS), async (req,
         res.json(override);
     } catch (error) {
         res.status(500).json({ error: 'Failed to set permission override' });
+    }
+});
+
+router.post('/re-seed', authorize(PERMISSIONS.MANAGE_PERMISSIONS), async (req, res) => {
+    try {
+        await seedPermissions();
+        const waUser = (req as any).user;
+        await logPermissionAudit(waUser.id, 'RE_SEED_PERMISSION_ENGINE', 'System permissions were forcefully re-synchronized with codebase definitions.');
+        res.json({ message: 'Permission Engine successfully re-synchronized with KERNEL definitions.' });
+    } catch (error) {
+        console.error('[Permission Re-Seed Error]', error);
+        res.status(500).json({ error: 'Failed to re-sync permission engine' });
     }
 });
 

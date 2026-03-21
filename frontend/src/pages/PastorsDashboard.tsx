@@ -18,6 +18,7 @@ import RequestBaptismModal from '../components/modals/RequestBaptismModal';
 import BaptismManager from '../components/dashboard/BaptismManager';
 import DedicationManager from '../components/dashboard/DedicationManager';
 import AppointmentManager from '../components/dashboard/AppointmentManager';
+import PartnershipManager from '../components/dashboard/PartnershipManager';
 
 export default function PastorsDashboard() {
     const { user, updateUser } = useAuth();
@@ -27,6 +28,7 @@ export default function PastorsDashboard() {
     const [baptismsOpen, setBaptismsOpen] = useState(false);
     const [dedicationOpen, setDedicationOpen] = useState(false);
     const [appointmentsOpen, setAppointmentsOpen] = useState(false);
+    const [partnershipManagerOpen, setPartnershipManagerOpen] = useState(false);
 
     // Personal Family States
     const [baptismModalOpen, setBaptismModalOpen] = useState(false);
@@ -293,6 +295,26 @@ export default function PastorsDashboard() {
                                             </Box>
                                             <ChevronRight size={18} />
                                         </Button>
+                                        
+                                        {(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(user?.role || '') || user?.canManagePartnerships) && (
+                                            <Button 
+                                                fullWidth 
+                                                onClick={() => setPartnershipManagerOpen(true)} 
+                                                sx={{ 
+                                                    justifyContent: 'space-between', 
+                                                    bgcolor: 'rgba(255,165,0,0.1)', 
+                                                    p: 2, 
+                                                    border: '1px solid rgba(255,165,0,0.3)',
+                                                    '&:hover': { bgcolor: 'rgba(255,165,0,0.2)', borderColor: 'orange' }
+                                                }}
+                                            >
+                                                <Box display="flex" alignItems="center" gap={2}>
+                                                    <Star size={20} color="orange" />
+                                                    <Typography variant="subtitle2" fontWeight="1000" sx={{ color: 'orange' }}>Partnership Reconciliation</Typography>
+                                                </Box>
+                                                <ChevronRight size={18} color="orange" />
+                                            </Button>
+                                        )}
                                     </Stack>
                                 </CardContent>
                             </Card>
@@ -377,7 +399,7 @@ export default function PastorsDashboard() {
                                                 ...(syncData?.events || []).filter((e: any) => e.isMajor).map((e: any) => ({ ...e, intelType: 'MAJOR EVENT', icon: Calendar, color: 'primary' })),
                                                 ...(syncData?.projects || []).filter((p: any) => p.isMajor).map((p: any) => ({ ...p, intelType: 'STRATEGIC PROJECT', icon: Star, color: 'cyan' })),
                                                 ...(syncData?.plans || []).filter((p: any) => p.isMajor).map((p: any) => ({ ...p, intelType: 'MINISTRY PLAN', icon: BookOpen, color: 'orange' })),
-                                            ].sort((a,b) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime()).slice(0, 5);
+                                            ].sort((a,b) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime()).slice(0, 10);
 
                                             if (globalIntel.length === 0) {
                                                 return (
@@ -430,6 +452,7 @@ export default function PastorsDashboard() {
             <BaptismManager open={baptismsOpen} onClose={() => setBaptismsOpen(false)} />
             <DedicationManager open={dedicationOpen} onClose={() => setDedicationOpen(false)} />
             <AppointmentManager open={appointmentsOpen} onClose={() => setAppointmentsOpen(false)} />
+            <PartnershipManager open={partnershipManagerOpen} onClose={() => setPartnershipManagerOpen(false)} />
 
             {/* 💰 PARTNERSHIP ENROLLMENT MODAL */}
             <Modal

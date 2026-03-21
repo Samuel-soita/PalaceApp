@@ -14,8 +14,14 @@ export const getUsers = async (req: Request, res: Response) => {
         const skip = (pageNum - 1) * limitNum;
         const take = limitNum;
 
-        const whereClause: any = role ? { role: String(role) } : {};
-        whereClause.deletedAt = null; 
+        let whereClause: any = { deletedAt: null };
+        if (role) {
+            if (Array.isArray(role)) {
+                whereClause.role = { in: role.map(r => String(r)) };
+            } else {
+                whereClause.role = String(role);
+            }
+        }
         
         const [users, total] = await Promise.all([
             prisma.user.findMany({
@@ -434,6 +440,18 @@ export const executeIntervention = async (req: any, res: Response) => {
                     return res.status(403).json({ error: 'Only the Bishop or System Engineer can appoint Secretaries.' });
                 }
                 updateData = { role: 'SECRETARY', departmentId: null };
+                break;
+            case 'MAKE_PASTOR':
+                if (req.user.role !== 'WATUA' && req.user.role !== 'SUPER_ADMIN') {
+                    return res.status(403).json({ error: 'Only the Bishop or System Engineer can appoint Pastors.' });
+                }
+                updateData = { role: 'PASTOR', departmentId: null };
+                break;
+            case 'MAKE_ASSOCIATE_PASTOR':
+                if (req.user.role !== 'WATUA' && req.user.role !== 'SUPER_ADMIN') {
+                    return res.status(403).json({ error: 'Only the Bishop or System Engineer can appoint Associate Pastors.' });
+                }
+                updateData = { role: 'ASSOCIATE_PASTOR', departmentId: null };
                 break;
             case 'SUSPEND':
                 updateData = { isSuspended: true };

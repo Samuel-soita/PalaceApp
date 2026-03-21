@@ -11,6 +11,7 @@ interface AuthUser {
     department?: { id: string; name: string } | null;
     managedDepartments?: { id: string; name: string }[];
     isPartner?: boolean;
+    canManagePartnerships?: boolean;
     permissions?: string[];
 }
 

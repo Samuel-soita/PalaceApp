@@ -4,8 +4,18 @@ import { logAction } from '../../utils/audit.service.js';
 import { NotificationEngine } from '../../utils/NotificationEngine.js';
 
 export const getAllPartnerships = async (req: any, res: Response) => {
+    const { id: userId, role, canManagePartnerships } = req.user;
+
+    // 1. Administrators (Bishop, Secretary, System Admin, Watua) have global access
+    const isAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(role);
+    
+    // 2. Assigned Pastor has global access for reconciliation
+    const isAssigned = role === 'PASTOR' && canManagePartnerships;
+
     try {
+        const whereClause = (isAdmin || isAssigned) ? {} : { userId };
         const partnerships = await prisma.partnership.findMany({
+            where: whereClause,
             include: {
                 user: {
                     select: {
