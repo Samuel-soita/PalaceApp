@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as usersController from './users.controller.js';
 import { authenticate, authorize } from '../../middleware/auth.middleware.js';
+import { mutationLimiter } from '../../middleware/rate-limiting.middleware.js';
 
 const router = Router();
 
@@ -14,8 +15,19 @@ router.get('/technical/all', authenticate, authorize(['WATUA']), usersController
 router.get('/technical/stats', authenticate, authorize(['WATUA']), usersController.getSystemStats);
 router.get('/technical/diagnostics', authenticate, authorize(['WATUA']), usersController.getSystemDiagnostics);
 router.get('/technical/audit/all', authenticate, authorize(['WATUA']), usersController.getAuditLogsTechnical);
-router.post('/technical/intervention/:id', authenticate, authorize(['WATUA', 'SUPER_ADMIN', 'SECRETARY']), usersController.executeIntervention);
-router.patch('/technical/bio/:id', authenticate, authorize(['WATUA']), usersController.updateUserBioTechnical);
+router.get('/technical/trash', authenticate, authorize(['WATUA']), usersController.getTrashHub);
+router.post('/technical/restore/:id', authenticate, authorize(['WATUA', 'SUPER_ADMIN']), mutationLimiter, usersController.restoreEntity);
+router.get('/technical/flags', authenticate, authorize(['WATUA']), usersController.getFeatureFlags);
+router.patch('/technical/flags', authenticate, authorize(['WATUA']), mutationLimiter, usersController.updateFeatureFlag);
+router.post('/technical/intervention/:id', authenticate, authorize(['WATUA', 'SUPER_ADMIN', 'SECRETARY']), mutationLimiter, usersController.executeIntervention);
+router.patch('/technical/bio/:id', authenticate, authorize(['WATUA']), mutationLimiter, usersController.updateUserBioTechnical);
 router.post('/partnership/enroll', authenticate, usersController.enrollPartnership);
+
+import * as watuaController from './watua.controller.js';
+
+// Watua Dual-Auth Routes
+router.post('/technical/action', authenticate, authorize(['WATUA']), mutationLimiter, watuaController.initiateCriticalAction);
+router.post('/technical/action/:id/approve', authenticate, authorize(['WATUA', 'SUPER_ADMIN']), mutationLimiter, watuaController.approveCriticalAction);
+router.delete('/technical/action/:id', authenticate, authorize(['WATUA', 'SUPER_ADMIN']), mutationLimiter, watuaController.cancelCriticalAction);
 
 export default router;

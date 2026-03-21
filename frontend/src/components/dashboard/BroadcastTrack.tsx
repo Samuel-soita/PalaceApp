@@ -50,7 +50,7 @@ const PRIORITY_CONFIG: Record<string, { color: string; bg: string; border: strin
     },
 };
 
-export const BroadcastTrack = ({ announcements }: BroadcastTrackProps) => {
+export const BroadcastTrack = React.memo(({ announcements }: BroadcastTrackProps) => {
     const [selected, setSelected] = useState<Announcement | null>(null);
     const trackRef = useRef<HTMLDivElement>(null);
 
@@ -221,4 +221,4 @@ export const BroadcastTrack = ({ announcements }: BroadcastTrackProps) => {
             </Modal>
         </Box>
     );
-};
+});

@@ -44,6 +44,10 @@ export default function BaptismManager({ open, onClose }: { open: boolean, onClo
                 setPlannedDate('');
                 setPlannedTime('');
                 setBaptismCardNumber('');
+            },
+            onError: (error: any) => {
+                const message = error.response?.data?.error || 'System failed to advance workflow phase.';
+                alert(`MISSION BLOCKED: ${message}`);
             }
         }
     );

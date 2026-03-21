@@ -31,6 +31,13 @@ model User {
   updatedAt                 DateTime               @updatedAt
   isCardPaid                Boolean                @default(false)
   isPartner                 Boolean                @default(false)
+  
+  // Architecture 3.2: Final Resilience
+  version                   Int                    @default(0)
+  deletedAt                 DateTime?
+  deletedBy                 String?
+  deletedReason             String?
+
   announcements             Announcement[]
   announcementApprovals     AnnouncementApproval[]
   auditLogs                 AuditLog[]
@@ -55,6 +62,8 @@ model User {
   authenticatedUsers        User[]                 @relation("UserAuthenticator")
   department                Department?            @relation("DeptLeader", fields: [departmentId], references: [id])
   managedDepartments        Department[]           @relation("DeptManagers")
+  sessions                  Session[]
+  budgetContributions       BudgetContributor[]
 
   appointmentsByMember     Appointment[]          @relation("MemberAppointments")
   appointmentsAsTarget     Appointment[]          @relation("TargetAppointments")
@@ -65,6 +74,7 @@ model User {
   @@index([role])
   @@index([dob])
   @@index([gender])
+  @@index([deletedAt])
 }
 
 model Child {
@@ -84,6 +94,13 @@ model Child {
   isDedicated          Boolean     @default(false)
   plannedDate          DateTime?
   plannedTime          String?
+  
+  // Architecture 3.2
+  version              Int         @default(0)
+  deletedAt            DateTime?
+  deletedBy            String?
+  deletedReason        String?
+
   department           Department? @relation(fields: [departmentId], references: [id])
   parent               User        @relation("ParentChildren", fields: [parentId], references: [id])
 
@@ -94,6 +111,7 @@ model Child {
   @@index([departmentId])
   @@index([branch])
   @@index([dob])
+  @@index([deletedAt])
 }
 
 model Devotion {
@@ -105,6 +123,8 @@ model Devotion {
   date         DateTime              @unique @default(now())
   createdAt    DateTime              @default(now())
   interactions DevotionInteraction[]
+  
+  version      Int                   @default(0)
 }
 
 model DevotionInteraction {
@@ -128,6 +148,13 @@ model Department {
   leaderId      String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
+  
+  // Architecture 3.2
+  version       Int            @default(0)
+  deletedAt     DateTime?
+  deletedBy     String?
+  deletedReason String?
+
   account       Account?
   announcements Announcement[]
   children      Child[]
@@ -139,6 +166,9 @@ model Department {
   leaders       User[]         @relation("DeptLeader")
   volunteers    Volunteer[]
   managers      User[]         @relation("DeptManagers")
+  budgets       Budget[]
+
+  @@index([deletedAt])
 }
 
 model Event {
@@ -159,6 +189,13 @@ model Event {
   attachmentUrl     String?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
+  
+  // Architecture 3.2
+  version           Int              @default(0)
+  deletedAt         DateTime?
+  deletedBy         String?
+  deletedReason     String?
+
   department        Department       @relation(fields: [departmentId], references: [id])
   approvals         EventApproval[]
   messages          Message[]
@@ -167,6 +204,7 @@ model Event {
   @@index([status])
   @@index([approvalStatus])
   @@index([departmentId])
+  @@index([deletedAt])
 }
 
 model Meeting {
@@ -188,10 +226,19 @@ model Meeting {
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   isPartnerOnly    Boolean           @default(false)
+  
+  // Architecture 3.2
+  version          Int               @default(0)
+  deletedAt        DateTime?
+  deletedBy        String?
+  deletedReason    String?
+
   department       Department        @relation(fields: [departmentId], references: [id])
   followUpPerson   User?             @relation("MeetingFollowUp", fields: [followUpPersonId], references: [id])
   organizer        User              @relation("MeetingOrganizer", fields: [organizerId], references: [id])
   approvals        MeetingApproval[]
+
+  @@index([deletedAt])
 }
 
 model Announcement {
@@ -207,6 +254,13 @@ model Announcement {
   createdAt    DateTime               @default(now())
   updatedAt    DateTime               @updatedAt
   isMajor      Boolean                @default(false)
+  
+  // Architecture 3.2
+  version      Int                    @default(0)
+  deletedAt    DateTime?
+  deletedBy    String?
+  deletedReason String?
+
   author       User                   @relation(fields: [authorId], references: [id])
   department   Department?            @relation(fields: [departmentId], references: [id])
   approvals    AnnouncementApproval[]
@@ -215,6 +269,7 @@ model Announcement {
   @@index([departmentId])
   @@index([isGlobal])
   @@index([isMajor])
+  @@index([deletedAt])
 }
 
 model Volunteer {
@@ -227,6 +282,9 @@ model Volunteer {
   status       String     @default("ACTIVE")
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+  
+  version      Int        @default(0)
+
   department   Department @relation(fields: [departmentId], references: [id])
 }
 
@@ -244,6 +302,13 @@ model Project {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   isMajor           Boolean           @default(false)
+  
+  // Architecture 3.2
+  version           Int               @default(0)
+  deletedAt         DateTime?
+  deletedBy         String?
+  deletedReason     String?
+
   messages          Message[]
   department        Department        @relation(fields: [departmentId], references: [id])
   approvals         ProjectApproval[]
@@ -252,6 +317,7 @@ model Project {
   @@index([status])
   @@index([approvalStatus])
   @@index([departmentId])
+  @@index([deletedAt])
 }
 
 model ProjectUpdate {
@@ -272,11 +338,19 @@ model Plan {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   isMajor        Boolean        @default(false)
+  
+  // Architecture 3.2
+  version        Int            @default(0)
+  deletedAt      DateTime?
+  deletedBy      String?
+  deletedReason  String?
+
   department     Department     @relation(fields: [departmentId], references: [id])
   approvals      PlanApproval[]
 
   @@index([approvalStatus])
   @@index([departmentId])
+  @@index([deletedAt])
 }
 
 model Message {
@@ -293,6 +367,9 @@ model Message {
   flagReason   String?
   chatType     String      @default("DEPARTMENT")
   createdAt    DateTime    @default(now())
+  
+  version      Int         @default(0)
+
   department   Department? @relation(fields: [departmentId], references: [id])
   event        Event?      @relation(fields: [eventId], references: [id])
   project      Project?    @relation(fields: [projectId], references: [id])
@@ -307,6 +384,9 @@ model Account {
   totalIncome      Float         @default(0)
   totalExpenditure Float         @default(0)
   updatedAt        DateTime      @updatedAt
+  
+  version          Int           @default(0)
+
   department       Department    @relation(fields: [departmentId], references: [id])
   transactions     Transaction[]
 }
@@ -323,19 +403,29 @@ model Transaction {
   date          DateTime @default(now())
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  
+  version       Int      @default(0)
+
   account       Account  @relation(fields: [accountId], references: [id])
   approver      User?    @relation("TransactionApprover", fields: [approvedById], references: [id])
   requester     User     @relation("TransactionRequester", fields: [requestedById], references: [id])
 }
 
 model Notification {
-  id        String   @id @default(uuid())
-  userId    String
-  title     String
-  message   String
-  read      Boolean  @default(false)
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
+  id              String   @id @default(uuid())
+  userId          String
+  title           String
+  message         String
+  type            String   @default("SYSTEM")
+  status          String   @default("SENT") // SENT, FAILED, RETRYING
+  deliveryChannel String   @default("IN_APP") // IN_APP, SMS, EMAIL
+  attempts        Int      @default(0)
+  read            Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([status])
 }
 
 model MeetingApproval {
@@ -415,18 +505,24 @@ model PlanApproval {
 }
 
 model AuditLog {
-  id         String   @id @default(uuid())
-  userId     String
-  action     String
-  entityId   String?
-  entityType String?
-  details    String?
-  createdAt  DateTime @default(now())
-  user       User     @relation(fields: [userId], references: [id])
+  id          String   @id @default(uuid())
+  actorId     String
+  actorRole   String   @default("MEMBER")
+  actionType  String
+  entityType  String
+  entityId    String?
+  beforeState Json?
+  afterState  Json?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
 
-  @@index([entityType])
+  actor       User     @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([actorId])
+  @@index([entityId])
   @@index([createdAt])
-  @@index([userId])
 }
 
 model Baptism {
@@ -440,7 +536,16 @@ model Baptism {
   baptismCardNumber String?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
+  
+  // Architecture 3.2
+  version    Int       @default(0)
+  deletedAt  DateTime?
+  deletedBy  String?
+  deletedReason String?
+
   user       User      @relation("UserBaptisms", fields: [userId], references: [id])
+
+  @@index([deletedAt])
 }
 
 model MinistrySettings {
@@ -449,6 +554,8 @@ model MinistrySettings {
   themeOfMonth String   @default("MONTH OF NEW BEGINNINGS")
   updatedAt    DateTime @updatedAt
   churchBudget Float    @default(0)
+  
+  version      Int      @default(0)
 }
 
 model Affirmation {
@@ -456,6 +563,8 @@ model Affirmation {
   content   String
   date      DateTime @unique @default(now())
   createdAt DateTime @default(now())
+  
+  version   Int      @default(0)
 }
 
 model Partnership {
@@ -466,12 +575,44 @@ model Partnership {
   balance         Float     @default(0)
   lastPaymentDate DateTime?
   frequency       String    @default("MONTHLY")
-  status          String    @default("ACTIVE")
+  status          String    @default("ACTIVE") // Will be computed or deprecated
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  
+  // Architecture 3.2
+  version         Int       @default(0)
+  deletedAt       DateTime?
+  deletedBy       String?
+  deletedReason   String?
+
   user            User      @relation("UserPartnerships", fields: [userId], references: [id])
+  ledgers         PartnershipLedger[]
 
   @@index([userId])
+  @@index([deletedAt])
+}
+
+model PartnershipLedger {
+  id              String      @id @default(uuid())
+  partnershipId   String
+  amount          Float
+  transactionType String      @default("CREDIT") // CREDIT, DEBIT
+  paymentMethod   String      @default("MPESA")  // MPESA, CASH, BANK
+  referenceCode   String      @unique
+  status          String      @default("VERIFIED") // PENDING, VERIFIED, FAILED
+  date            DateTime    @default(now())
+  createdAt       DateTime    @default(now())
+  
+  // Architecture 3.2
+  version         Int         @default(0)
+  deletedAt       DateTime?
+  deletedBy       String?
+  deletedReason   String?
+
+  partnership     Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  
+  @@index([partnershipId])
+  @@index([deletedAt])
 }
 
 model Appointment {
@@ -491,6 +632,8 @@ model Appointment {
   adminNotes    String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  
+  version       Int      @default(0)
 
   @@index([memberId])
   @@index([targetId])
@@ -533,4 +676,96 @@ model PermissionOverride {
   permission   Permission @relation(fields: [permissionId], references: [id])
 
   @@unique([userId, permissionId])
+}
+
+model WatuaActionLog {
+  id            String   @id @default(uuid())
+  engineerId    String
+  actionType    String   // PURGE, FORCE_AUTH, ROLE_PROMOTION, BIO_EDIT
+  targetEntity  String
+  beforeState   Json?
+  afterState    Json?
+  approvalChain Json?
+  executed      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+}
+
+model JobQueue {
+  id          String   @id @default(uuid())
+  type        String   // NOTIFICATION, EMAIL, SMS, LEDGER_RECON
+  payload     Json
+  status      String   @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  attempts    Int      @default(0)
+  createdAt   DateTime @default(now())
+  processedAt DateTime?
+}
+
+model SystemMetric {
+  id              String   @id @default(uuid())
+  latency         Float
+  activeUsers     Int
+  errorCount      Int
+  failedJobs      Int
+  wsConnections   Int
+  pendingApproval Int
+  createdAt       DateTime @default(now())
+}
+
+model FeatureFlag {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  enabled   Boolean  @default(false)
+  scope     String   @default("GLOBAL") // GLOBAL, ROLE:PASTOR, DEPT:YOUTH
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  token        String   @unique
+  deviceInfo   String?
+  ipAddress    String?
+  lastActiveAt DateTime @default(now())
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Budget {
+  id            String              @id @default(uuid())
+  title         String
+  targetAmount  Float
+  deadline      DateTime
+  departmentId  String
+  linkedEventId String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  
+  version       Int                 @default(0)
+  deletedAt     DateTime?
+  deletedBy     String?
+  deletedReason String?
+
+  department    Department          @relation(fields: [departmentId], references: [id])
+  contributors  BudgetContributor[]
+
+  @@index([departmentId])
+  @@index([deletedAt])
+}
+
+model BudgetContributor {
+  id        String   @id @default(uuid())
+  budgetId  String
+  userId    String
+  amount    Float
+  createdAt DateTime @default(now())
+  
+  budget    Budget   @relation(fields: [budgetId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([budgetId])
+  @@index([userId])
 }

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
 import { logAudit } from '../../utils/audit.js';
 import { getOrSetCache, getCachedData, setCachedData, invalidateCache } from '../../utils/redis.js';
+import { hasPermission } from '../../utils/permissions.js';
 
 export const createDepartment = async (req: any, res: Response) => {
     const { name, description, leaderId } = req.body;
@@ -53,65 +54,73 @@ export const getDepartmentById = async (req: Request, res: Response) => {
 };
 
 export const getUsheringTally = async (req: Request, res: Response) => {
-    const cacheKey = 'ushering:tally';
+    const canViewPersonnel = hasPermission((req as any).user, 'VIEW_PERSONNEL');
 
     try {
-        const cachedTally = await getCachedData(cacheKey);
-        if (cachedTally) return res.json(cachedTally);
+        const cacheKey = 'ushering:tally';
+        let tally: any = await getCachedData(cacheKey);
 
-        const [users, children, departments] = await Promise.all([
-            prisma.user.findMany({
-                where: { role: { not: 'WATUA' } },
-                include: { department: { select: { name: true } } },
-                orderBy: { name: 'asc' }
-            }),
-            prisma.child.findMany({
-                orderBy: { name: 'asc' }
-            }),
-            prisma.department.findMany({
-                select: { id: true, name: true }
-            })
-        ]);
+        if (!tally) {
+            const [users, children, departments] = await Promise.all([
+                prisma.user.findMany({
+                    where: { role: { not: 'WATUA' } },
+                    include: { department: { select: { name: true } } },
+                    orderBy: { name: 'asc' }
+                }),
+                prisma.child.findMany({
+                    orderBy: { name: 'asc' }
+                }),
+                prisma.department.findMany({
+                    select: { id: true, name: true }
+                })
+            ]);
 
-        const tally = {
-            summary: {
-                totalMembers: users.filter(u => u.role === 'MEMBER').length,
-                totalLeaders: users.filter(u => u.role !== 'MEMBER').length,
-                totalChildren: children.length,
-                grandTotal: users.length + children.length
-            },
-            departmentBreakdown: departments.map(d => ({
-                name: d.name,
-                memberCount: users.filter(u => u.departmentId === d.id && u.role === 'MEMBER').length,
-                leaderCount: users.filter(u => u.departmentId === d.id && u.role !== 'MEMBER').length
-            })),
-            details: {
-                users: users.map(u => ({
-                    id: u.id,
-                    name: u.name,
-                    role: u.role,
-                    department: (u as any).department?.name,
-                    membershipNumber: (u as any).membershipNumber,
-                    phoneNumber: (u as any).phoneNumber,
-                    status: (u as any).status,
-                    children: children.filter(c => c.parentId === u.id).map(c => ({
+            tally = {
+                summary: {
+                    totalMembers: users.filter(u => u.role === 'MEMBER').length,
+                    totalLeaders: users.filter(u => u.role !== 'MEMBER').length,
+                    totalChildren: children.length,
+                    grandTotal: users.length + children.length
+                },
+                departmentBreakdown: departments.map(d => ({
+                    name: d.name,
+                    memberCount: users.filter(u => u.departmentId === d.id && u.role === 'MEMBER').length,
+                    leaderCount: users.filter(u => u.departmentId === d.id && u.role !== 'MEMBER').length
+                })),
+                details: {
+                    users: users.map(u => ({
+                        id: u.id,
+                        name: u.name,
+                        role: u.role,
+                        department: (u as any).department?.name,
+                        membershipNumber: (u as any).membershipNumber,
+                        phoneNumber: (u as any).phoneNumber,
+                        status: (u as any).status,
+                        children: children.filter(c => c.parentId === u.id).map(c => ({
+                            id: c.id,
+                            name: c.name,
+                            age: Math.floor((new Date().getTime() - new Date(c.dob).getTime()) / (1000 * 60 * 60 * 24 * 365.25))
+                        }))
+                    })),
+                    children: children.map(c => ({
                         id: c.id,
                         name: c.name,
-                        age: Math.floor((new Date().getTime() - new Date(c.dob).getTime()) / (1000 * 60 * 60 * 24 * 365.25))
+                        age: Math.floor((new Date().getTime() - new Date(c.dob).getTime()) / (1000 * 60 * 60 * 24 * 365.25)),
+                        dedicationNumber: c.dedicationNumber,
+                        workflowStatus: c.workflowStatus,
+                        parentId: c.parentId
                     }))
-                })),
-                children: children.map(c => ({
-                    id: c.id,
-                    name: c.name,
-                    age: Math.floor((new Date().getTime() - new Date(c.dob).getTime()) / (1000 * 60 * 60 * 24 * 365.25)),
-                    dedicationNumber: c.dedicationNumber,
-                    workflowStatus: c.workflowStatus,
-                    parentId: c.parentId
-                }))
-            }
-        };
+                }
+            };
+            await setCachedData(cacheKey, tally, 30); // Cache for 30 seconds
+        }
 
-        await setCachedData(cacheKey, tally, 30); // Cache for 30 seconds
+        // --- MEMBER PRIVACY LOCKDOWN ---
+        // If the user lacks clearance, mutate the response to strip PII and raw profiles.
+        if (!canViewPersonnel) {
+            delete tally.details;
+        }
+
         res.json(tally);
     } catch (error) {
         console.error('Ushering Tally Error:', error);

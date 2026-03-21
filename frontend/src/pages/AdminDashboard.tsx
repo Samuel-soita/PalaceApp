@@ -146,12 +146,20 @@ export default function AdminDashboard() {
 
     // ─── Stats ───────────────────────────────────────────────────────────────
 
+    const isOperationsExec = role === 'SUPER_ADMIN' || role === 'SYSTEM_ADMIN';
+
     const stats = [
-        { title: 'Upcoming Events', value: filterByDept(events).filter((e: any) => new Date(e.date) >= new Date()).length, icon: Calendar, color: 'blue' },
-        { title: 'Active Projects', value: filterByDept(projects).filter((p: any) => p.status === 'IN_PROGRESS').length, icon: Briefcase, color: 'purple' },
-        { title: 'Strategic Plans', value: filterByDept(plans).length, icon: Target, color: 'pink' },
-        { title: 'Meetings', value: filterByDept(meetings).length, icon: MessageSquare, color: 'cyan' },
-        { title: 'Announcements', value: announcements.filter((a: any) => new Date(a.createdAt) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).length, icon: Bell, color: 'orange' },
+        ...(isOperationsExec ? [
+            { title: 'Upcoming Events', value: filterByDept(events).filter((e: any) => new Date(e.date) >= new Date()).length, icon: Calendar, color: 'blue' },
+            { title: 'Active Projects', value: filterByDept(projects).filter((p: any) => p.status === 'IN_PROGRESS').length, icon: Briefcase, color: 'purple' },
+            { title: 'Strategic Plans', value: filterByDept(plans).length, icon: Target, color: 'pink' },
+            { title: 'Meetings', value: filterByDept(meetings).length, icon: MessageSquare, color: 'cyan' },
+            { title: 'Announcements', value: announcements.filter((a: any) => new Date(a.createdAt) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).length, icon: Bell, color: 'orange' }
+        ] : [
+            { title: 'Pending Baptisms', value: pendingBaptisms, icon: Droplet, color: 'cyan' },
+            { title: 'Pending Dedications', value: pendingDedications, icon: Baby, color: 'orange' },
+            { title: 'Appointments', value: pendingAppointments, icon: MessageSquare, color: 'purple' }
+        ]),
         ...(canManageUsers ? [{ title: 'Pending Approval', value: pendingUsers.length, icon: UserCheck, color: 'green' }] : []),
     ];
 
@@ -211,16 +219,18 @@ export default function AdminDashboard() {
                     <Grid container spacing={1.5} mb={5}>
                         {[
                             ...(canManageUsers ? [{ label: 'Verify Members', icon: UserCheck, color: 'green', onClick: () => setVerificationModalOpen(true), badge: pendingUsers.length }] : []),
-                            { label: 'Broadcast', icon: AlertCircle, color: 'orange', href: '/announcements' },
-                            { label: 'Initiative', icon: Briefcase, color: 'purple', href: '/projects' },
-                            { label: 'Plans', icon: Target, color: 'pink', href: '/plans' },
-                            { label: 'Briefings', icon: MessageSquare, color: 'cyan', href: '/meetings' },
-                            { label: 'Schedule', icon: Calendar, color: 'blue', href: '/calendar' },
+                            ...(isOperationsExec ? [
+                                { label: 'Broadcast', icon: AlertCircle, color: 'orange', href: '/announcements' },
+                                { label: 'Initiative', icon: Briefcase, color: 'purple', href: '/projects' },
+                                { label: 'Plans', icon: Target, color: 'pink', href: '/plans' },
+                                { label: 'Briefings', icon: MessageSquare, color: 'cyan', href: '/meetings' },
+                                { label: 'Schedule', icon: Calendar, color: 'blue', href: '/calendar' },
+                            ] : []),
                             { label: 'Baptism', icon: Droplet, color: 'cyan', onClick: () => setBaptismsOpen(true), badge: pendingBaptisms },
                             { label: 'Dedication', icon: Baby, color: 'orange', onClick: () => setDedicationManagerOpen(true), badge: pendingDedications },
                             { label: 'Partners', icon: Star, color: 'orange', onClick: () => setPartnershipManagerOpen(true) },
                             { label: 'Appoints', icon: MessageSquare, color: 'cyan', onClick: () => setAppointmentManagerOpen(true), badge: pendingAppointments },
-                            ...(canViewPersonnel ? [{ label: 'Departments', icon: Users, color: 'purple', href: '/departments' }] : []),
+                            ...(canViewPersonnel && isOperationsExec ? [{ label: 'Departments', icon: Users, color: 'purple', href: '/departments' }] : []),
                         ].map((action, i) => (
                             <Grid item xs={6} sm={4} md={2} key={i}>
                                 <Button
@@ -318,60 +328,66 @@ export default function AdminDashboard() {
             </Box>
 
             {/* ── Operational Timeline ── */}
-            <Card className="holographic-card" sx={{ mb: 4 }}>
-                <CardContent sx={{ p: { xs: 2, md: 3 } }}>
-                    <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-                        <Box>
-                            <Typography variant="h6" fontWeight="950" sx={{ letterSpacing: -0.5, mb: 0.5 }}>
-                                MASTER OPERATIONS TRACK
-                            </Typography>
-                            <Typography variant="caption" color="textSecondary" fontWeight="800" sx={{ letterSpacing: 1 }}>
-                                PROJECTS · EVENTS · PLANS · MEETINGS — SORTED BY DATE
-                            </Typography>
+            {isOperationsExec && (
+                <Card className="holographic-card" sx={{ mb: 4 }}>
+                    <CardContent sx={{ p: { xs: 2, md: 3 } }}>
+                        <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+                            <Box>
+                                <Typography variant="h6" fontWeight="950" sx={{ letterSpacing: -0.5, mb: 0.5 }}>
+                                    MASTER OPERATIONS TRACK
+                                </Typography>
+                                <Typography variant="caption" color="textSecondary" fontWeight="800" sx={{ letterSpacing: 1 }}>
+                                    PROJECTS · EVENTS · PLANS · MEETINGS — SORTED BY DATE
+                                </Typography>
+                            </Box>
+                            <Calendar size={18} className="text-secondary opacity-50" />
                         </Box>
-                        <Calendar size={18} className="text-secondary opacity-50" />
-                    </Box>
-                    <OperationalTimeline items={timelineItems} />
-                </CardContent>
-            </Card>
+                        <OperationalTimeline items={timelineItems} />
+                    </CardContent>
+                </Card>
+            )}
 
             {/* ── Broadcasts Track ── */}
-            <Card className="holographic-card" sx={{ mb: 4 }}>
-                <CardContent sx={{ p: { xs: 2, md: 3 } }}>
-                    <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                        <Box>
-                            <Typography variant="h6" fontWeight="950" sx={{ letterSpacing: -0.5, mb: 0.3 }}>ALL BROADCASTS</Typography>
-                            <Typography variant="caption" color="textSecondary" fontWeight="800" sx={{ letterSpacing: 1 }}>URGENT · HIGH · NORMAL — COLOR CODED BY PRIORITY</Typography>
+            {isOperationsExec && (
+                <Card className="holographic-card" sx={{ mb: 4 }}>
+                    <CardContent sx={{ p: { xs: 2, md: 3 } }}>
+                        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                            <Box>
+                                <Typography variant="h6" fontWeight="950" sx={{ letterSpacing: -0.5, mb: 0.3 }}>ALL BROADCASTS</Typography>
+                                <Typography variant="caption" color="textSecondary" fontWeight="800" sx={{ letterSpacing: 1 }}>URGENT · HIGH · NORMAL — COLOR CODED BY PRIORITY</Typography>
+                            </Box>
+                            {canManageUsers && (
+                                <Button component={Link} to="/announcements" size="small" variant="outlined"
+                                    sx={{ fontSize: '0.65rem', fontWeight: 900, borderColor: 'var(--orange)', color: 'var(--orange)', '&:hover': { bgcolor: 'rgba(255,152,0,0.1)' } }}>
+                                    MANAGE
+                                </Button>
+                            )}
                         </Box>
-                        {canManageUsers && (
-                            <Button component={Link} to="/announcements" size="small" variant="outlined"
-                                sx={{ fontSize: '0.65rem', fontWeight: 900, borderColor: 'var(--orange)', color: 'var(--orange)', '&:hover': { bgcolor: 'rgba(255,152,0,0.1)' } }}>
-                                MANAGE
-                            </Button>
-                        )}
-                    </Box>
-                    <BroadcastTrack announcements={announcements} />
-                </CardContent>
-            </Card>
+                        <BroadcastTrack announcements={announcements} />
+                    </CardContent>
+                </Card>
+            )}
 
             {/* ── Initiatives Track ── */}
-            <Card className="holographic-card">
-                <CardContent sx={{ p: { xs: 2, md: 3 } }}>
-                    <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                        <Box>
-                            <Typography variant="h6" fontWeight="950" sx={{ letterSpacing: -0.5, mb: 0.3 }}>STRATEGIC INITIATIVES</Typography>
-                            <Typography variant="caption" color="textSecondary" fontWeight="800" sx={{ letterSpacing: 1 }}>PROJECTS — COLOR CODED BY STATUS</Typography>
+            {isOperationsExec && (
+                <Card className="holographic-card">
+                    <CardContent sx={{ p: { xs: 2, md: 3 } }}>
+                        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                            <Box>
+                                <Typography variant="h6" fontWeight="950" sx={{ letterSpacing: -0.5, mb: 0.3 }}>STRATEGIC INITIATIVES</Typography>
+                                <Typography variant="caption" color="textSecondary" fontWeight="800" sx={{ letterSpacing: 1 }}>PROJECTS — COLOR CODED BY STATUS</Typography>
+                            </Box>
+                            {canManageUsers && (
+                                <Button component={Link} to="/projects" size="small" variant="outlined"
+                                    sx={{ fontSize: '0.65rem', fontWeight: 900, borderColor: 'var(--purple)', color: 'var(--purple)', '&:hover': { bgcolor: 'rgba(124,58,237,0.1)' } }}>
+                                    MANAGE
+                                </Button>
+                            )}
                         </Box>
-                        {canManageUsers && (
-                            <Button component={Link} to="/projects" size="small" variant="outlined"
-                                sx={{ fontSize: '0.65rem', fontWeight: 900, borderColor: 'var(--purple)', color: 'var(--purple)', '&:hover': { bgcolor: 'rgba(124,58,237,0.1)' } }}>
-                                MANAGE
-                            </Button>
-                        )}
-                    </Box>
-                    <InitiativesTrack projects={filterByDept(projects)} />
-                </CardContent>
-            </Card>
+                        <InitiativesTrack projects={filterByDept(projects)} />
+                    </CardContent>
+                </Card>
+            )}
 
             {/* ── Member Verification Modal (Admin Only) ── */}
             {canManageUsers && (

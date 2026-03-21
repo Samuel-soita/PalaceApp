@@ -40,7 +40,7 @@ export const authorize = (permissionCode: string) => {
             }));
 
             // 3. Evaluate access
-            const hasAccess = evaluateAccess(userPermissionCodes, permissionCode, mappedOverrides);
+            const hasAccess = evaluateAccess(user.role, userPermissionCodes, permissionCode, mappedOverrides);
 
             if (hasAccess) {
                 return next();

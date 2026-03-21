@@ -29,7 +29,8 @@ import {
     MenuItem,
     FormControl,
     InputLabel,
-    Avatar
+    Avatar,
+    Switch
 } from '@mui/material';
 import {
     Activity,
@@ -39,11 +40,35 @@ import {
     Command,
     Search,
     RefreshCw,
-    Calendar,    Users, Shield, Smartphone,
-    Activity as ActivityIcon, Settings, Database, Trash2, ShieldAlert, UserPlus, Zap,
-    Lock, Unlock, Mail, Clock, MapPin, MoreVertical, Terminal, Cpu, Globe,
-    UserCheck, ShieldCheck, Briefcase, PenTool, Key
+    Calendar,
+    Users,
+    Shield,
+    Smartphone,
+    Activity as ActivityIcon,
+    Settings,
+    Database,
+    Trash2,
+    ShieldAlert,
+    UserPlus,
+    Zap,
+    Lock,
+    Unlock,
+    Mail,
+    Clock,
+    MapPin,
+    MoreVertical,
+    Terminal,
+    Cpu,
+    Globe,
+    UserCheck,
+    ShieldCheck,
+    Briefcase,
+    PenTool,
+    Key,
+    ToggleLeft,
+    TrendingUp
 } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import api from '../lib/api-client';
 import PermissionEnginePanel from '../components/watua/PermissionEnginePanel.js';
 
@@ -85,10 +110,11 @@ interface SupportRequest {
 
 interface AuditLog {
     id: string;
-    action: string;
+    actionType: string;
+    entityType: string;
     details: string;
     createdAt: string;
-    user?: { name: string };
+    actor?: { name: string };
 }
 
 interface Project {
@@ -128,6 +154,9 @@ export default function WatuaDashboard() {
     const [meetings, setMeetings] = useState<any[]>([]);
     const [departments, setDepartments] = useState<{ id: string, name: string }[]>([]);
     const [logs, setLogs] = useState<AuditLog[]>([]);
+    const [trash, setTrash] = useState<any[]>([]);
+    const [flags, setFlags] = useState<any[]>([]);
+    const [governanceData, setGovernanceData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [message, setMessage] = useState({ type: 'info', text: '' });
     const [searchTerm, setSearchTerm] = useState('');
@@ -166,13 +195,16 @@ export default function WatuaDashboard() {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [usersRes, statsRes, diagRes, logsRes, deptsRes, supportRes] = await Promise.all([
+            const [usersRes, statsRes, diagRes, logsRes, deptsRes, supportRes, trashRes, flagsRes, govRes] = await Promise.all([
                 api.get('/users/technical/all', { params: { limit: 1000 } }),
                 api.get('/users/technical/stats'),
                 api.get('/users/technical/diagnostics'),
                 api.get('/users/technical/audit/all'),
                 api.get('/departments'),
-                api.get('/support')
+                api.get('/support'),
+                api.get('/users/technical/trash'),
+                api.get('/users/technical/flags'),
+                api.get('/dashboard/governance')
             ]);
             setUsers(Array.isArray(usersRes.data.data) ? usersRes.data.data : (Array.isArray(usersRes.data) ? usersRes.data : []));
             setStats(statsRes.data);
@@ -180,6 +212,9 @@ export default function WatuaDashboard() {
             setLogs(Array.isArray(logsRes.data) ? logsRes.data : (Array.isArray(logsRes.data.data) ? logsRes.data.data : []));
             setDepartments(Array.isArray(deptsRes.data) ? deptsRes.data : (Array.isArray(deptsRes.data.data) ? deptsRes.data.data : []));
             setSupportRequests(Array.isArray(supportRes.data) ? supportRes.data : (Array.isArray(supportRes.data.data) ? supportRes.data.data : []));
+            setTrash(trashRes.data);
+            setFlags(flagsRes.data);
+            setGovernanceData(govRes.data);
             await fetchOmniData();
         } catch (err) {
             console.error('Fetch error:', err);
@@ -263,6 +298,26 @@ export default function WatuaDashboard() {
         setMessage({ type: 'success', text: 'System-wide broadcast dispatched to all active nodes.' });
         setBroadcastDialog(false);
         setBroadcastText('');
+    };
+
+    const handleRestore = async (id: string, type: string) => {
+        try {
+            await api.post(`/users/technical/restore/${id}`, { type });
+            setMessage({ type: 'success', text: `Resource ${type}:${id} successfully restored to kernel.` });
+            fetchData();
+        } catch (err: any) {
+            setMessage({ type: 'error', text: err.response?.data?.error || 'Restoration failed.' });
+        }
+    };
+
+    const handleToggleFlag = async (name: string, enabled: boolean, scope: string) => {
+        try {
+            await api.patch('/users/technical/flags', { name, enabled, scope });
+            setMessage({ type: 'success', text: `Feature flag ${name} updated.` });
+            fetchData();
+        } catch (err: any) {
+            setMessage({ type: 'error', text: 'Failed to update feature flag.' });
+        }
     };
 
     const safeUsers = Array.isArray(users) ? users : [];
@@ -373,6 +428,9 @@ export default function WatuaDashboard() {
                     <Tab label="Support Hub" icon={<Activity size={18} />} iconPosition="start" />
                     <Tab label="Intervention Logs" icon={<RefreshCw size={18} />} iconPosition="start" />
                     <Tab label="Permission Engine" icon={<Key size={18} />} iconPosition="start" />
+                    <Tab label="Recovery Hub" icon={<Trash2 size={18} />} iconPosition="start" />
+                    <Tab label="Feature Flags" icon={<ToggleLeft size={18} />} iconPosition="start" />
+                    <Tab label="Mission Analytics" icon={<TrendingUp size={18} />} iconPosition="start" />
                 </Tabs>
             </Box>
 
@@ -708,14 +766,14 @@ export default function WatuaDashboard() {
                                                 <Typography variant="caption">{new Date(log.createdAt).toLocaleString()}</Typography>
                                             </TableCell>
                                             <TableCell>
-                                                <Typography variant="body2" fontWeight="bold">{log.user?.name || 'SYSTEM'}</Typography>
+                                                <Typography variant="body2" fontWeight="bold">{log.actor?.name || 'SYSTEM'}</Typography>
                                             </TableCell>
                                             <TableCell>
                                                 <Chip
-                                                    label={log.action}
+                                                    label={log.actionType}
                                                     size="small"
                                                     variant="outlined"
-                                                    sx={{ borderColor: log.action.includes('WATUA') ? '#c175ff' : 'rgba(255,255,255,0.1)', color: log.action.includes('WATUA') ? '#c175ff' : 'inherit' }}
+                                                    sx={{ borderColor: log.actionType?.includes('WATUA') ? '#c175ff' : 'rgba(255,255,255,0.1)', color: log.actionType?.includes('WATUA') ? '#c175ff' : 'inherit' }}
                                                 />
                                             </TableCell>
                                             <TableCell>
@@ -734,9 +792,9 @@ export default function WatuaDashboard() {
                                     <CardContent sx={{ p: 2 }}>
                                         <Box display="flex" justifyContent="space-between" mb={1}>
                                             <Typography variant="caption" sx={{ opacity: 0.6 }}>{new Date(log.createdAt).toLocaleTimeString()}</Typography>
-                                            <Chip label={log.action} size="small" variant="outlined" sx={{ height: 18, fontSize: '0.6rem' }} />
+                                            <Chip label={log.actionType} size="small" variant="outlined" sx={{ height: 18, fontSize: '0.6rem' }} />
                                         </Box>
-                                        <Typography variant="subtitle2" fontWeight="900" mb={0.5}>{log.user?.name || 'SYSTEM_KERNEL'}</Typography>
+                                        <Typography variant="subtitle2" fontWeight="900" mb={0.5}>{log.actor?.name || 'SYSTEM_KERNEL'}</Typography>
                                         <Typography variant="caption" sx={{ opacity: 0.8 }}>{log.details}</Typography>
                                     </CardContent>
                                 </Card>
@@ -748,6 +806,176 @@ export default function WatuaDashboard() {
 
             {tab === 4 && (
                 <PermissionEnginePanel />
+            )}
+
+            {tab === 5 && (
+                <Card sx={{ bgcolor: '#161925', border: '1px solid rgba(255,,255,255,0.05)', borderRadius: 0 }}>
+                    <CardContent>
+                        <Typography variant="h6" color="#f8fafc" sx={{ mb: 3 }}>Recovery Center (Trash Bin)</Typography>
+                        <TableContainer component={Paper} sx={{ bgcolor: 'transparent', boxShadow: 'none' }}>
+                            <Table size="small">
+                                <TableHead>
+                                    <TableRow sx={{ '& th': { borderBottom: '1px solid rgba(255,255,255,0.1)', py: 2, fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', color: '#94a3b8' } }}>
+                                        <TableCell>Entity Type</TableCell>
+                                        <TableCell>Name/Identifier</TableCell>
+                                        <TableCell>Deleted On</TableCell>
+                                        <TableCell>Reason</TableCell>
+                                        <TableCell>Action</TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {trash.length === 0 && (
+                                        <TableRow>
+                                            <TableCell colSpan={5} align="center" sx={{ py: 4, color: '#94a3b8' }}>
+                                                Trash bin is empty. No recoverable items found.
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
+                                    {trash.map((item) => (
+                                        <TableRow key={item.id} sx={{ '& td': { borderBottom: '1px solid rgba(255,255,255,0.05)', py: 2, color: '#f8fafc' } }}>
+                                            <TableCell><Chip label={item.type} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.6rem' }} /></TableCell>
+                                            <TableCell>{item.displayName}</TableCell>
+                                            <TableCell>{new Date(item.deletedAt).toLocaleString()}</TableCell>
+                                            <TableCell sx={{ opacity: 0.7 }}>{item.deletedReason}</TableCell>
+                                            <TableCell>
+                                                <Button 
+                                                    size="small" 
+                                                    startIcon={<RefreshCw size={14} />}
+                                                    onClick={() => handleRestore(item.id, item.type.toLowerCase())}
+                                                    sx={{ color: '#00d4ff' }}
+                                                >
+                                                    Restore
+                                                </Button>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                    </CardContent>
+                </Card>
+            )}
+
+            {tab === 6 && (
+                <Card sx={{ bgcolor: '#161925', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 0 }}>
+                    <CardContent>
+                        <Typography variant="h6" color="#f8fafc" sx={{ mb: 3 }}>System Feature Control Console</Typography>
+                        <Grid container spacing={2}>
+                            {flags.map((flag) => (
+                                <Grid item xs={12} md={6} key={flag.id}>
+                                    <Box p={2} sx={{ bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <Box>
+                                            <Typography variant="body1" fontWeight="bold">{flag.name}</Typography>
+                                            <Typography variant="caption" sx={{ color: '#94a3b8' }}>Scope: {flag.scope}</Typography>
+                                        </Box>
+                                        <Box display="flex" alignItems="center" gap={2}>
+                                            <Typography variant="caption" color={flag.enabled ? '#22c55e' : '#ef4444'}>
+                                                {flag.enabled ? 'ENABLED' : 'DISABLED'}
+                                            </Typography>
+                                            <Switch 
+                                                checked={flag.enabled} 
+                                                onChange={(e) => handleToggleFlag(flag.name, e.target.checked, flag.scope)}
+                                                color="secondary"
+                                            />
+                                        </Box>
+                                    </Box>
+                                </Grid>
+                            ))}
+                        </Grid>
+                    </CardContent>
+                </Card>
+            )}            {tab === 8 && (
+                <Box>
+                    {loading ? (
+                        <Box display="flex" justifyContent="center" alignItems="center" height="50vh">
+                            <CircularProgress sx={{ color: '#00d4ff' }} />
+                        </Box>
+                    ) : !governanceData ? (
+                         <Box sx={{ p: 4 }}>
+                            <Alert severity="info" sx={{ bgcolor: '#0f172a', color: '#00d4ff', border: '1px solid rgba(0, 212, 255, 0.2)' }}>
+                                KERNEL_GOVERNANCE_DATA_NOT_SYNCED: Please wait for system telemetry.
+                            </Alert>
+                         </Box>
+                    ) : (
+                        <Box sx={{ p: 4, height: '100%', overflowY: 'auto' }}>
+                            <Grid container spacing={3}>
+                                <Grid item xs={12} md={3}>
+                                    <Card sx={{ bgcolor: 'rgba(0, 212, 255, 0.05)', border: '1px solid rgba(0, 212, 255, 0.2)' }}>
+                                        <CardContent>
+                                            <Typography variant="caption" color="#00d4ff" sx={{ fontWeight: 900 }}>TOTAL MISSION REVENUE</Typography>
+                                            <Typography variant="h4" sx={{ color: 'white', mt: 1, fontWeight: 950 }}>
+                                                Ksh {governanceData.finance?.totalInflow?.toLocaleString() || 0}
+                                            </Typography>
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+                                <Grid item xs={12} md={3}>
+                                    <Card sx={{ bgcolor: 'rgba(193, 117, 255, 0.05)', border: '1px solid rgba(193, 117, 255, 0.2)' }}>
+                                        <CardContent>
+                                            <Typography variant="caption" color="#c175ff" sx={{ fontWeight: 900 }}>COVENANT PARTNERS</Typography>
+                                            <Typography variant="h4" sx={{ color: 'white', mt: 1, fontWeight: 950 }}>{governanceData.demographics?.activePartners || 0}</Typography>
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+                                <Grid item xs={12} md={3}>
+                                    <Card sx={{ bgcolor: 'rgba(34, 197, 94, 0.05)', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
+                                        <CardContent>
+                                            <Typography variant="caption" color="#22c55e" sx={{ fontWeight: 900 }}>KERNEL STABILITY</Typography>
+                                            <Typography variant="h4" sx={{ color: 'white', mt: 1, fontWeight: 950 }}>{governanceData.health || 'STABLE'}</Typography>
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+                                <Grid item xs={12} md={3}>
+                                    <Card sx={{ bgcolor: 'rgba(255, 152, 0, 0.05)', border: '1px solid rgba(255, 152, 0, 0.2)' }}>
+                                        <CardContent>
+                                            <Typography variant="caption" color="#ff9800" sx={{ fontWeight: 900 }}>PENDING SPIRITUAL REQS</Typography>
+                                            <Typography variant="h4" sx={{ color: 'white', mt: 1, fontWeight: 950 }}>{governanceData.operations?.pendingApprovals || 0}</Typography>
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+
+                                {/* Activity Trend Chart */}
+                                <Grid item xs={12}>
+                                    <Card sx={{ bgcolor: '#161925', border: '1px solid rgba(255,255,255,0.05)', p: 3 }}>
+                                        <Typography variant="h6" color="white" sx={{ mb: 4, fontWeight: 900 }}>Kernel Activity Trend (Last 7 Days)</Typography>
+                                        <Box sx={{ height: 300, width: '100%' }}>
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <AreaChart data={governanceData.trends || []}>
+                                                    <defs>
+                                                        <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                                                            <stop offset="5%" stopColor="#00d4ff" stopOpacity={0.3}/>
+                                                            <stop offset="95%" stopColor="#00d4ff" stopOpacity={0}/>
+                                                        </linearGradient>
+                                                    </defs>
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                                                    <XAxis 
+                                                        dataKey="date" 
+                                                        stroke="rgba(255,255,255,0.3)" 
+                                                        fontSize={10} 
+                                                        tickFormatter={(str) => str.split('-').slice(1).join('/')}
+                                                    />
+                                                    <YAxis stroke="rgba(255,255,255,0.3)" fontSize={10} />
+                                                    <Tooltip 
+                                                        contentStyle={{ bgcolor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }}
+                                                        itemStyle={{ color: '#00d4ff' }}
+                                                    />
+                                                    <Area 
+                                                        type="monotone" 
+                                                        dataKey="count" 
+                                                        stroke="#00d4ff" 
+                                                        fillOpacity={1} 
+                                                        fill="url(#colorCount)" 
+                                                        strokeWidth={3}
+                                                    />
+                                                </AreaChart>
+                                            </ResponsiveContainer>
+                                        </Box>
+                                    </Card>
+                                </Grid>
+                            </Grid>
+                        </Box>
+                    )}
+                </Box>
             )}
 
             {/* Support/Bio Inspector Dialog with REPAIR TOOL */}

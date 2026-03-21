@@ -3,6 +3,7 @@ import prisma from '../../utils/prisma.js';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
 import { logAudit } from '../../utils/audit.js';
 import { getOrSetCache, invalidateCache } from '../../utils/redis.js';
+import { hasPermission } from '../../utils/permissions.js';
 
 export const getAnnouncements = async (req: Request, res: Response) => {
     const { departmentId, isGlobal, isMajor, page = '1', limit = '10' } = req.query;
@@ -100,11 +101,20 @@ export const getAllAnnouncements = async (req: Request, res: Response) => {
 export const createAnnouncement = async (req: AuthRequest, res: Response) => {
     const { title, content, priority, expiry, departmentId, isGlobal, isMajor } = req.body;
     const user = req.user!;
-    
-    // Authorization Check
-    const isExecutive = ['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'SECRETARY'].includes(user.role);
-    if (!isExecutive && user.role === 'DEPARTMENT_LEADER' && departmentId !== user.departmentId) {
-        return res.status(403).json({ error: 'Leaders can only post announcements for their own mission sector' });
+    // Authorization Check (Strict Permissions)
+    const isGlobalOrMajor = isGlobal || isMajor;
+    const isLocal = !isGlobal && !isMajor;
+
+    if (isGlobalOrMajor && !hasPermission(user, 'CREATE_ANNOUNCEMENTS_GLOBAL')) {
+        return res.status(403).json({ error: 'Permission Denied: You lack clearance to broadcast Global or Major announcements.' });
+    }
+
+    if (isLocal && !hasPermission(user, 'CREATE_ANNOUNCEMENTS_LOCAL') && !hasPermission(user, 'CREATE_ANNOUNCEMENTS_GLOBAL')) {
+        return res.status(403).json({ error: 'Permission Denied: You lack clearance to create local sector announcements.' });
+    }
+
+    if (user.role === 'DEPARTMENT_LEADER' && departmentId !== user.departmentId) {
+        return res.status(403).json({ error: 'Department Leaders can only post announcements for their natively assigned sector.' });
     }
 
     try {

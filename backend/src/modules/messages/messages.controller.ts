@@ -4,6 +4,13 @@ import { emitToRoom } from '../../utils/socket.js';
 
 export const getMessages = async (req: Request, res: Response) => {
     const { departmentId, projectId, eventId, receiverId, chatType } = req.query;
+    const currentUser = (req as any).user;
+
+    // RULE: Communication is ONLY between leaders. Members are excluded.
+    if (!currentUser || currentUser.role === 'MEMBER') {
+        return res.status(403).json({ error: 'Communication infrastructure is reserved for Leadership only.' });
+    }
+
     try {
         const messages = await prisma.message.findMany({
             where: {
@@ -63,6 +70,10 @@ export const createMessage = async (req: Request, res: Response) => {
 
     try {
         const sender = await prisma.user.findUnique({ where: { id: senderId } });
+        if (!sender || sender.role === 'MEMBER') {
+            return res.status(403).json({ error: 'Communication infrastructure is reserved for Leadership only.' });
+        }
+        
         if ((sender as any)?.isSuspended) {
             return res.status(403).json({ error: 'Your account is suspended due to moderation policy.' });
         }

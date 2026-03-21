@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
     Modal, Fade, Box, Typography, Card, CardContent, Grid, 
     Avatar, Chip, IconButton, Button, Stack, Divider, 
-    TextField, InputAdornment, LinearProgress
+    TextField, InputAdornment, LinearProgress, MenuItem, Alert
 } from '@mui/material';
 import { XCircle, Star, TrendingUp, DollarSign, Search, CheckCircle, RefreshCcw } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -18,21 +18,29 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedPartner, setSelectedPartner] = useState<any>(null);
     const [paymentAmount, setPaymentAmount] = useState<string>('');
+    const [paymentMethod, setPaymentMethod] = useState<string>('MPESA');
+    const [referenceCode, setReferenceCode] = useState<string>('');
+    const [errorMsg, setErrorMsg] = useState<string>('');
 
     const { data: partnerships = [], isLoading } = useQuery(['all-partnerships'], async () => {
         const res = await api.get('/partnerships/all');
         return res.data;
     }, { enabled: open });
 
-    const updatePaymentMutation = useMutation(
-        async ({ id, paidAmount }: { id: string; paidAmount: number }) => 
-            api.patch(`/partnerships/${id}/payment`, { paidAmount }),
+    const addLedgerMutation = useMutation(
+        async ({ id, amount, paymentMethod, referenceCode }: any) => 
+            api.post(`/partnerships/${id}/ledger`, { amount, paymentMethod, referenceCode }),
         {
             onSuccess: () => {
                 queryClient.invalidateQueries(['all-partnerships']);
                 queryClient.invalidateQueries(['dashboard-sync']);
                 setSelectedPartner(null);
                 setPaymentAmount('');
+                setReferenceCode('');
+                setErrorMsg('');
+            },
+            onError: (err: any) => {
+                setErrorMsg(err.response?.data?.error || 'Failed to reconcile ledger.');
             }
         }
     );
@@ -143,7 +151,7 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
                                                         onClick={() => setSelectedPartner(p)}
                                                         sx={{ bgcolor: 'orange', color: '#000', fontWeight: 1000, '&:hover': { bgcolor: '#ffb347' } }}
                                                     >
-                                                        UPDATE
+                                                        RECONCILE
                                                     </Button>
                                                 </Grid>
                                             </Grid>
@@ -171,23 +179,34 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
                                         Current balance: <b>${selectedPartner.balance}</b>
                                     </Typography>
 
-                                    <Stack spacing={3}>
+                                    <Stack spacing={2}>
+                                        {errorMsg && <Alert severity="error">{errorMsg}</Alert>}
                                         <TextField
-                                            fullWidth
-                                            label="TABULATE AMOUNT ($)"
-                                            type="number"
-                                            value={paymentAmount}
-                                            onChange={(e) => setPaymentAmount(e.target.value)}
+                                            fullWidth label="AMOUNT (KES)" type="number"
+                                            value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)}
                                             InputProps={{ sx: { fontWeight: 900 } }}
                                         />
+                                        <TextField
+                                            fullWidth label="REFERENCE CODE (MPESA/BANK)"
+                                            value={referenceCode} onChange={(e) => setReferenceCode(e.target.value)}
+                                            InputProps={{ sx: { fontWeight: 900, textTransform: 'uppercase' } }}
+                                        />
+                                        <TextField
+                                            select fullWidth label="PAYMENT METHOD"
+                                            value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}
+                                        >
+                                            <MenuItem value="MPESA">MPESA</MenuItem>
+                                            <MenuItem value="CASH">CASH</MenuItem>
+                                            <MenuItem value="BANK">BANK</MenuItem>
+                                        </TextField>
+                                        
                                         <Button 
-                                            fullWidth
-                                            variant="contained"
-                                            disabled={!paymentAmount || updatePaymentMutation.isLoading}
-                                            onClick={() => updatePaymentMutation.mutate({ id: selectedPartner.id, paidAmount: Number(paymentAmount) })}
+                                            fullWidth variant="contained"
+                                            disabled={!paymentAmount || !referenceCode || addLedgerMutation.isLoading}
+                                            onClick={() => addLedgerMutation.mutate({ id: selectedPartner.id, amount: Number(paymentAmount), paymentMethod, referenceCode: referenceCode.toUpperCase() })}
                                             sx={{ bgcolor: 'orange', color: '#000', fontWeight: 1000, py: 1.5 }}
                                         >
-                                            {updatePaymentMutation.isLoading ? 'SYNCING...' : 'CONFIRM TABULATION'}
+                                            {addLedgerMutation.isLoading ? 'VERIFYING...' : 'CONFIRM LEDGER ENTRY'}
                                         </Button>
                                     </Stack>
                                 </CardContent>

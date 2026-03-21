@@ -34,7 +34,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         <Container maxWidth="xl" sx={{ height: '100%' }}>
                             {children}
                         </Container>
-                        <CommunicationHub />
+                        {user?.role !== 'MEMBER' && <CommunicationHub />}
                     </Box>
                 </>
             )}

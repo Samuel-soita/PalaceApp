@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import prisma from '../../utils/prisma.js';
 import { logAudit } from '../../utils/audit.js';
+import { getOrSetCache } from '../../utils/redis.js';
 
 import { findTargetDepartmentId } from '../../utils/department-mapper.js';
 
@@ -94,13 +95,16 @@ export const login = async (req: Request, res: Response) => {
             });
         }
 
-        const user = await prisma.user.findUnique({ 
-            where: { membershipNumber },
-            include: { 
-                managedDepartments: { select: { id: true, name: true } },
-                department: { select: { id: true, name: true } }
-            }
-        });
+        // --- REDIS FAST-PATH: User Lookup ---
+        const user = await getOrSetCache(`auth:login:${membershipNumber}`, async () => {
+            return await prisma.user.findUnique({ 
+                where: { membershipNumber },
+                include: { 
+                    managedDepartments: { select: { id: true, name: true } },
+                    department: { select: { id: true, name: true } }
+                }
+            });
+        }, 60); // 60s cache for fast login re-checks
 
         console.log('[Login] User query result:', user ? 'Found' : 'Not found');
 
@@ -121,27 +125,40 @@ export const login = async (req: Request, res: Response) => {
             { expiresIn: '30d' } // Persistent login
         );
 
-        // --- 4. Fetch Permissions & Overrides ---
-        const rolePermissions = await prisma.rolePermission.findMany({
-            where: { role: { name: user.role } },
-            include: { permission: true }
-        });
+        // --- REDIS FAST-PATH: Permissions & Overrides ---
+        const finalPermissions = await getOrSetCache(`auth:perms:${user.id}`, async () => {
+            const [rolePermissions, overrides] = await Promise.all([
+                prisma.rolePermission.findMany({
+                    where: { role: { name: (user as any).role } },
+                    include: { permission: true }
+                }),
+                prisma.permissionOverride.findMany({
+                    where: { 
+                        userId: (user as any).id,
+                        expiresAt: { gt: new Date() }
+                    },
+                    include: { permission: true }
+                })
+            ]);
 
-        const overrides = await prisma.permissionOverride.findMany({
-            where: { 
+            const basePerms = rolePermissions.map((rp: any) => rp.permission.code);
+            const overrideGrants = overrides.filter((o: any) => o.granted).map((o: any) => o.permission.code);
+            const overrideRevokes = overrides.filter((o: any) => !o.granted).map((o: any) => o.permission.code);
+
+            return [...new Set([...basePerms, ...overrideGrants])]
+                .filter(code => !overrideRevokes.includes(code));
+        }, 60);
+
+        // --- 5. Create Session Record ---
+        await (prisma as any).session.create({
+            data: {
                 userId: user.id,
-                expiresAt: { gt: new Date() }
-            },
-            include: { permission: true }
+                token,
+                deviceInfo: req.headers['user-agent'] || 'Unknown Device',
+                ipAddress: req.ip || 'Unknown IP',
+                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+            }
         });
-
-        // Flatten permissions with overrides applied
-        const basePerms = rolePermissions.map((rp: any) => rp.permission.code);
-        const overrideGrants = overrides.filter((o: any) => o.granted).map((o: any) => o.permission.code);
-        const overrideRevokes = overrides.filter((o: any) => !o.granted).map((o: any) => o.permission.code);
-
-        const finalPermissions = [...new Set([...basePerms, ...overrideGrants])]
-            .filter(code => !overrideRevokes.includes(code));
 
         res.json({
             user: { 
@@ -326,6 +343,17 @@ export const watuaAccess = async (req: Request, res: Response) => {
             { expiresIn: '30d' }
         );
         console.log('[WatuaAccess] Token signed');
+
+        // Create WATUA session
+        await (prisma as any).session.create({
+            data: {
+                userId: engineer.id,
+                token,
+                deviceInfo: 'WATUA_TERMINAL',
+                ipAddress: req.ip || 'Unknown IP',
+                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+            }
+        });
 
         res.json({ user: engineer, token });
         console.log('[WatuaAccess] Success response sent');

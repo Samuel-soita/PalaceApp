@@ -8,16 +8,16 @@ export const logAudit = (
     details?: any
 ) => {
     // --- PRODUCTION SCALABILITY: NON-BLOCKING AUDIT ---
-    // Offload to next tick to avoid blocking the main thread/response.
     setImmediate(async () => {
         try {
-            await prisma.auditLog.create({
+            await (prisma as any).auditLog.create({
                 data: {
-                    userId,
-                    action,
+                    actorId: userId,
+                    actorRole: 'SYSTEM',
+                    actionType: action,
                     entityType,
                     entityId,
-                    details: details ? JSON.stringify(details) : null,
+                    metadata: details || {}
                 }
             });
         } catch (error) {

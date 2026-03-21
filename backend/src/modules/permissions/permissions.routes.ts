@@ -13,10 +13,11 @@ router.use(authenticate);
 async function logPermissionAudit(wauserId: string, action: string, details: string) {
     await prisma.auditLog.create({
         data: {
-            userId: wauserId,
-            action,
+            actorId: wauserId,
+            actionType: action,
             entityType: 'PERMISSION_ENGINE',
-            details
+            metadata: { details },
+            actorRole: 'SYSTEM_ADMIN'
         }
     });
 }
@@ -100,7 +101,7 @@ router.get('/audit-log', authorize(PERMISSIONS.MANAGE_PERMISSIONS), async (req, 
             where: { entityType: 'PERMISSION_ENGINE' },
             orderBy: { createdAt: 'desc' },
             take: 100,
-            include: { user: { select: { name: true, role: true } } }
+            include: { actor: { select: { name: true, role: true } } }
         });
         res.json(logs);
     } catch (error) {

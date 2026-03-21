@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import prisma from '../../utils/prisma.js';
-import { logAudit } from '../../utils/audit.js';
+import { logAction } from '../../utils/audit.service.js';
+import { BackupEngine } from '../../utils/backup.service.js';
 
 export const getSettings = async (req: any, res: Response) => {
     try {
@@ -44,12 +45,28 @@ export const updateSettings = async (req: any, res: Response) => {
                 themeOfMonth
             }
         });
-
-        await logAudit(actorId, 'UPDATE_MINISTRY_SETTINGS', 'SETTINGS', 'GLOBAL', { themeOfYear, themeOfMonth });
+        await logAction({
+            actorId,
+            actionType: 'UPDATE_MINISTRY_SETTINGS',
+            entityType: 'SETTINGS',
+            entityId: 'GLOBAL',
+            beforeState: null,
+            afterState: settings,
+            metadata: { themeOfYear, themeOfMonth }
+        });
 
         res.json({ message: 'Ministry settings updated successfully.', settings });
     } catch (error) {
         console.error('[Update Settings Error]', error);
         res.status(500).json({ error: 'Failed to update settings.' });
+    }
+};
+
+export const triggerBackup = async (req: any, res: Response) => {
+    try {
+        const filepath = await BackupEngine.createSnapshot(req.user.id);
+        res.json({ message: 'Disaster Recovery Snapshot generated successfully.', file: filepath });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
     }
 };

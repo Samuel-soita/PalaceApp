@@ -64,7 +64,7 @@ async function seedPermissions() {
         'DEPARTMENT_LEADER': [
             PERMISSIONS.VIEW_DEPARTMENT, PERMISSIONS.MANAGE_DEPARTMENT_PROJECTS,
             PERMISSIONS.MANAGE_DEPARTMENT_EVENTS, PERMISSIONS.MANAGE_DEPARTMENT_PLANS,
-            PERMISSIONS.CREATE_ANNOUNCEMENTS
+            PERMISSIONS.CREATE_ANNOUNCEMENTS_LOCAL
         ],
         'MEMBER': [] // Base member has no special permissions yet
     };

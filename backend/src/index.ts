@@ -24,11 +24,14 @@ import budgetsRoutes from './modules/budgets/budgets.routes.js';
 import settingsRoutes from './modules/settings/settings.routes.js';
 import partnershipsRoutes from './modules/partnerships/partnerships.routes.js';
 import permissionsRoutes from './modules/permissions/permissions.routes.js';
+import recoveryRoutes from './modules/recovery/recovery.routes.js';
 import cluster from 'cluster';
 import os from 'os';
 
 import { createServer } from 'http';
 import { initSocket } from './utils/socket.js';
+import { BackgroundJobWorker } from './utils/JobWorker.js';
+import { TelemetryEngine } from './utils/health.service.js';
 
 import compression from 'compression';
 
@@ -88,6 +91,8 @@ const useCluster = process.env.NODE_ENV === 'production' && !process.env.NO_CLUS
 
 if (useCluster && cluster.isPrimary) {
     console.log(`[master]: Primary process ${process.pid} is running`);
+    BackgroundJobWorker.ignite();
+    TelemetryEngine.ignite();
     for (let i = 0; i < numCPUs; i++) {
         cluster.fork();
     }
@@ -119,6 +124,7 @@ if (useCluster && cluster.isPrimary) {
     app.use('/search', searchRoutes);
     app.use('/upload', uploadRoutes);
     app.use('/permissions', permissionsRoutes);
+    app.use('/recovery', recoveryRoutes);
 
     // SILENCE DEVTOOLS NOISE
     app.get('/.well-known/*', (req, res) => res.status(204).end());
@@ -127,6 +133,7 @@ if (useCluster && cluster.isPrimary) {
 
     // Error Handling Middleware
     app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+        TelemetryEngine.incrementError();
         console.error('[Error]', err.message || err);
         res.status(500).json({ 
             error: 'Internal Server Error',
@@ -137,5 +144,9 @@ if (useCluster && cluster.isPrimary) {
     const PORT = process.env.PORT || 4000;
     httpServer.listen(PORT, () => {
         console.log(`[worker]: Worker ${process.pid} started. API running at http://localhost:${PORT}`);
+        if (!useCluster) {
+            BackgroundJobWorker.ignite();
+            TelemetryEngine.ignite();
+        }
     });
 }

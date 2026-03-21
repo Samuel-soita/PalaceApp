@@ -5,7 +5,7 @@ export const getAuditLogs = async (req: Request, res: Response) => {
     try {
         const logs = await prisma.auditLog.findMany({
             include: {
-                user: {
+                actor: {
                     select: { name: true, avatarUrl: true, role: true }
                 }
             },

@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
-import { logAudit } from '../../utils/audit.js';
+import { logAction } from '../../utils/audit.service.js';
+import { hasPermission } from '../../utils/permissions.js';
+import { WorkflowEngine } from '../../utils/WorkflowEngine.js';
 
 /**
  * BAPTISM WORKFLOW
@@ -28,7 +30,15 @@ export const requestBaptism = async (req: any, res: Response) => {
             }
         });
 
-        await logAudit(userId, 'BAPTISM_REQUESTED', 'BAPTISM', baptism.id, { ip: req.ip });
+        await logAction({
+            actorId: userId,
+            actorRole: req.user.role,
+            actionType: 'BAPTISM_REQUESTED',
+            entityType: 'BAPTISM',
+            entityId: baptism.id,
+            afterState: baptism,
+            ipAddress: req.ip
+        });
         
         return res.status(201).json({ message: 'Baptism request submitted to your Pastor.', baptism });
     } catch (error) {
@@ -46,19 +56,35 @@ export const updateBaptismStatus = async (req: any, res: Response) => {
         const actorRole = req.user.role;
 
         // Fetch current status to validate transition
-        const current = await prisma.baptism.findUnique({ where: { id } });
+        const current = await prisma.baptism.findUnique({ 
+            where: { id },
+            include: { user: true }
+        });
         if (!current) return res.status(404).json({ error: 'Baptism request not found.' });
 
-        // Authorization & Workflow Logic
+        // Authorization & Workflow Logic (Strict Permissions)
         let canUpdate = false;
-        if (actorRole === 'WATUA' || actorRole === 'SUPER_ADMIN') canUpdate = true;
         
-        if (actorRole === 'PASTOR' || actorRole === 'ASSOCIATE_PASTOR') {
-            if (current.status === 'PENDING_PASTOR_APPROVAL') canUpdate = true;
+        // --- PHASE INTEGRITY GUARD ---
+        if (!WorkflowEngine.isValidTransition('BAPTISM', current.status, status)) {
+            return res.status(400).json({ error: `State Integrity Violation: Invalid workflow transition from ${current.status} to ${status}.` });
+        }
+        if (hasPermission(req.user, 'APPROVE_BAPTISM')) {
+            if (current.status === 'PENDING_PASTOR_APPROVAL') {
+                // --- GATE CONDITIONS ---
+                if (!current.user.isCardPaid || current.user.status !== 'ACTIVE') {
+                    return res.status(403).json({ error: 'Gate Condition Failed: Candidate must be administratively verified and financially cleared before spiritual approval is granted.' });
+                }
+                canUpdate = true;
+            }
         }
         
-        if (actorRole === 'SECRETARY' || actorRole === 'SYSTEM_ADMIN') {
+        if (hasPermission(req.user, 'VERIFY_RITE_PAYMENTS')) {
             if (current.status === 'ADMIN_PAYMENT_VERIFICATION') canUpdate = true;
+        }
+
+        if (actorRole === 'WATUA' || actorRole === 'SUPER_ADMIN') {
+            canUpdate = true; // Absolute root override
         }
 
         if (!canUpdate) {
@@ -86,7 +112,16 @@ export const updateBaptismStatus = async (req: any, res: Response) => {
             }
         });
 
-        await logAudit(actorId, `BAPTISM_STATUS_${status}`, 'BAPTISM', baptism.id, { ip: req.ip });
+        await logAction({
+            actorId,
+            actorRole,
+            actionType: `BAPTISM_STATUS_${status}`,
+            entityType: 'BAPTISM',
+            entityId: baptism.id,
+            beforeState: current, // Immutable original state
+            afterState: baptism,  // Immutable exact mutation delta
+            ipAddress: req.ip
+        });
         res.json({ message: `Baptism status updated to ${status}.`, baptism });
     } catch (error) {
         console.error('Baptism Update Error:', error);
@@ -128,18 +163,36 @@ export const updateChildDedicationStatus = async (req: any, res: Response) => {
         const actorId = req.user.id;
         const actorRole = req.user.role;
 
-        const current = await prisma.child.findUnique({ where: { id } });
+        const current = await prisma.child.findUnique({ 
+            where: { id },
+            include: { parent: true }
+        });
         if (!current) return res.status(404).json({ error: 'Child record not found.' });
 
+        // Authorization & Workflow Logic (Strict Permissions)
         let canUpdate = false;
-        if (actorRole === 'WATUA' || actorRole === 'SUPER_ADMIN') canUpdate = true;
         
-        if (actorRole === 'PASTOR' || actorRole === 'ASSOCIATE_PASTOR') {
-            if (current.workflowStatus === 'PENDING_DEDICATION') canUpdate = true;
+        // --- PHASE INTEGRITY GUARD ---
+        if (!WorkflowEngine.isValidTransition('DEDICATION', current.workflowStatus, workflowStatus)) {
+            return res.status(400).json({ error: `State Integrity Violation: Invalid workflow transition from ${current.workflowStatus} to ${workflowStatus}.` });
         }
         
-        if (actorRole === 'SECRETARY' || actorRole === 'SYSTEM_ADMIN') {
+        if (hasPermission(req.user, 'APPROVE_DEDICATION')) {
+            if (current.workflowStatus === 'PENDING_DEDICATION') {
+                // --- GATE CONDITIONS ---
+                if (!current.parent.isCardPaid || current.parent.status !== 'ACTIVE') {
+                    return res.status(403).json({ error: 'Gate Condition Failed: The parent must be administratively verified and financially cleared before the child dedication can be spiritually approved.' });
+                }
+                canUpdate = true;
+            }
+        }
+        
+        if (hasPermission(req.user, 'VERIFY_RITE_PAYMENTS')) {
             if (current.workflowStatus === 'ADMIN_PAYMENT_VERIFICATION') canUpdate = true;
+        }
+
+        if (actorRole === 'WATUA' || actorRole === 'SUPER_ADMIN') {
+            canUpdate = true; // Absolute root override
         }
 
         if (!canUpdate) {
@@ -166,7 +219,16 @@ export const updateChildDedicationStatus = async (req: any, res: Response) => {
             }
         });
 
-        await logAudit(actorId, `CHILD_DEDICATION_${workflowStatus}`, 'CHILD', child.id, { ip: req.ip });
+        await logAction({
+            actorId,
+            actorRole,
+            actionType: `CHILD_DEDICATION_${workflowStatus}`,
+            entityType: 'CHILD',
+            entityId: child.id,
+            beforeState: current,
+            afterState: child,
+            ipAddress: req.ip
+        });
         res.json({ message: `Child dedication status updated to ${workflowStatus}.`, child });
     } catch (error) {
         console.error('Child Dedication Update Error:', error);

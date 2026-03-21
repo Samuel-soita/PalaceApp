@@ -36,7 +36,17 @@ if (import.meta.env.DEV) {
 }
 setUpdateSWCallback(updateSW);
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 15, // 15 seconds stale limit to absorb Live Websocket bursts
+      cacheTime: 1000 * 60 * 5, // 5 minutes Garbage Collection time
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      retry: 2
+    }
+  }
+});
 
 // Dark Holographic Theme with Strict Square Geometry
 const theme = createTheme({
