@@ -134,21 +134,25 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
                                                 </Grid>
                                                 <Grid item xs={4} sm={2}>
                                                     <Typography variant="caption" sx={{ opacity: 0.5 }}>COMMITMENT</Typography>
-                                                    <Typography variant="subtitle2" fontWeight={1000}>${p.amount}</Typography>
+                                                    <Typography variant="subtitle2" fontWeight={1000}>{p.amount} KES</Typography>
                                                 </Grid>
                                                 <Grid item xs={4} sm={2}>
                                                     <Typography variant="caption" sx={{ opacity: 0.5 }}>PAID</Typography>
-                                                    <Typography variant="subtitle2" fontWeight={1000} color="success.main">${p.paidAmount}</Typography>
+                                                    <Typography variant="subtitle2" fontWeight={1000} color="success.main">{p.paidAmount} KES</Typography>
                                                 </Grid>
                                                 <Grid item xs={4} sm={2}>
                                                     <Typography variant="caption" sx={{ opacity: 0.5 }}>BALANCE</Typography>
-                                                    <Typography variant="subtitle2" fontWeight={1000} color="error.main">${p.balance}</Typography>
+                                                    <Typography variant="subtitle2" fontWeight={1000} color="error.main">{p.balance} KES</Typography>
                                                 </Grid>
                                                 <Grid item xs={12} sm={2} textAlign="right">
                                                     <Button 
                                                         size="small" 
                                                         variant="contained" 
-                                                        onClick={() => setSelectedPartner(p)}
+                                                        onClick={() => {
+                                                            setSelectedPartner(p);
+                                                            setPaymentAmount('');
+                                                            setErrorMsg('');
+                                                        }}
                                                         sx={{ bgcolor: 'orange', color: '#000', fontWeight: 1000, '&:hover': { bgcolor: '#ffb347' } }}
                                                     >
                                                         RECONCILE
@@ -162,51 +166,51 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
                         )}
                     </Box>
 
-                    {/* Update Dialog (Nested Modal View) */}
+                    {/* Reconcile Dialog */}
                     {selectedPartner && (
                         <Box sx={{ 
                             position: 'absolute', inset: 0, bgcolor: 'rgba(0,0,0,0.95)', 
                             zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 4 
                         }}>
-                            <Card sx={{ maxWidth: 400, width: '100%', bgcolor: '#111', border: '1px solid orange' }}>
+                            <Card sx={{ maxWidth: 450, width: '100%', bgcolor: '#111', border: '1px solid orange' }}>
                                 <CardContent sx={{ p: 4 }}>
                                     <Box display="flex" justifyContent="space-between" mb={3}>
-                                        <Typography variant="h6" fontWeight={1000}>UPDATE PAYMENT</Typography>
-                                        <IconButton onClick={() => setSelectedPartner(null)}><XCircle /></IconButton>
+                                        <Typography variant="h6" fontWeight={1000}>RECONCILE SEED</Typography>
+                                        <IconButton onClick={() => setSelectedPartner(null)} sx={{ color: 'text.secondary' }}><XCircle /></IconButton>
                                     </Box>
                                     <Typography variant="body2" sx={{ mb: 4, opacity: 0.7 }}>
-                                        Updating seed for <b>{selectedPartner.user?.name}</b>. <br/>
-                                        Current balance: <b>${selectedPartner.balance}</b>
+                                        Updating manual ledger for <b>{selectedPartner.user?.name}</b>. <br/>
+                                        Outstanding Balance: <b>{selectedPartner.balance} KES</b> <br/>
+                                        Payment to: <b>0741502198</b>
                                     </Typography>
 
-                                    <Stack spacing={2}>
+                                    <Stack spacing={2.5}>
                                         {errorMsg && <Alert severity="error">{errorMsg}</Alert>}
                                         <TextField
-                                            fullWidth label="AMOUNT (KES)" type="number"
+                                            fullWidth label="AMOUNT RECEIVED (KES)" type="number"
                                             value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)}
                                             InputProps={{ sx: { fontWeight: 900 } }}
-                                        />
-                                        <TextField
-                                            fullWidth label="REFERENCE CODE (MPESA/BANK)"
-                                            value={referenceCode} onChange={(e) => setReferenceCode(e.target.value)}
-                                            InputProps={{ sx: { fontWeight: 900, textTransform: 'uppercase' } }}
                                         />
                                         <TextField
                                             select fullWidth label="PAYMENT METHOD"
                                             value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}
                                         >
-                                            <MenuItem value="MPESA">MPESA</MenuItem>
+                                            <MenuItem value="MPESA">MPESA (MANUAL)</MenuItem>
                                             <MenuItem value="CASH">CASH</MenuItem>
-                                            <MenuItem value="BANK">BANK</MenuItem>
+                                            <MenuItem value="BANK">BANK TRANSFER</MenuItem>
                                         </TextField>
-                                        
+                                        <TextField
+                                            fullWidth label="REFERENCE / RECEIPT NUMBER"
+                                            value={referenceCode} onChange={(e) => setReferenceCode(e.target.value)}
+                                            InputProps={{ sx: { fontWeight: 900, textTransform: 'uppercase' } }}
+                                        />
                                         <Button 
                                             fullWidth variant="contained"
                                             disabled={!paymentAmount || !referenceCode || addLedgerMutation.isLoading}
                                             onClick={() => addLedgerMutation.mutate({ id: selectedPartner.id, amount: Number(paymentAmount), paymentMethod, referenceCode: referenceCode.toUpperCase() })}
-                                            sx={{ bgcolor: 'orange', color: '#000', fontWeight: 1000, py: 1.5 }}
+                                            sx={{ bgcolor: 'orange', color: '#000', fontWeight: 1000, py: 1.5, '&:hover': { bgcolor: '#ffb347' } }}
                                         >
-                                            {addLedgerMutation.isLoading ? 'VERIFYING...' : 'CONFIRM LEDGER ENTRY'}
+                                            {addLedgerMutation.isLoading ? 'PROCESSING...' : 'CONFIRM RECONCILIATION'}
                                         </Button>
                                     </Stack>
                                 </CardContent>

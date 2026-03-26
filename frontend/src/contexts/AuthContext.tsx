@@ -13,6 +13,9 @@ interface AuthUser {
     isPartner?: boolean;
     canManagePartnerships?: boolean;
     permissions?: string[];
+    membershipExpiry?: string;
+    cardStatus?: string;
+    isCardReplacementRequested?: boolean;
 }
 
 interface AuthContextType {

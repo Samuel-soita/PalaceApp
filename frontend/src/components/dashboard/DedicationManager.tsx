@@ -26,6 +26,7 @@ export default function DedicationManager({ open, onClose }: { open: boolean, on
     const [plannedDate, setPlannedDate] = useState('');
     const [plannedTime, setPlannedTime] = useState('');
     const [dedicationCardNumber, setDedicationCardNumber] = useState('');
+    const [paymentReference, setPaymentReference] = useState('');
 
     const { data: children = [], isLoading } = useQuery(['all-children'], async () => {
         const res = await api.get('/children');
@@ -35,8 +36,8 @@ export default function DedicationManager({ open, onClose }: { open: boolean, on
     const pendingDedication = children.filter((c: any) => c.workflowStatus !== 'DEDICATED');
 
     const updateStatusMutation = useMutation(
-        async ({ id, workflowStatus, plannedDate, plannedTime, dedicationCardNumber }: any) => {
-            return api.patch(`/workflows/dedication/${id}/status`, { workflowStatus, plannedDate, plannedTime, dedicationCardNumber });
+        async ({ id, workflowStatus, plannedDate, plannedTime, dedicationCardNumber, paymentReference }: any) => {
+            return api.patch(`/workflows/dedication/${id}/status`, { workflowStatus, plannedDate, plannedTime, dedicationCardNumber, paymentReference, isDedicationPaid: true });
         },
         {
             onSuccess: () => {
@@ -216,8 +217,15 @@ export default function DedicationManager({ open, onClose }: { open: boolean, on
                                         {selectedChild.workflowStatus === 'ADMIN_PAYMENT_VERIFICATION' && (
                                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                                 <Alert icon={<CreditCard size={18} />} severity="warning" sx={{ bgcolor: 'rgba(255,152,0,0.05)', color: 'orange', border: '1px solid rgba(255,152,0,0.2)', borderRadius: 2 }}>
-                                                    <Typography variant="caption" fontWeight={900}>Verify card payment and issue Dedication Number below.</Typography>
+                                                    <Typography variant="caption" fontWeight={900}>Verify KES 1,000/- payment to <b>0741502198</b> and issue Dedication Number below.</Typography>
                                                 </Alert>
+                                                <TextField
+                                                    fullWidth
+                                                    label="Payment Reference (M-Pesa Code)"
+                                                    value={paymentReference}
+                                                    onChange={(e) => setPaymentReference(e.target.value.toUpperCase())}
+                                                    sx={{ '& .MuiInputBase-root': { borderRadius: 2, bgcolor: 'rgba(255,255,255,0.02)' } }}
+                                                />
                                                 <TextField
                                                     fullWidth
                                                     label="Dedication Card Number"
@@ -237,11 +245,12 @@ export default function DedicationManager({ open, onClose }: { open: boolean, on
                                                 workflowStatus: getNextStatus(selectedChild.workflowStatus)!,
                                                 plannedDate,
                                                 plannedTime,
-                                                dedicationCardNumber
+                                                dedicationCardNumber,
+                                                paymentReference
                                             })}
                                             disabled={updateStatusMutation.isLoading || 
                                                 (selectedChild.workflowStatus === 'PENDING_DEDICATION' && (!plannedDate || !plannedTime)) ||
-                                                (selectedChild.workflowStatus === 'ADMIN_PAYMENT_VERIFICATION' && !dedicationCardNumber)
+                                                (selectedChild.workflowStatus === 'ADMIN_PAYMENT_VERIFICATION' && (!dedicationCardNumber || !paymentReference))
                                             }
                                             sx={{ 
                                                 py: 2, fontWeight: 950, letterSpacing: 1,

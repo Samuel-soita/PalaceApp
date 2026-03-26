@@ -32,6 +32,9 @@ model User {
   isCardPaid                Boolean                @default(false)
   isPartner                 Boolean                @default(false)
   canManagePartnerships     Boolean                @default(false)
+  membershipExpiry          DateTime?
+  cardStatus                String                 @default("ACTIVE") // ACTIVE, EXPIRED, PENDING_RENEWAL
+  isCardReplacementRequested Boolean                @default(false)
   
   // Architecture 3.2: Final Resilience
   version                   Int                    @default(0)
@@ -93,6 +96,8 @@ model Child {
   updatedAt            DateTime    @updatedAt
   dedicationCardNumber String?
   isDedicated          Boolean     @default(false)
+  isDedicationPaid     Boolean     @default(false)
+  dedicationPaymentReference String?
   plannedDate          DateTime?
   plannedTime          String?
   
@@ -537,6 +542,8 @@ model Baptism {
   baptismCardNumber String?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
+  isPaid     Boolean   @default(false)
+  paymentReference String?
   
   // Architecture 3.2
   version    Int       @default(0)

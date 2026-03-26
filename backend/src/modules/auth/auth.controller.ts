@@ -55,6 +55,9 @@ export const register = async (req: Request, res: Response) => {
         // --- Auto Department Mapping ---
         const targetDepartmentId = await findTargetDepartmentId(new Date(dob), gender);
 
+        const cardYear = parseInt(cardMatch[1], 10);
+        const membershipExpiry = new Date(cardYear, 11, 31, 23, 59, 59); // Dec 31st of the card year
+
         const user = await prisma.user.create({
             data: {
                 name,
@@ -65,6 +68,7 @@ export const register = async (req: Request, res: Response) => {
                 gender: gender.toUpperCase(),
                 role: 'MEMBER',
                 status: 'PENDING',
+                membershipExpiry,
                 ...(targetDepartmentId ? { departmentId: targetDepartmentId } : {})
             },
         });
@@ -119,8 +123,29 @@ export const login = async (req: Request, res: Response) => {
             });
         }
 
+        // --- Membership Expiry & Grace Period Check ---
+        if (user.membershipExpiry && user.role === 'MEMBER') {
+            const now = new Date();
+            const expiry = new Date(user.membershipExpiry);
+            const gracePeriodEnd = new Date(expiry.getTime() + (14 * 24 * 60 * 60 * 1000)); // 14 days grace
+
+            if (now > gracePeriodEnd) {
+                return res.status(403).json({
+                    error: 'Your membership card has expired and the 14-day grace period has passed. Please request a card renewal to continue using the app.',
+                    isExpired: true,
+                    expiry: user.membershipExpiry
+                });
+            }
+        }
+
         const token = jwt.sign(
-            { id: user.id, role: user.role, departmentId: user.departmentId },
+            { 
+                id: user.id, 
+                role: user.role, 
+                departmentId: user.departmentId,
+                nonce: Math.random().toString(36).substring(7), // Ensure uniqueness even in fast bursts
+                timestamp: Date.now()
+            },
             process.env.JWT_SECRET || 'secret',
             { expiresIn: '30d' } // Persistent login
         );
@@ -149,16 +174,23 @@ export const login = async (req: Request, res: Response) => {
                 .filter(code => !overrideRevokes.includes(code));
         }, 60);
 
-        // --- 5. Create Session Record ---
-        await (prisma as any).session.create({
-            data: {
-                userId: user.id,
-                token,
-                deviceInfo: req.headers['user-agent'] || 'Unknown Device',
-                ipAddress: req.ip || 'Unknown IP',
-                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+        // --- 5. Create Session Record (Safe-Fail Logic) ---
+        try {
+            if ((prisma as any).session) {
+                await (prisma as any).session.create({
+                    data: {
+                        userId: user.id,
+                        token,
+                        deviceInfo: req.headers['user-agent'] || 'Unknown Device',
+                        ipAddress: req.ip || 'Unknown IP',
+                        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+                    }
+                });
             }
-        });
+        } catch (sessionErr) {
+            console.warn('[Login] Session record failed (Non-Blocking):', sessionErr);
+            // We don't block login if session storage fails
+        }
 
         res.json({
             user: { 
@@ -169,7 +201,10 @@ export const login = async (req: Request, res: Response) => {
                 status: user.status, 
                 departmentId: user.departmentId,
                 managedDepartments: user.managedDepartments,
-                permissions: finalPermissions
+                permissions: finalPermissions,
+                membershipExpiry: user.membershipExpiry,
+                cardStatus: user.cardStatus,
+                isCardReplacementRequested: user.isCardReplacementRequested
             },
             token
         });
@@ -191,7 +226,23 @@ export const getProfile = async (req: any, res: Response) => {
                 department: { select: { id: true, name: true } }
             }
         });
+        
         if (!user) return res.status(404).json({ error: 'User not found' });
+
+        // --- Membership Expiry & Grace Period Check ---
+        if (user.membershipExpiry && user.role === 'MEMBER') {
+            const now = new Date();
+            const expiry = new Date(user.membershipExpiry);
+            const gracePeriodEnd = new Date(expiry.getTime() + (14 * 24 * 60 * 60 * 1000));
+
+            if (now > gracePeriodEnd) {
+                return res.status(403).json({
+                    error: 'Your membership card has expired and the 14-day grace period has passed.',
+                    isExpired: true,
+                    expiry: user.membershipExpiry
+                });
+            }
+        }
         // --- Fetch Permissions & Overrides ---
         const rolePermissions = await prisma.rolePermission.findMany({
             where: { role: { name: user.role } },

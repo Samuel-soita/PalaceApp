@@ -554,3 +554,78 @@ export const enrollPartnership = async (req: any, res: Response) => {
         res.status(500).json({ error: 'Failed to process partnership enrollment.' });
     }
 };
+
+export const requestCardRenewal = async (req: any, res: Response) => {
+    const { id: userId } = req.user;
+    try {
+        const user = await prisma.user.update({
+            where: { id: userId },
+            data: { 
+                isCardReplacementRequested: true,
+                cardStatus: 'PENDING_RENEWAL'
+            }
+        });
+        await auditRenewalRequest(userId, req.user.role, req.ip);
+        res.json({ message: 'Membership card renewal requested. Please wait for administrative verification.', user });
+    } catch (error) {
+        console.error('Card Renewal Request Error:', error);
+        res.status(500).json({ error: 'Failed to request card renewal.' });
+    }
+};
+
+export const approveCardRenewal = async (req: any, res: Response) => {
+    const { id } = req.params;
+    const { newMembershipNumber } = req.body;
+
+    if (!newMembershipNumber) {
+        return res.status(400).json({ error: 'A new membership number is mandatory for renewal.' });
+    }
+
+    try {
+        const expiryDate = new Date();
+        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+
+        const current = await prisma.user.findUnique({ where: { id } });
+        const user = await prisma.user.update({
+            where: { id },
+            data: {
+                membershipNumber: newMembershipNumber,
+                membershipExpiry: expiryDate,
+                cardStatus: 'ACTIVE',
+                isCardReplacementRequested: false,
+                isCardPaid: true
+            }
+        });
+
+        await logAction({
+            actorId: req.user.id,
+            actorRole: req.user.role,
+            actionType: 'APPROVE_CARD_RENEWAL',
+            entityType: 'USER',
+            entityId: id,
+            beforeState: current,
+            afterState: user,
+            ipAddress: req.ip
+        });
+
+        res.json({ message: `Membership card renewed for ${user.name}. New Expiry: ${expiryDate.toLocaleDateString()}`, user });
+    } catch (error) {
+        console.error('Approve Card Renewal Error:', error);
+        res.status(500).json({ error: 'Failed to approve card renewal.' });
+    }
+};
+
+async function auditRenewalRequest(userId: string, role: string, ip: string) {
+    try {
+        await logAction({
+            actorId: userId,
+            actorRole: role,
+            actionType: 'REQUEST_CARD_RENEWAL',
+            entityType: 'USER',
+            entityId: userId,
+            ipAddress: ip
+        });
+    } catch (e) {
+        console.error('Failed to log renewal request audit.', e);
+    }
+}

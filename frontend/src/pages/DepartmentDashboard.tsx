@@ -400,6 +400,9 @@ export default function DepartmentDashboard() {
                                         <Typography variant="caption" fontWeight="900" sx={{ color: 'orange' }}>PARTNERSHIP VISION</Typography>
                                     </Box>
                                     <Typography variant="subtitle2" fontWeight="950" sx={{ mb: 1 }}>BECOME A PRAYER PALACE PARTNER</Typography>
+                                    <Typography variant="caption" sx={{ opacity: 0.6, fontStyle: 'italic', fontWeight: 700, display: 'block', mb: 2 }}>
+                                        "Partnering with Prayer Palace Apostolic Ministry for Global impact by making sure the church Budget is met"
+                                    </Typography>
                                     <Button variant="outlined" fullWidth size="small" onClick={() => setEnrollModalOpen(true)}
                                         sx={{ borderColor: 'orange', color: 'orange', fontWeight: 900, borderRadius: 0, fontSize: '0.65rem', '&:hover': { bgcolor: 'orange', color: 'black' } }}
                                     > ENROLL IN PARTNERSHIP </Button>

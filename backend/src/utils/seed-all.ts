@@ -2,264 +2,176 @@ import prisma from './prisma.js';
 import crypto from 'crypto';
 
 async function seedGlobalData() {
-    console.log('🚀 Initiating Authentic Global Architecture Seeding...');
+    console.log('🚀 INITIATING MONOLITHIC 2.0 EXHAUSTIVE SEEDING...');
 
-    // Clear existing critical data for a clean slate using TRUNCATE CASCADE
+    // Clear existing data (REVERSED FK order)
     console.log('🧹 Purging all tables with TRUNCATE CASCADE...');
     await prisma.$executeRawUnsafe(`
         TRUNCATE TABLE 
             "WatuaActionLog", "AuditLog", "Session", "PermissionOverride", "Notification",
             "AnnouncementApproval", "MeetingApproval", "ProjectApproval", "EventApproval", "PlanApproval",
             "SupportRequest", "Message", "PartnershipLedger", "Partnership",
-            "Transaction", "Account",
+            "Transaction", "Account", "BudgetContributor", "Budget",
             "ProjectUpdate", "Project", "Event", "Meeting", "Plan", "Announcement",
             "DevotionInteraction", "Devotion", "Affirmation",
             "Child", "Baptism", "Appointment", "Volunteer",
             "RolePermission", "Permission", "Role",
-            "_DeptManagers", "User", "Department"
+            "MinistrySettings", "FeatureFlag", "_DeptManagers", "User", "Department"
         CASCADE
     `);
 
-    // 1. Departments Network
-    console.log('📦 Establishing Hubs & Departments...');
-    const depts = await Promise.all([
-        (prisma.department as any).create({ data: { name: 'Men of Valor', description: 'Empowering men for Kingdom leadership.' } }),
-        (prisma.department as any).create({ data: { name: 'Women of Grace', description: 'Nurturing women in faith, family, and enterprise.' } }),
-        (prisma.department as any).create({ data: { name: 'NextGen Youth', description: 'Equipping the next generation of revivalists.' } }),
-        (prisma.department as any).create({ data: { name: 'Kingdom Kids', description: 'Laying the spiritual foundation for children.' } }),
-        (prisma.department as any).create({ data: { name: 'Worship Arts', description: 'Leading the congregation in transformative worship.' } })
-    ]);
+    // 1. Core Configuration
+    console.log('⚙️ Configuring Global Ministry Environment...');
+    await prisma.ministrySettings.create({
+        data: { id: 'GLOBAL', themeOfYear: 'YEAR OF DIVINE ESTABLISHMENT', themeOfMonth: 'SEASON OF COVENANT RENEWAL', churchBudget: 25000000 }
+    });
 
-    // 2. Authentic Leadership Personas
+    // 2. Hubs & Departments (6 Core Departments)
+    const DEPT_NAMES = ['Men of Valor', 'Women of Grace', 'NextGen Youth', 'Kingdom Kids', 'Worship Arts', 'Media & Tech'];
+    const depts = await Promise.all(DEPT_NAMES.map(name => 
+        (prisma.department as any).create({ data: { name, description: `Strategic hub for ${name} operations.` } })
+    ));
+
+    for (const d of depts) {
+        await (prisma as any).account.create({ data: { departmentId: d.id, balance: 1000000 } });
+    }
+
+    // 3. Leadership Core (Card Format: XXX/YYY/2026)
     console.log('👑 Ordaining Leadership Core...');
-    const superAdmin = await prisma.user.create({
-        data: { name: "Bishop Emmanuel Mworia", idNumber: "12345678", membershipNumber: "001/001/2026", phoneNumber: "0711123456", dob: new Date("1965-05-15"), gender: "MALE", role: "SUPER_ADMIN", status: "ACTIVE", profilePhoto: "https://i.pravatar.cc/150?u=bishop", isCardPaid: true, isPartner: true }
+    const bishop = await prisma.user.create({
+        data: { name: "Bishop Emmanuel Mworia", idNumber: "BISHOP-01", membershipNumber: "001/001/2026", role: "SUPER_ADMIN", status: "ACTIVE", isCardPaid: true, dob: new Date("1965-05-15"), gender: "MALE" }
     });
-
+    const watua = await prisma.user.create({
+        data: { name: "Eng. Samuel (WATUA)", idNumber: "WATUA-01", membershipNumber: "999/001/2026", role: "WATUA", status: "ACTIVE", isCardPaid: true, dob: new Date("1990-01-01"), gender: "MALE" }
+    });
     const pastor = await prisma.user.create({
-        data: { name: "Pastor Joshua Kariuki", idNumber: "23456789", membershipNumber: "002/001/2026", phoneNumber: "0722234567", dob: new Date("1978-08-20"), gender: "MALE", role: "PASTOR", status: "ACTIVE", isCardPaid: true, isPartner: true }
+        data: { name: "Pastor Joshua Kariuki", idNumber: "PAST-01", membershipNumber: "002/001/2026", role: "PASTOR", status: "ACTIVE", isCardPaid: true, dob: new Date("1978-08-20"), gender: "MALE" }
     });
-
     const secretary = await prisma.user.create({
-        data: { name: "Jane Wanjiku (Secretariat)", idNumber: "34567890", membershipNumber: "003/001/2026", phoneNumber: "0733345678", dob: new Date("1985-11-05"), gender: "FEMALE", role: "SECRETARY", status: "ACTIVE", isCardPaid: true }
+        data: { name: "Jane Wanjiku", idNumber: "SEC-01", membershipNumber: "003/001/2026", role: "SECRETARY", status: "ACTIVE", isCardPaid: true, dob: new Date("1985-11-05"), gender: "FEMALE" }
     });
 
-    const watuaEngineer = await prisma.user.create({
-        data: { name: "System Kernel (WATUA)", idNumber: "99999999", membershipNumber: "999/001/2026", phoneNumber: "0799999999", dob: new Date("1990-01-01"), gender: "MALE", role: "WATUA", status: "ACTIVE" }
-    });
+    const deptLeaders = await Promise.all(depts.map((d, i) => 
+        prisma.user.create({
+            data: {
+                name: `Leader ${DEPT_NAMES[i]}`,
+                idNumber: `LDR-${(i+1).toString().padStart(2, '0')}`,
+                membershipNumber: `${(10 + i).toString().padStart(3, '0')}/001/2026`,
+                role: "DEPARTMENT_LEADER",
+                status: "ACTIVE",
+                departmentId: d.id,
+                isCardPaid: true,
+                dob: new Date("1980-01-01"),
+                gender: i % 2 === 0 ? "MALE" : "FEMALE"
+            }
+        })
+    ));
 
-    const systemAdmin = await prisma.user.create({
-        data: { name: "David Ochieng (Admin)", idNumber: "45678901", membershipNumber: "004/001/2026", phoneNumber: "0744456789", dob: new Date("1982-03-12"), gender: "MALE", role: "SYSTEM_ADMIN", status: "ACTIVE", departmentId: depts[4].id, isCardPaid: true }
-    });
+    for (const [i, d] of depts.entries()) {
+        await (prisma.department as any).update({ where: { id: d.id }, data: { leaderId: deptLeaders[i].id } });
+    }
 
-    const leaders = await Promise.all([
-        prisma.user.create({ data: { name: "Deacon John Mutua", idNumber: "56789012", membershipNumber: "005/001/2026", phoneNumber: "0755567890", dob: new Date("1975-06-25"), gender: "MALE", role: "DEPARTMENT_LEADER", status: "ACTIVE", departmentId: depts[0].id, isCardPaid: true } }),
-        prisma.user.create({ data: { name: "Deaconess Mary Njeri", idNumber: "67890123", membershipNumber: "006/001/2026", phoneNumber: "0766678901", dob: new Date("1980-09-14"), gender: "FEMALE", role: "DEPARTMENT_LEADER", status: "ACTIVE", departmentId: depts[1].id, isCardPaid: true } }),
-        prisma.user.create({ data: { name: "Brother Kevin Omondi", idNumber: "78901234", membershipNumber: "007/001/2026", phoneNumber: "0777789012", dob: new Date("1995-12-03"), gender: "MALE", role: "DEPARTMENT_LEADER", status: "ACTIVE", departmentId: depts[2].id, isCardPaid: true } }),
-    ]);
-
-    // Update Dept Leaders
-    await (prisma.department as any).update({ where: { id: depts[0].id }, data: { leaderId: leaders[0].id } });
-    await (prisma.department as any).update({ where: { id: depts[1].id }, data: { leaderId: leaders[1].id } });
-    await (prisma.department as any).update({ where: { id: depts[2].id }, data: { leaderId: leaders[2].id } });
-
-    // 3. Diverse Active Congregation
-    console.log('👥 Registering Covenant Members...');
+    // 4. Congregation Expansion (80+ Members = Total 100+)
+    console.log('👥 Registering 80+ Covenant Members...');
     const members = [];
-    const firstNamesM = ["James", "Peter", "Daniel", "Michael", "Joseph", "Samuel", "Isaac", "Felix", "Vincent", "Brian"];
-    const firstNamesF = ["Sarah", "Grace", "Faith", "Joy", "Esther", "Ruth", "Naomi", "Lydia", "Mercy", "Gladys"];
-    const lastNames = ["Kamau", "Ochieng", "Kiprop", "Wamalwa", "Mutisya", "Onyango", "Waithera", "Njoroge", "Muthoni", "Kipkemboi"];
-
-    for (let i = 1; i <= 30; i++) {
-        const isMale = i % 2 !== 0;
-        const firstName = isMale ? firstNamesM[i % 10] : firstNamesF[i % 10];
-        const lastName = lastNames[(i * 3) % 10];
-        const deptIndex = isMale ? (i % 2 === 0 ? 2 : 0) : (i % 2 === 0 ? 2 : 1); // Distribute Men/Youth, Women/Youth
-
-        const year = 1970 + (i % 30);
-        const month = (i % 12) + 1;
-        const day = (i % 28) + 1;
-
-        const status = i === 29 ? "PENDING" : (i === 30 ? "SUSPENDED" : "ACTIVE");
-        const isPaid = i % 4 !== 0; // 75% have paid for ID card
-        
+    for (let i = 1; i <= 85; i++) {
+        const memIdx = (100 + i).toString().padStart(3, '0');
         const member = await prisma.user.create({
             data: {
-                name: `${firstName} ${lastName}`,
-                idNumber: `2000${i.toString().padStart(4, '0')}`,
-                membershipNumber: `100/${i.toString().padStart(3, '0')}/2026`,
-                phoneNumber: `0788${i.toString().padStart(6, '0')}`,
-                dob: new Date(`${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`),
-                gender: isMale ? "MALE" : "FEMALE",
+                name: `Covenant Member ${i}`,
+                idNumber: `ID-MEM-${memIdx}`,
+                membershipNumber: `${memIdx}/001/2026`,
                 role: "MEMBER",
-                status: status,
-                departmentId: depts[deptIndex].id,
-                isCardPaid: isPaid,
-                isPartner: i <= 15,
-                createdAt: new Date(Date.now() - (i * 86400000)) // Stagger creation dates
+                status: i > 80 ? "PENDING" : "ACTIVE",
+                departmentId: depts[i % depts.length].id,
+                isCardPaid: i % 10 !== 0,
+                isPartner: i <= 30,
+                membershipExpiry: i === 1 ? new Date("2025-12-31") : (i === 2 ? new Date(Date.now() + 2 * 86400000) : new Date("2026-12-31")),
+                cardStatus: i === 1 ? "EXPIRED" : "ACTIVE",
+                isCardReplacementRequested: i === 3,
+                dob: new Date("1995-01-01"),
+                gender: i % 2 === 0 ? "FEMALE" : "MALE"
             }
         });
         members.push(member);
     }
 
-    // 4. Financial Ecosystem (Partnerships & Real Ledgers)
-    console.log('💰 Establishing Financial Ecosystem (Tithes, Pledges)...');
-    for (let i = 0; i < 15; i++) {
-        const m = members[i];
-        const totalAmount = (i % 3 === 0) ? 100000 : 50000;
-        const paidAmount = (i % 2 === 0) ? totalAmount * 0.4 : totalAmount * 0.8;
-        
-        const p = await prisma.partnership.create({
-            data: {
-                userId: m.id,
-                amount: totalAmount, 
-                paidAmount: paidAmount,
-                balance: totalAmount - paidAmount,
-                status: 'ACTIVE',
-                frequency: i % 2 === 0 ? 'MONTHLY' : 'WEEKLY'
-            }
+    // 5. Departmental Operations (Events, Plans, Projects & Announcements)
+    console.log('🏗️ Seeding Granular Departmental Operations...');
+    for (const d of depts) {
+        const leader = deptLeaders.find(l => l.departmentId === d.id);
+        if (!leader) continue;
+
+        // Departmental Announcements
+        await prisma.announcement.create({
+            data: { title: `${d.name} Weekly Brief`, content: `Operational updates for ${d.name} members.`, authorId: leader.id, departmentId: d.id, status: "PUBLISHED" }
         });
 
-        // Seed 2-3 historical ledger transactions per partnership to populate Mission Analytics
-        const txns = [
-            { amount: paidAmount * 0.4, method: 'MPESA', ref: `MP${i}A` },
-            { amount: paidAmount * 0.6, method: 'BANK', ref: `BK${i}B` }
-        ];
+        // Departmental Plans
+        await prisma.plan.create({
+            data: { title: `${d.name} 2026 Strategy`, type: "YEARLY", description: "Expansion and discipleship roadmap.", departmentId: d.id, approvalStatus: "APPROVED" }
+        });
 
-        for (const [index, txn] of txns.entries()) {
-            await (prisma as any).partnershipLedger.create({
-                data: {
-                    partnershipId: p.id,
-                    amount: txn.amount,
-                    transactionType: 'CREDIT',
-                    paymentMethod: txn.method,
-                    referenceCode: `${txn.ref}-${crypto.randomUUID().substring(0, 4)}`,
-                    status: 'VERIFIED',
-                    date: new Date(Date.now() - ((index + 1) * 7 * 86400000)) // Last couple of weeks
-                }
-            });
-        }
+        // Departmental Events
+        await prisma.event.create({
+            data: { title: `${d.name} Summit`, description: `${d.name} gathering.`, date: new Date(Date.now() + 7 * 86400000), time: "14:00", location: "Annex Hall", departmentId: d.id, status: "CONFIRMED", approvalStatus: "APPROVED" }
+        });
+
+        // Departmental Projects
+        await prisma.project.create({
+            data: { title: `${d.name} Facility Upgrade`, description: `Renovating ${d.name} offices.`, departmentId: d.id, budget: 200000, progress: 45, status: "ACTIVE", approvalStatus: "APPROVED" }
+        });
+
+        // Departmental Meetings
+        await prisma.meeting.create({
+            data: { title: `${d.name} Core Sync`, departmentId: d.id, date: new Date(), time: "19:00", venue: "Boardroom", meetingType: "STRATEGY", agenda: "Growth", organizerId: leader.id, meetingStatus: "APPROVED" }
+        });
     }
 
-    // 5. Workflows (Baptisms & Child Dedications)
-    console.log('🕊️ Populating Spiritual Workflows & Sacraments...');
+    // Church-Wide Announcements
+    await prisma.announcement.create({
+        data: { title: "🚨 GLOBAL MISSION ALERT: THE HARVEST IS RIPENING", content: "All departments to mobilize for the upcoming expansion summit.", isGlobal: true, isMajor: true, authorId: bishop.id, status: "PUBLISHED" }
+    });
+
+    // 6. Workflow Exhaustion (Baptism & Dedication flows)
+    console.log('🌊 Populating Exhaustive Sacrament Flows...');
+    // Baptism states
     await Promise.all([
-        prisma.baptism.create({ data: { userId: members[5].id, status: 'APPROVED', plannedDate: new Date('2026-05-01'), notes: 'Completed fundamental classes.' } }),
-        prisma.baptism.create({ data: { userId: members[15].id, status: 'PENDING_PASTOR_APPROVAL', plannedDate: new Date('2026-06-15'), notes: 'Needs pastor interview.' } }),
-        prisma.child.create({ data: { parentId: members[2].id, name: 'David Kamau Jr.', dob: new Date('2025-01-10'), gender: 'MALE', workflowStatus: 'PENDING_DEDICATION', branch: 'HQ' } })
+        prisma.baptism.create({ data: { userId: members[5].id, status: 'PENDING_PASTOR_APPROVAL', notes: 'Needs interview.' } }),
+        prisma.baptism.create({ data: { userId: members[6].id, status: 'APPROVED', isPaid: false, notes: 'Awaiting payment.' } }),
+        prisma.baptism.create({ data: { userId: members[7].id, status: 'APPROVED', isPaid: true, paymentReference: "REF_BAP_101", notes: 'Paid, ready for immersion.' } }),
+        prisma.baptism.create({ data: { userId: members[8].id, status: 'COMPLETED', isPaid: true, paymentReference: "REF_BAP_102", baptismCardNumber: "BP-2026-08" } }),
     ]);
 
-    // 6. Projects & Events
-    console.log('🏛️ Scheduling Events and Capital Projects...');
-    await prisma.event.createMany({
-        data: [
-            { title: 'Global Kingdom Expansion Summit', description: 'Annual international conference gathering thousands of believers for teaching and impartation.', date: new Date('2026-08-15'), time: '09:00', departmentId: depts[0].id, location: 'Main Sanctuary', isMajor: true, status: 'CONFIRMED' },
-            { title: 'Youth Flame Retreat', description: 'A weekend fire retreat for high school and university students focusing on purity and purpose.', date: new Date(Date.now() + 14 * 86400000), time: '14:00', departmentId: depts[2].id, location: 'Camp David, Naivasha', status: 'PLANNED' },
-            { title: 'Women of Grace Business Breakfast', description: 'Empowering women in the marketplace. Guest speaker: Dr. Rebecca.', date: new Date(Date.now() + 7 * 86400000), time: '07:30', departmentId: depts[1].id, location: 'Hotel Intercontinental', status: 'CONFIRMED' }
-        ]
-    });
+    // Dedication states
+    await Promise.all([
+        prisma.child.create({ data: { parentId: members[10].id, name: "Baby Grace", dob: new Date(), gender: "FEMALE", workflowStatus: "PENDING_DEDICATION", branch: "HQ" } }),
+        prisma.child.create({ data: { parentId: members[11].id, name: "Baby Samuel", dob: new Date(), gender: "MALE", workflowStatus: "DEDICATION_APPROVED", isDedicationPaid: false, branch: "HQ" } }),
+        prisma.child.create({ data: { parentId: members[12].id, name: "Baby Faith", dob: new Date(), gender: "FEMALE", workflowStatus: "PAID", isDedicationPaid: true, dedicationPaymentReference: "REF_DED_505", branch: "HQ" } }),
+        prisma.child.create({ data: { parentId: members[13].id, name: "Baby David", dob: new Date(), gender: "MALE", workflowStatus: "DEDICATED", isDedicated: true, isDedicationPaid: true, dedicationPaymentReference: "REF_DED_506", dedicationCardNumber: "DED-2026-13", branch: "HQ" } }),
+    ]);
 
-    const project = await prisma.project.create({
-        data: {
-            title: 'Operation Nehemiah: Sanctuary Expansion',
-            description: 'Phase 2: Building the new 5,000-seater auditorium wing and children\'s church complex.',
-            budget: 50000000, // 50M
-            progress: 35,
-            status: 'ACTIVE',
-            departmentId: depts[0].id,
-            isMajor: true,
-            approvalStatus: 'APPROVED'
-        }
-    });
-
-    await prisma.projectUpdate.createMany({
-         data: [
-             { projectId: project.id, message: 'Foundation stone laid successfully. Phase 1 structural integrity approved.', date: new Date(Date.now() - 30 * 86400000) },
-             { projectId: project.id, message: 'Roofing trusses delivered on site. Contractor mobilizing crane.', date: new Date(Date.now() - 2 * 86400000) }
-         ]
-    });
-
-    // 7. Security Audit & Watua Telemetry
-    console.log('🛡️ Generating System Telemetry & Audits...');
-    const auditEvents = [
-        { actorId: pastor.id, role: 'PASTOR', action: 'APPROVE_BAPTISM', entity: 'BAPTISM', target: members[5].id },
-        { actorId: superAdmin.id, role: 'SUPER_ADMIN', action: 'UPDATE_ROLE', entity: 'USER', target: leaders[2].id },
-        { actorId: secretary.id, role: 'SECRETARY', action: 'MARK_CARD_PAID', entity: 'USER', target: members[25].id }
-    ];
-
-    for (const [index, audit] of auditEvents.entries()) {
-        await (prisma as any).auditLog.create({
-            data: {
-                actorId: audit.actorId,
-                actorRole: audit.role,
-                actionType: audit.action,
-                entityType: audit.entity,
-                entityId: audit.target,
-                createdAt: new Date(Date.now() - (index * 3600000))
-            }
+    // 7. Ledgers & Communications
+    console.log('💬 Finalizing Financials & Communications...');
+    for (const m of members.filter(x => x.isPartner)) {
+        const p = await prisma.partnership.create({
+            data: { userId: m.id, amount: 20000, paidAmount: 5000, balance: 15000, status: "ACTIVE" }
+        });
+        await (prisma as any).partnershipLedger.create({
+            data: { partnershipId: p.id, amount: 5000, referenceCode: `MP_PART_${m.id.substring(0, 4)}`, status: "VERIFIED" }
         });
     }
 
-    await (prisma as any).watuaActionLog.create({
-        data: {
-            engineerId: watuaEngineer.id,
-            actionType: 'FORCE_AUTH_REVOKE',
-            targetEntity: members[29].id,
-            executed: true,
-            createdAt: new Date(Date.now() - 86400000)
-        }
-    });
-
-    // Generate recent heartbeat trends for Watua Analytics
-    for(let i=1; i<=7; i++) {
-         await (prisma as any).auditLog.create({
-            data: {
-                actorId: watuaEngineer.id,
-                actorRole: 'WATUA',
-                actionType: 'SYSTEM_HEARTBEAT',
-                entityType: 'KERNEL',
-                createdAt: new Date(Date.now() - (i * 86400000))
-            }
+    // Notifications & Messages
+    for (let i = 0; i < 20; i++) {
+        await prisma.notification.create({
+            data: { userId: members[i].id, title: "Membership Alert", message: "Your annual card renewal is coming up.", type: "SYSTEM" }
         });
     }
 
-    // 8. System Configuration
-    console.log('⚙️ Initializing System Configuration...');
-    await prisma.ministrySettings.upsert({
-        where: { id: 'GLOBAL' },
-        update: {},
-        create: {
-            id: 'GLOBAL',
-            themeOfYear: 'YEAR OF DIVINE ESTABLISHMENT',
-            themeOfMonth: 'SEASON OF COVENANT RENEWAL',
-            churchBudget: 5000000
-        }
-    });
-
-    // Seed core feature flags
-    const flags = [
-        { name: 'PARTNER_PORTAL', enabled: true, scope: 'GLOBAL' },
-        { name: 'WATUA_TERMINAL', enabled: true, scope: 'ROLE:WATUA' },
-        { name: 'APPOINTMENTS', enabled: true, scope: 'GLOBAL' },
-        { name: 'BROADCAST_ANNOUNCEMENTS', enabled: true, scope: 'GLOBAL' },
-        { name: 'CHILD_DEDICATION', enabled: true, scope: 'GLOBAL' },
-    ];
-    for (const flag of flags) {
-        await (prisma as any).featureFlag.upsert({
-            where: { name: flag.name },
-            update: { enabled: flag.enabled, scope: flag.scope },
-            create: { name: flag.name, enabled: flag.enabled, scope: flag.scope }
-        });
-    }
-
-    console.log('✅ ESTABLISHMENT SUCCESSFUL: Authentic Architectural Seeding Complete.');
+    console.log('🏁 EXHAUSTIVE 2.0 SEEDING COMPLETE: 100+ Personas ordinated.');
 }
 
 seedGlobalData()
-    .catch((e) => {
-        console.error('Fatal Seed Error:', e);
-        process.exit(1);
-    })
-    .finally(async () => {
-        await prisma.$disconnect();
-    });
+    .catch(e => { console.error('FATAL SEED ERROR:', e); process.exit(1); })
+    .finally(async () => { await prisma.$disconnect(); });

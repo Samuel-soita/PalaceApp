@@ -210,7 +210,7 @@ export default function Projects() {
                                     <Grid item xs={6}>
                                         <Box sx={{ p: 2, borderRadius: 3, bgcolor: 'action.hover', border: '1px solid rgba(255,255,255,0.05)' }}>
                                             <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 'bold', display: 'block', mb: 0.5 }}>BUDGET</Typography>
-                                            <Typography variant="subtitle1" fontWeight="900">${project.budget.toLocaleString()}</Typography>
+                                            <Typography variant="subtitle1" fontWeight="900">{project.budget.toLocaleString()} KES</Typography>
                                         </Box>
                                     </Grid>
                                     <Grid item xs={6}>
@@ -289,14 +289,14 @@ export default function Projects() {
                                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                             />
                             <Box display="flex" gap={2}>
-                                <TextField
-                                    label="Budget Allocation ($)"
-                                    type="number"
-                                    fullWidth
-                                    required
-                                    value={formData.budget}
-                                    onChange={(e) => setFormData({ ...formData, budget: Number(e.target.value) })}
-                                />
+                                    <TextField
+                                        label="Budget Allocation (KES)"
+                                        type="number"
+                                        fullWidth
+                                        required
+                                        value={formData.budget}
+                                        onChange={(e) => setFormData({ ...formData, budget: Number(e.target.value) })}
+                                    />
                                 <TextField
                                     label="Deployment Status"
                                     select

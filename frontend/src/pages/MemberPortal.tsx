@@ -81,6 +81,19 @@ export default function MemberPortal() {
         }
     );
 
+    const requestRenewalMutation = useMutation(
+        async () => api.post('/users/card-renewal/request'),
+        {
+            onSuccess: () => {
+                setToast({ open: true, message: 'Renewal request submitted. Processing...', severity: 'success' });
+                queryClient.invalidateQueries(['dashboard-sync']);
+            },
+            onError: (err: any) => {
+                setToast({ open: true, message: err.response?.data?.error || 'Failed to request renewal.', severity: 'error' });
+            }
+        }
+    );
+
     const announcements = syncData?.announcements || [];
     const events = syncData?.events || [];
     const myChildren = syncData?.children || [];
@@ -178,6 +191,55 @@ export default function MemberPortal() {
                             />
                         )}
                     </Box>
+
+                    {(() => {
+                        if (!user?.membershipExpiry) return null;
+                        const expiry = new Date(user.membershipExpiry);
+                        const now = new Date();
+                        const diffTime = expiry.getTime() - now.getTime();
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        const isExpired = diffDays <= 0;
+                        const isGracePeriod = diffDays > -14 && diffDays <= 0;
+
+                        if (isExpired) {
+                            return (
+                                <Alert 
+                                    severity="error" 
+                                    variant="filled"
+                                    sx={{ 
+                                        mb: 4, 
+                                        bgcolor: '#ff0000', 
+                                        color: '#fff', 
+                                        fontWeight: 900,
+                                        borderRadius: 0,
+                                        animation: 'pulse-live 2s infinite',
+                                        '& .MuiAlert-icon': { color: '#fff' }
+                                    }}
+                                    action={
+                                        !user?.isCardReplacementRequested && (
+                                            <Button 
+                                                color="inherit" 
+                                                size="small" 
+                                                variant="outlined" 
+                                                onClick={() => requestRenewalMutation.mutate()}
+                                                sx={{ fontWeight: 950, borderRadius: 0 }}
+                                            >
+                                                REQUEST NEW CARD
+                                            </Button>
+                                        )
+                                    }
+                                >
+                                    {isGracePeriod 
+                                        ? `DANGER: YOUR MEMBERSHIP CARD EXPIRED ON ${expiry.toLocaleDateString()}. GRACE PERIOD ENDS IN ${14 + diffDays} DAYS.`
+                                        : `CRITICAL: MEMBERSHIP CARD EXPIRED. PLEASE REQUEST A NEW CARD IMMEDIATELY TO RETAIN ACCESS.`
+                                    }
+                                    {user?.isCardReplacementRequested && " (REQUEST PENDING)"}
+                                </Alert>
+                            );
+                        }
+                        return null;
+                    })()}
+
                     <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
                         <Chip 
                             label={`YEAR: ${syncData?.ministrySettings?.themeOfYear || 'YEAR OF DIVINE ESTABLISHMENT'}`} 
@@ -527,7 +589,7 @@ export default function MemberPortal() {
                                                     </Grid>
 
                                                     <Typography variant="caption" sx={{ opacity: 0.6, fontStyle: 'italic', fontWeight: 700 }}>
-                                                        "Partnering with the Bishop for global impact."
+                                                        "Partnering with Prayer Palace Apostolic Ministry for Global impact by making sure the church Budget is met"
                                                     </Typography>
                                                 </CardContent>
                                             ) : (
@@ -874,6 +936,7 @@ export default function MemberPortal() {
                     </Box>
                 </Fade>
             </Modal>
+
 
             {/* 🔔 NOTIFICATION SYSTEM */}
             <Snackbar

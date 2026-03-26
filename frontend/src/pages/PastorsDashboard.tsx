@@ -365,7 +365,7 @@ export default function PastorsDashboard() {
                                                     </Grid>
 
                                                     <Typography variant="caption" sx={{ opacity: 0.6, fontStyle: 'italic', fontWeight: 700 }}>
-                                                        "Partnering with the Bishop for global impact."
+                                                        "Partnering with Prayer Palace Apostolic Ministry for Global impact by making sure the church Budget is met"
                                                     </Typography>
                                                 </CardContent>
                                             ) : (
@@ -661,6 +661,7 @@ export default function PastorsDashboard() {
             </Modal>
 
             <RequestBaptismModal open={baptismModalOpen} onClose={() => setBaptismModalOpen(false)} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+
 
             <Snackbar open={toast.open} autoHideDuration={6000} onClose={() => setToast({ ...toast, open: false })}>
                 <Alert severity={toast.severity} sx={{ width: '100%', fontWeight: 800 }}>{toast.message}</Alert>

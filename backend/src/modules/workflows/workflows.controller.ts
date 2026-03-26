@@ -51,7 +51,7 @@ export const requestBaptism = async (req: any, res: Response) => {
 export const updateBaptismStatus = async (req: any, res: Response) => {
     try {
         const { id } = req.params;
-        const { status, notes, recordedAt, plannedDate, plannedTime, baptismCardNumber } = req.body;
+        const { status, notes, recordedAt, plannedDate, plannedTime, baptismCardNumber, isPaid, paymentReference } = req.body;
         const actorId = req.user.id;
         const actorRole = req.user.role;
 
@@ -108,7 +108,9 @@ export const updateBaptismStatus = async (req: any, res: Response) => {
                 ...(recordedAt && { recordedAt: new Date(recordedAt) }),
                 ...(plannedDate && { plannedDate: new Date(plannedDate) }),
                 ...(plannedTime && { plannedTime }),
-                ...(baptismCardNumber && { baptismCardNumber })
+                ...(baptismCardNumber && { baptismCardNumber }),
+                ...(isPaid !== undefined && { isPaid }),
+                ...(paymentReference && { paymentReference })
             }
         });
 
@@ -159,7 +161,7 @@ export const getBaptisms = async (req: any, res: Response) => {
 export const updateChildDedicationStatus = async (req: any, res: Response) => {
     try {
         const { id } = req.params;
-        const { workflowStatus, plannedDate, plannedTime, dedicationCardNumber } = req.body;
+        const { workflowStatus, plannedDate, plannedTime, dedicationCardNumber, isDedicationPaid, dedicationPaymentReference } = req.body;
         const actorId = req.user.id;
         const actorRole = req.user.role;
 
@@ -215,6 +217,8 @@ export const updateChildDedicationStatus = async (req: any, res: Response) => {
                 ...(plannedDate && { plannedDate: new Date(plannedDate) }),
                 ...(plannedTime && { plannedTime }),
                 ...(dedicationCardNumber && { dedicationCardNumber }),
+                ...(isDedicationPaid !== undefined && { isDedicationPaid }),
+                ...(dedicationPaymentReference && { dedicationPaymentReference }),
                 ...(workflowStatus === 'DEDICATED' && { isDedicated: true })
             }
         });

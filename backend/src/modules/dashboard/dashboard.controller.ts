@@ -91,10 +91,10 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 }),
                 prisma.department.findMany({ select: { id: true, name: true } }),
                 isAdmin ? prisma.user.findMany({ 
-                    where: { OR: [{ status: 'PENDING' }, { status: 'ACTIVE' }, { deletionRequested: true }] },
+                    where: { OR: [{ status: 'PENDING' }, { isCardReplacementRequested: true }, { deletionRequested: true }] },
                     take: 100,
                     orderBy: { createdAt: 'desc' },
-                    select: { id: true, name: true, membershipNumber: true, role: true, departmentId: true, deletionRequested: true, isPartner: true, isCardPaid: true, status: true }
+                    select: { id: true, name: true, membershipNumber: true, role: true, departmentId: true, deletionRequested: true, isPartner: true, isCardPaid: true, status: true, isCardReplacementRequested: true, membershipExpiry: true }
                 }) : Promise.resolve([]),
                 (isAdmin || isLeader) 
                     ? prisma.baptism.findMany({ 

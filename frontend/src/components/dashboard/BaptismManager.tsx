@@ -27,6 +27,8 @@ export default function BaptismManager({ open, onClose }: { open: boolean, onClo
     const [plannedDate, setPlannedDate] = useState('');
     const [plannedTime, setPlannedTime] = useState('');
     const [baptismCardNumber, setBaptismCardNumber] = useState('');
+    const [paymentReference, setPaymentReference] = useState('');
+    const [isPaid, setIsPaid] = useState(false);
 
     const { data: baptisms = [], isLoading } = useQuery(['baptisms'], async () => {
         const res = await api.get('/workflows/baptism');
@@ -34,8 +36,8 @@ export default function BaptismManager({ open, onClose }: { open: boolean, onClo
     }, { enabled: open });
 
     const updateStatusMutation = useMutation(
-        async ({ id, status, notes, plannedDate, plannedTime, baptismCardNumber }: any) => {
-            return api.patch(`/workflows/baptism/${id}/status`, { status, notes, plannedDate, plannedTime, baptismCardNumber });
+        async ({ id, status, notes, plannedDate, plannedTime, baptismCardNumber, isPaid, paymentReference }: any) => {
+            return api.patch(`/workflows/baptism/${id}/status`, { status, notes, plannedDate, plannedTime, baptismCardNumber, isPaid, paymentReference });
         },
         {
             onSuccess: () => {
@@ -222,8 +224,15 @@ export default function BaptismManager({ open, onClose }: { open: boolean, onClo
                                         {selectedBaptism.status === 'ADMIN_PAYMENT_VERIFICATION' && (
                                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                                 <Alert icon={<CreditCard size={18} />} severity="info" sx={{ bgcolor: 'rgba(0,200,255,0.05)', color: 'var(--cyan)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 2 }}>
-                                                    <Typography variant="caption" fontWeight={900}>Confirm card payment before advancing to Bishop's final review.</Typography>
+                                                    <Typography variant="caption" fontWeight={900}>Confirm KES 2,000/- payment to <b>0741502198</b> before advancing.</Typography>
                                                 </Alert>
+                                                <TextField
+                                                    fullWidth
+                                                    label="Payment Reference (M-Pesa Code)"
+                                                    value={paymentReference}
+                                                    onChange={(e) => setPaymentReference(e.target.value.toUpperCase())}
+                                                    sx={{ '& .MuiInputBase-root': { borderRadius: 2, bgcolor: 'rgba(255,255,255,0.02)' } }}
+                                                />
                                                 <TextField
                                                     fullWidth
                                                     label="Baptism Card Number"
@@ -243,11 +252,13 @@ export default function BaptismManager({ open, onClose }: { open: boolean, onClo
                                                 status: getNextStatus(selectedBaptism.status)!,
                                                 plannedDate,
                                                 plannedTime,
-                                                baptismCardNumber
+                                                baptismCardNumber,
+                                                isPaid: true,
+                                                paymentReference
                                             })}
                                             disabled={updateStatusMutation.isLoading || 
                                                 (selectedBaptism.status === 'PENDING_PASTOR_APPROVAL' && (!plannedDate || !plannedTime)) ||
-                                                (selectedBaptism.status === 'ADMIN_PAYMENT_VERIFICATION' && !baptismCardNumber)
+                                                (selectedBaptism.status === 'ADMIN_PAYMENT_VERIFICATION' && (!baptismCardNumber || !paymentReference))
                                             }
                                             sx={{ 
                                                 py: 2, fontWeight: 950, letterSpacing: 1,

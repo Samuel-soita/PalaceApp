@@ -89,7 +89,7 @@ export const DepartmentAccounts = ({ departmentId }: { departmentId: string }) =
                                 <Box display="flex" justifyContent="space-between" mb={isMobile ? 1 : 2}>
                                     <stat.icon size={isMobile ? 18 : 20} className={`text-${stat.color}-500`} />
                                 </Box>
-                                <Typography variant={isMobile ? "h5" : "h4"} fontWeight="900">${stat.value.toLocaleString()}</Typography>
+                                <Typography variant={isMobile ? "h5" : "h4"} fontWeight="900">{stat.value.toLocaleString()} KES</Typography>
                                 <Typography variant="caption" fontWeight="bold" sx={{ opacity: 0.5, fontSize: isMobile ? '0.65rem' : '0.75rem' }}>{stat.label}</Typography>
                             </CardContent>
                         </Card>
@@ -125,7 +125,7 @@ export const DepartmentAccounts = ({ departmentId }: { departmentId: string }) =
                                 </TableCell>
                                 <TableCell sx={{ fontWeight: 900 }}>
                                     <Typography fontWeight="900" color={tx.type === 'INCOME' ? 'success.main' : 'error.main'}>
-                                        {tx.type === 'INCOME' ? '+' : '-'}${tx.amount.toLocaleString()}
+                                        {tx.type === 'INCOME' ? '+' : '-'}{tx.amount.toLocaleString()} KES
                                     </Typography>
                                 </TableCell>
                                 <TableCell>
@@ -171,7 +171,7 @@ export const DepartmentAccounts = ({ departmentId }: { departmentId: string }) =
                             <Box display="flex" justifyContent="space-between" alignItems="center" mb={1.5}>
                                 <Typography variant="subtitle2" fontWeight="900" noWrap sx={{ maxWidth: '70%' }}>{tx.description}</Typography>
                                 <Typography variant="subtitle2" fontWeight="900" color={tx.type === 'INCOME' ? 'success.main' : 'error.main'}>
-                                    {tx.type === 'INCOME' ? '+' : '-'}${tx.amount.toLocaleString()}
+                                    {tx.type === 'INCOME' ? '+' : '-'}{tx.amount.toLocaleString()} KES
                                 </Typography>
                             </Box>
                             {isHighLevel && tx.status === 'PENDING' && (

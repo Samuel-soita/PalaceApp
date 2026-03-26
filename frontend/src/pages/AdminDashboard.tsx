@@ -129,6 +129,18 @@ export default function AdminDashboard() {
         }
     );
 
+    const approveRenewalMutation = useMutation(
+        async ({ id, newMembershipNumber }: { id: string; newMembershipNumber: string }) => 
+            api.post(`/users/${id}/card-renewal/approve`, { newMembershipNumber }),
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries(['dashboard-sync']);
+                setToast({ open: true, message: 'Membership card renewed successfully.', severity: 'success' });
+            },
+            onError: (err: any) => setToast({ open: true, message: err.response?.data?.error || 'Renewal failed.', severity: 'error' })
+        }
+    );
+
     const partnershipMutation = useMutation(
         async ({ id, currentStatus }: { id: string; currentStatus: boolean }) => api.post(`/users/technical/intervention/${id}`, { action: 'TOGGLE_PARTNER', currentStatus }),
         {
@@ -260,6 +272,7 @@ export default function AdminDashboard() {
                     </Grid>
                 </>
             )}
+
 
             {/* ── Leader Sync Mode Banner ── */}
             {canViewStats && role !== 'SUPER_ADMIN' && (
@@ -435,6 +448,9 @@ export default function AdminDashboard() {
                                                             {u.deletionRequested && (
                                                                 <Chip label="DELETION REQ" size="small" color="error" sx={{ height: 16, fontSize: '0.55rem', fontWeight: 900 }} />
                                                             )}
+                                                            {u.isCardReplacementRequested && (
+                                                                <Chip label="RENEWAL REQ" size="small" color="warning" sx={{ height: 16, fontSize: '0.55rem', fontWeight: 900 }} />
+                                                            )}
                                                         </Box>
                                                     </Box>
                                                 </Box>
@@ -499,24 +515,42 @@ export default function AdminDashboard() {
                                                     )}
 
                                                     <Box display="flex" gap={0.5}>
-                                                        <Tooltip title={u.deletionRequested ? "Confirm Deletion" : (u.status === 'ACTIVE' ? "Already Verified" : (u.isCardPaid ? "Activate" : "Payment Required"))}>
-                                                            <span>
+                                                        {u.isCardReplacementRequested ? (
+                                                            <Tooltip title="Approve Renewal">
                                                                 <IconButton 
                                                                     size="small" 
-                                                                    color={u.deletionRequested ? "error" : "success"} 
-                                                                    disabled={verifyMutation.isLoading || (!u.deletionRequested && (u.status === 'ACTIVE' || !u.isCardPaid))} 
-                                                                    onClick={() => verifyMutation.mutate({ id: u.id, status: 'ACTIVE', name: u.name })} 
-                                                                    sx={{ border: `1px solid ${u.deletionRequested ? 'rgba(244,67,54,0.25)' : 'rgba(76,175,80,0.25)'}` }}
+                                                                    color="warning" 
+                                                                    onClick={() => {
+                                                                        const newNo = prompt('Enter New Membership Number:', u.membershipNumber);
+                                                                        if (newNo) approveRenewalMutation.mutate({ id: u.id, newMembershipNumber: newNo });
+                                                                    }}
+                                                                    sx={{ border: '1px solid rgba(255,152,0,0.25)' }}
                                                                 >
-                                                                    {u.deletionRequested ? <Trash2 size={17} /> : <CheckCircle size={17} />}
+                                                                    <CheckCircle size={17} />
                                                                 </IconButton>
-                                                            </span>
-                                                        </Tooltip>
-                                                        <Tooltip title={u.deletionRequested ? "Reject Deletion Request" : "Reject Registration"}>
-                                                            <IconButton size="small" color="info" disabled={verifyMutation.isLoading} onClick={() => verifyMutation.mutate({ id: u.id, status: 'REJECTED', name: u.name })} sx={{ border: '1px solid rgba(0,188,212,0.25)' }}>
-                                                                <XCircle size={17} />
-                                                            </IconButton>
-                                                        </Tooltip>
+                                                            </Tooltip>
+                                                        ) : (
+                                                            <>
+                                                                <Tooltip title={u.deletionRequested ? "Confirm Deletion" : (u.status === 'ACTIVE' ? "Already Verified" : (u.isCardPaid ? "Activate" : "Payment Required"))}>
+                                                                    <span>
+                                                                        <IconButton 
+                                                                            size="small" 
+                                                                            color={u.deletionRequested ? "error" : "success"} 
+                                                                            disabled={verifyMutation.isLoading || (!u.deletionRequested && (u.status === 'ACTIVE' || !u.isCardPaid))} 
+                                                                            onClick={() => verifyMutation.mutate({ id: u.id, status: 'ACTIVE', name: u.name })} 
+                                                                            sx={{ border: `1px solid ${u.deletionRequested ? 'rgba(244,67,54,0.25)' : 'rgba(76,175,80,0.25)'}` }}
+                                                                        >
+                                                                            {u.deletionRequested ? <Trash2 size={17} /> : <CheckCircle size={17} />}
+                                                                        </IconButton>
+                                                                    </span>
+                                                                </Tooltip>
+                                                                <Tooltip title={u.deletionRequested ? "Reject Deletion Request" : "Reject Registration"}>
+                                                                    <IconButton size="small" color="info" disabled={verifyMutation.isLoading} onClick={() => verifyMutation.mutate({ id: u.id, status: 'REJECTED', name: u.name })} sx={{ border: '1px solid rgba(0,188,212,0.25)' }}>
+                                                                        <XCircle size={17} />
+                                                                    </IconButton>
+                                                                </Tooltip>
+                                                            </>
+                                                        )}
                                                     </Box>
                                                 </Box>
                                             </CardContent>
