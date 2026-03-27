@@ -1,12 +1,25 @@
 import { PrismaClient } from '@prisma/client';
+import process from 'node:process';
 
 const prisma = new PrismaClient();
 
 // --- Configuration & Helpers ---
 const DEPARTMENTS = [
-    'Ushering', 'Praise & Worship', 'Media', 'Youth', 'Men', 'Women',
-    'Sunday School', 'Choir', 'Hospitality', 'Deacons', 'Pastoral',
-    'Outreach (Nairobi Region)', 'Outreach (Naivasha)', 'Outreach (Eldoret)', 'Outreach (Bungoma)'
+    'PPAM ABRAHAM GENERATION', 
+    'Esther Arise', 
+    '3 SixTeen Generation', 
+    'Royal Tribe of Light', 
+    'Rising star generation',
+    'Pastoral & Secretariat',
+    'Ushering & Protocol',
+    'Media & ICT',
+    'Praise and worship',
+    'Hospitality & Welfare',
+    'Mission & Evangelism',
+    'Technical, Sound & Lighting',
+    'Treasury & Finance',
+    'Deacons Board',
+    'Intercessory & Prayer'
 ];
 
 const ROLES = {
@@ -25,6 +38,19 @@ const lastNames = ['Olatunji', 'Jenkins', 'Newton', 'Okoro', 'Adebayo', 'Wilson'
 const getRandom = (arr: any[]) => arr[Math.floor(Math.random() * arr.length)];
 const getRandomDate = (start: Date, end: Date) => new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
 
+/**
+ * Logic to map users to departments based on age and gender. (Aligned with department-mapper.ts)
+ */
+function getDepartmentNameByDob(dob: Date, gender: string): string {
+    const ageMs = Date.now() - new Date(dob).getTime();
+    const age = Math.floor(ageMs / (1000 * 60 * 60 * 24 * 365.25));
+
+    if (age < 13) return 'Rising star generation';
+    if (age < 20) return '3 SixTeen Generation';
+    if (age <= 32) return 'Royal Tribe of Light';
+    return gender?.toUpperCase() === 'FEMALE' ? 'Esther Arise' : 'PPAM ABRAHAM GENERATION';
+}
+
 async function main() {
     console.log('🚀 INITIALIZING GLOBAL MISSION INFRASTRUCTURE SEED...');
 
@@ -34,10 +60,11 @@ async function main() {
         'notification', 'transaction', 'message', 'supportRequest', 
         'announcementApproval', 'eventApproval', 'projectApproval', 
         'planApproval', 'meetingApproval', 'devotionInteraction', 
-        'auditLog', 'baptism', 'appointment', 'partnership', 
+        'auditLog', 'baptism', 'appointment', 'partnershipLedger', 'partnership', 
         'account', 'projectUpdate', 'volunteer', 'child', 
         'announcement', 'event', 'project', 'plan', 'meeting', 
-        'user', 'department', 'devotion', 'affirmation', 'ministrySettings'
+        'user', 'department', 'devotion', 'affirmation', 'ministrySettings',
+        'featureFlag', 'budgetContributor', 'budget'
     ];
     for (const table of tables) {
         await (prisma as any)[table].deleteMany();
@@ -163,7 +190,7 @@ async function main() {
         assocPastors.push(ap);
     }
 
-    // LEADERS (15)
+    // LEADERS (All 15 Departments)
     console.log('🛡️ Appointing 15 Departmental Leaders...');
     const leaders = [];
     for (let i = 0; i < depts.length; i++) {
@@ -185,24 +212,35 @@ async function main() {
         await prisma.department.update({ where: { id: d.id }, data: { leaderId: leader.id } });
     }
 
-    // MEMBERS (77)
-    console.log('👥 Registering 77 Active Members...');
+    // MEMBERS (100 Total Covenant Members)
+    console.log('👥 Registering 85 additional Covenant Members (Total 100+ personas)...');
     const members = [];
-    for (let i = 1; i <= 77; i++) {
-        const d = getRandom(depts);
+    for (let i = 1; i <= 85; i++) {
+        const gender = Math.random() > 0.5 ? 'MALE' : 'FEMALE';
+        const dob = getRandomDate(new Date('1956-01-01'), new Date('2025-01-01'));
+        
+        // 50% chance of random department, 50% chance of age/gender based
+        let d;
+        if (Math.random() > 0.5) {
+            d = getRandom(depts);
+        } else {
+            const deptName = getDepartmentNameByDob(dob, gender);
+            d = depts.find(dept => dept.name === deptName) || depts[0];
+        }
+
         const member = await prisma.user.create({
             data: {
                 name: `${getRandom(firstNames)} ${getRandom(lastNames)}`,
-                idNumber: `PPAM-MEM-ID-${i.toString().padStart(4, '0')}`,
+                idNumber: `PPAM-MEM-ID-${(i + 100).toString().padStart(4, '0')}`,
                 membershipNumber: `${(301 + i).toString().padStart(3, '0')}/001/2026`,
-                dob: getRandomDate(new Date('1970-01-01'), new Date('2005-01-01')),
+                dob,
                 role: ROLES.MEMBER,
                 status: 'ACTIVE',
                 departmentId: d.id,
-                isCardPaid: true,
-                gender: Math.random() > 0.5 ? 'MALE' : 'FEMALE',
+                isCardPaid: i % 10 !== 0,
+                gender: gender,
                 phoneNumber: `+254700${i.toString().padStart(3, '0')}123`,
-                isPartner: Math.random() < 0.2
+                isPartner: Math.random() < 0.3
             } as any
         });
         members.push(member);
@@ -233,9 +271,9 @@ async function main() {
 
     // 6. WORKFLOWS: CHILDREN & BAPTISM
     console.log('👶 Seeding Child Dedications & Lineage...');
-    const sundaySchool = depts.find(d => d.name === 'Sunday School');
-    for (const member of members.slice(0, 30)) {
-        const childCount = Math.floor(Math.random() * 2) + 1;
+    const sundaySchool = depts.find(d => d.name === 'Rising star generation');
+    for (const member of members.slice(0, 85)) { // Link more children for testing
+        const childCount = Math.floor(Math.random() * 3); // 0-2 children
         for (let c = 1; c <= childCount; c++) {
             await prisma.child.create({
                 data: {
@@ -433,7 +471,7 @@ async function main() {
         const leader = leaders.find(l => l.departmentId === d.id);
         if (!leader) continue;
 
-        await prisma.transaction.create({
+        const t1 = await prisma.transaction.create({
             data: {
                 accountId: acc.id,
                 type: 'INCOME',
@@ -441,10 +479,11 @@ async function main() {
                 description: 'Sunday Tithes Allocation',
                 status: 'APPROVED',
                 requestedById: leader.id,
-                approvedById: systemAdmin.id
             }
         });
-        await prisma.transaction.create({
+        await prisma.transactionApproval.create({ data: { transactionId: t1.id, userId: systemAdmin.id, role: 'SYSTEM_ADMIN' } });
+
+        const t2 = await prisma.transaction.create({
             data: {
                 accountId: acc.id,
                 type: 'EXPENSE',
@@ -452,10 +491,41 @@ async function main() {
                 description: 'Media Equipment Repairs',
                 status: 'APPROVED',
                 requestedById: leader.id,
-                approvedById: systemAdmin.id
             }
         });
+        await prisma.transactionApproval.create({ data: { transactionId: t2.id, userId: systemAdmin.id, role: 'SYSTEM_ADMIN' } });
     }
+
+    // 12. SYSTEM INFRASTRUCTURE: FEATURE FLAGS & METRICS
+    console.log('📊 Seeding System Infrastructure & Metrics...');
+    await prisma.featureFlag.createMany({
+        data: [
+            { name: 'REGISTRATION_OPEN', enabled: true, scope: 'GLOBAL' },
+            { name: 'PARTNERSHIP_MODULE', enabled: true, scope: 'GLOBAL' },
+            { name: 'BAPTISM_PORTAL', enabled: true, scope: 'GLOBAL' }
+        ]
+    });
+
+    await prisma.systemMetric.create({
+        data: {
+            latency: 45.5,
+            activeUsers: 102,
+            errorCount: 0,
+            failedJobs: 0,
+            wsConnections: 8,
+            pendingApproval: 4
+        }
+    });
+
+    await prisma.auditLog.create({
+        data: {
+            actorId: systemAdmin.id,
+            actorRole: 'SYSTEM_ADMIN',
+            actionType: 'SYSTEM_BOOT',
+            entityType: 'SYSTEM',
+            metadata: { version: '2.0.0-PROD' }
+        }
+    });
 
     console.log('🏁 GLOBAL MISSION INFRASTRUCTURE SEED COMPLETE.');
     console.log(`- Users: ${await prisma.user.count()}`);

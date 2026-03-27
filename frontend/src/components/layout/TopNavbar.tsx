@@ -9,7 +9,7 @@ import {
     LayoutDashboard, Users, Calendar, Bell, 
     MessageCircle, ClipboardList, Briefcase, Heart, 
     Menu as MenuIcon, X, Church, ChevronRight, Coins, LogOut,
-    Search as SearchIcon, Command, Zap, UserCheck, Baby, TrendingUp
+    Search as SearchIcon, Command, Zap, UserCheck, Baby, TrendingUp, Shield
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -22,12 +22,14 @@ import { useRoutePreloader } from '../../hooks/useRoutePreloader';
 // Base items for admin roles
 const adminNavItems = [
     { name: 'EXECUTIVE PALACE', href: '/', icon: LayoutDashboard },
+    { name: 'Announcements', href: '/announcements', icon: Bell },
+    { name: 'Events', href: '/calendar', icon: Calendar },
     { name: 'Support', href: '/support', icon: Coins },
 ];
 
 // Base items for regular members
 const memberNavItems = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+    { name: 'PRAYER PALACE', href: '/', icon: LayoutDashboard },
     { name: 'My Profile', href: '/profile', icon: UserCheck },
     { name: 'Register Child', href: '/register-child', icon: Baby },
 ];
@@ -97,9 +99,11 @@ export default function TopNavbar() {
     
     const primaryNavItems = isMember 
         ? memberNavItems 
-        : (isPastor || isDeptLeader 
-            ? [{ name: 'EXECUTIVE PALACE', href: '/executive', icon: LayoutDashboard }]
-            : adminNavItems);
+        : (user?.role === 'SUPER_ADMIN' 
+            ? [...adminNavItems, { name: 'MISSION COMMAND', href: '/bishop', icon: Shield }]
+            : (isPastor || isDeptLeader 
+                ? [{ name: 'EXECUTIVE PALACE', href: '/', icon: LayoutDashboard }]
+                : adminNavItems));
 
     // Everything shows in the drawer
     const allNavItems = isMember
@@ -109,13 +113,17 @@ export default function TopNavbar() {
               { name: 'My Profile', href: '/profile', icon: UserCheck },
           ]
         : [
-              // Restricted roles: link to /executive (triple-track view), not / (which redirects to their own dashboard)
-              { name: (isPastor || isDeptLeader) ? 'EXECUTIVE PALACE' : 'EXECUTIVE PALACE', href: (isPastor || isDeptLeader) ? '/executive' : '/', icon: LayoutDashboard },
+              { name: isPastor ? 'PASTORAL PALACE' : 'EXECUTIVE PALACE', href: '/', icon: LayoutDashboard },
+              ...(user?.role === 'SUPER_ADMIN' ? [{ name: 'MISSION COMMAND', href: '/bishop', icon: Shield }] : []),
               ...(isHighAdmin ? [
                   { name: 'Departments', href: '/departments', icon: Users },
+                  { name: 'Projects', href: '/projects', icon: Briefcase },
+                  { name: 'Events', href: '/calendar', icon: Calendar },
+                  { name: 'Plans', href: '/plans', icon: ClipboardList },
+                  { name: 'Announcements', href: '/announcements', icon: Bell },
                   { name: 'Support Hub', href: '/support', icon: Coins }
               ] : []),
-              ...(!isPastor && !isDeptLeader ? [{ name: 'Register Child', href: '/register-child', icon: Baby }] : []),
+              { name: 'Register Child', href: '/register-child', icon: Baby },
           ];
 
     const handleDrawerToggle = () => {
@@ -219,7 +227,9 @@ export default function TopNavbar() {
                             }}
                         >
                             <Church size={28} color="var(--cyan)" />
-                            {user?.role === 'MEMBER' ? "PRAYER PALACE | Portal" : "EXECUTIVE PALACE | Portal"}
+                            {user?.role === 'MEMBER' 
+                                ? "PRAYER PALACE PORTAL" 
+                                : (user?.role === 'SUPER_ADMIN' ? "BISHOP | MISSION COMMAND" : "EXECUTIVE PALACE PORTAL")}
                         </Typography>
 
                         {/* Primary Horizontal Navigation */}

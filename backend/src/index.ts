@@ -24,6 +24,7 @@ import budgetsRoutes from './modules/budgets/budgets.routes.js';
 import settingsRoutes from './modules/settings/settings.routes.js';
 import partnershipsRoutes from './modules/partnerships/partnerships.routes.js';
 import permissionsRoutes from './modules/permissions/permissions.routes.js';
+import financeRoutes from './modules/finance/finance.routes.js';
 import { bootstrapSystem } from './utils/bootstrap.js';
 import recoveryRoutes from './modules/recovery/recovery.routes.js';
 import cluster from 'cluster';
@@ -125,6 +126,7 @@ if (useCluster && cluster.isPrimary) {
     app.use('/search', searchRoutes);
     app.use('/upload', uploadRoutes);
     app.use('/permissions', permissionsRoutes);
+    app.use('/finance', financeRoutes);
     app.use('/recovery', recoveryRoutes);
 
     // SILENCE DEVTOOLS NOISE

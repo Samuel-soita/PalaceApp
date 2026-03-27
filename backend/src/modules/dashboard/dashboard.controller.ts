@@ -50,7 +50,13 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 children,
                 ministrySettings,
                 foundAffirmation,
-                partnership
+                partnership,
+                account,
+                transactions,
+                allPartnerships,
+                globalMetrics,
+                auditLogs,
+                departmentMembers
             ] = await Promise.all([
                 prisma.project.findMany({ 
                     where: getWhere(), 
@@ -113,9 +119,51 @@ export const getDashboardSync = async (req: any, res: Response) => {
                         where: { parentId: userId },
                         select: { id: true, name: true, dob: true, dedicationNumber: true, workflowStatus: true, department: { select: { name: true } } }
                     }),
-                (prisma as any).ministrySettings.findUnique({ where: { id: 'GLOBAL' }, select: { id: true, themeOfYear: true, themeOfMonth: true, churchBudget: true } }),
-                (prisma as any).affirmation.findFirst({ where: { date: new Date(new Date().setHours(0,0,0,0)) } }),
-                prisma.partnership.findFirst({ where: { userId, status: 'ACTIVE' } })
+                (prisma as any).ministrySettings ? (prisma as any).ministrySettings.findUnique({ where: { id: 'GLOBAL' }, select: { themeOfYear: true, themeOfMonth: true, churchBudget: true } }) : Promise.resolve(null),
+                (prisma as any).affirmation ? (prisma as any).affirmation.findFirst({ where: { date: new Date(new Date().setHours(0,0,0,0)) } }) : Promise.resolve(null),
+                prisma.partnership.findFirst({ where: { userId, status: 'ACTIVE' } }),
+                (isAdmin || isLeader) 
+                    ? (effectiveDeptId || userDeptId 
+                        ? prisma.account.findUnique({ where: { departmentId: effectiveDeptId || userDeptId } })
+                        : prisma.account.aggregate({ _sum: { balance: true, totalIncome: true, totalExpenditure: true } }).then(agg => ({ 
+                            id: 'GLOBAL', 
+                            balance: agg._sum.balance || 0, 
+                            totalIncome: agg._sum.totalIncome || 0, 
+                            totalExpenditure: agg._sum.totalExpenditure || 0 
+                        }))) 
+                    : Promise.resolve(null),
+                (isAdmin || isLeader) ? (prisma.transaction as any).findMany({ 
+                    where: effectiveDeptId ? { account: { departmentId: effectiveDeptId } } : (userDeptId ? { account: { departmentId: userDeptId } } : {}),
+                    take: 75,
+                    orderBy: { createdAt: 'desc' },
+                    include: { approvals: true, requester: { select: { name: true } } }
+                }) : Promise.resolve([]),
+                isAdmin ? prisma.partnership.findMany({
+                    take: 50,
+                    orderBy: { createdAt: 'desc' },
+                    include: { user: { select: { name: true, membershipNumber: true } } }
+                }) : Promise.resolve([]),
+                isAdmin ? Promise.all([
+                    prisma.user.count(),
+                    prisma.user.count({ where: { isPartner: true } }),
+                    prisma.transaction.aggregate({ where: { status: 'PENDING_BISHOP_APPROVAL' }, _count: true }),
+                    prisma.child.count({ where: { isDedicated: false } })
+                ]).then(([totalUsers, totalPartners, pendingApprovals, pendingDedications]) => ({
+                    totalUsers,
+                    totalPartners,
+                    pendingApprovals: pendingApprovals._count,
+                    pendingDedications
+                })) : Promise.resolve(null),
+                isAdmin ? prisma.auditLog.findMany({
+                    take: 20,
+                    orderBy: { createdAt: 'desc' },
+                    include: { actor: { select: { name: true } } }
+                }) : Promise.resolve([]),
+                effectiveDeptId ? prisma.user.findMany({
+                    where: { departmentId: effectiveDeptId as string },
+                    include: { children: true },
+                    orderBy: { name: 'asc' }
+                }) : Promise.resolve([])
             ]);
 
             // --- AUTO DEPARTMENT MAPPING ---
@@ -124,9 +172,11 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 let targetDeptName = '';
                 
                 if (age > 57) targetDeptName = 'Elders';
-                else if (age < 31) targetDeptName = 'Youth';
-                else if (userRecord.gender === 'FEMALE') targetDeptName = 'Women';
-                else if (userRecord.gender === 'MALE') targetDeptName = 'Men';
+                else if (age < 13) targetDeptName = 'Rising star generation';
+                else if (age < 20) targetDeptName = '3 SixTeen Generation';
+                else if (age <= 32) targetDeptName = 'Royal Tribe of Light';
+                else if (userRecord.gender === 'FEMALE') targetDeptName = 'Esther Arise';
+                else if (userRecord.gender === 'MALE') targetDeptName = 'PPAM ABRAHAM GENERATION';
 
                 if (targetDeptName) {
                     const targetDept = departments.find((d: any) => d.name.toUpperCase() === targetDeptName.toUpperCase());
@@ -181,13 +231,24 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 ministrySettings: ministrySettings || { id: 'GLOBAL', themeOfYear: 'YEAR OF DIVINE ESTABLISHMENT', themeOfMonth: 'MONTH OF NEW BEGINNINGS', churchBudget: 0 },
                 affirmation: dailyAffirmation,
                 isPartner: (userRecord as any)?.isPartner || false,
-                partnership: (partnership as any)
+                partnership: (partnership as any),
+                account,
+                transactions,
+                allPartnerships,
+                globalMetrics,
+                auditLogs,
+                departmentMembers
             };
         }, 10); // High-frequency cache for real-time situational awareness
 
         res.json(data);
-    } catch (error) {
-        console.error('Dashboard Sync Error:', error);
-        res.status(500).json({ error: 'Failed to sync dashboard data.' });
+    } catch (error: any) {
+        console.error('[Dashboard Sync ERROR]', {
+            message: error.message,
+            stack: error.stack,
+            userId: req.user?.id,
+            query: req.query
+        });
+        res.status(500).json({ error: 'Failed to sync dashboard data.', details: error.message });
     }
 };

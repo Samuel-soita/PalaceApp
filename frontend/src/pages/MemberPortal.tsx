@@ -117,7 +117,7 @@ export default function MemberPortal() {
                     .mission-marquee-container {
                         display: flex;
                         gap: 16px;
-                        animation: marquee 300s linear infinite;
+                        animation: marquee 800s linear infinite;
                         width: max-content;
                     }
                     .mission-marquee-container:hover {
@@ -542,6 +542,39 @@ export default function MemberPortal() {
                     {/* Right Column: Tactical Comms */}
                     <Grid item xs={12} lg={5}>
                         <Stack spacing={4}>
+                            <Card className="holographic-card" sx={{ p: 0, borderRadius: 0, mb: 4 }}>
+                                <CardContent sx={{ p: 3 }}>
+                                    <Box display="flex" alignItems="center" gap={1.5} mb={3}>
+                                        <Calendar size={20} color="var(--primary)" />
+                                        <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 2 }}>CHURCH MISSION TIMELINE</Typography>
+                                    </Box>
+                                    <Stack spacing={2} sx={{ maxHeight: 400, overflowY: 'auto', pr: 1, '&::-webkit-scrollbar': { width: 4 }, '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(255,255,255,0.1)' } }}>
+                                        {(() => {
+                                            const timeline = [
+                                                ...(syncData?.events || []).map(e => ({ ...e, type: 'EVENT', icon: Calendar, color: 'primary' })),
+                                                ...(syncData?.projects || []).map(p => ({ ...p, type: 'PROJECT', icon: Star, color: 'cyan' })),
+                                                ...(syncData?.plans || []).map(p => ({ ...p, type: 'PLAN', icon: BookOpen, color: 'orange' })),
+                                            ].sort((a, b) => new Date(a.date || a.createdAt).getTime() - new Date(b.date || b.createdAt).getTime());
+
+                                            if (timeline.length === 0) return <Typography variant="caption" sx={{ opacity: 0.3, textAlign: 'center', py: 2 }}>NO UPCOMING MISSIONS</Typography>;
+
+                                            return timeline.map((item, idx) => (
+                                                <Box key={idx} sx={{ display: 'flex', gap: 2, p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderLeft: `3px solid var(--${item.color})` }}>
+                                                    <Box sx={{ minWidth: 45, textAlign: 'center' }}>
+                                                        <Typography variant="h6" fontWeight="950" sx={{ lineHeight: 1 }}>{new Date(item.date || item.createdAt).getDate()}</Typography>
+                                                        <Typography variant="caption" sx={{ fontSize: '0.6rem', opacity: 0.6 }}>{new Date(item.date || item.createdAt).toLocaleString('default', { month: 'short' }).toUpperCase()}</Typography>
+                                                    </Box>
+                                                    <Box sx={{ flexGrow: 1 }}>
+                                                        <Typography variant="subtitle2" fontWeight="950" sx={{ lineHeight: 1.2 }}>{item.title?.toUpperCase()}</Typography>
+                                                        <Typography variant="caption" sx={{ opacity: 0.5, display: 'block' }}>{item.type} | {item.location || 'GLOBAL'}</Typography>
+                                                    </Box>
+                                                </Box>
+                                            ));
+                                        })()}
+                                    </Stack>
+                                </CardContent>
+                            </Card>
+
                             <Card className="holographic-card" sx={{ p: 0, borderRadius: 0 }}>
                                 <CardContent sx={{ p: 3 }}>
                                     <Box display="flex" alignItems="center" gap={1.5} mb={4}>

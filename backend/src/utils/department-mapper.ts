@@ -2,18 +2,19 @@ import prisma from './prisma.js';
 
 /**
  * DOB Department Mapping Logic (KISS principle).
- * - Age < 13  → Sunday School
- * - Age 13-32 → Youth
+ * - Age < 13  → Rising star generation (Sunday School)
+ * - Age 13-19 → 3 SixTeen Generation (Teenagers)
+ * - Age 20-32 → Royal Tribe of Light (Youths)
  * - Age > 32  → Men's or Women's (based on gender)
  */
 export function getDepartmentNameByDob(dob: Date, gender: string): string {
     const ageMs = Date.now() - new Date(dob).getTime();
     const age = Math.floor(ageMs / (1000 * 60 * 60 * 24 * 365.25));
 
-    if (age < 13) return 'Sunday School';
-    if (age < 18) return 'Teenage';
-    if (age <= 32) return 'Youth';
-    return gender?.toUpperCase() === 'FEMALE' ? 'Women' : 'Men';
+    if (age < 13) return 'Rising star generation';
+    if (age < 20) return '3 SixTeen Generation';
+    if (age <= 32) return 'Royal Tribe of Light';
+    return gender?.toUpperCase() === 'FEMALE' ? 'Esther Arise' : 'PPAM ABRAHAM GENERATION';
 }
 
 /**

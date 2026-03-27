@@ -228,9 +228,9 @@ export default function ChildRegistration() {
                                 <Stack spacing={1.5}>
                                     {[
                                         { range: '0-3 YRS', unit: 'CRADLE ROLL' },
-                                        { range: '4-8 YRS', unit: 'ANGELS CLASS' },
-                                        { range: '9-12 YRS', unit: 'AMBASSADORS' },
-                                        { range: '13+ YRS', unit: 'YOUTH COMMAND' },
+                                        { range: '4-12 YRS', unit: 'Rising star generation' },
+                                        { range: '14-19 YRS', unit: '3 SixTeen Generation' },
+                                        { range: '20+ YRS', unit: 'Royal Tribe of Light' },
                                     ].map((unit, i) => (
                                         <Box key={i} display="flex" justifyContent="space-between" sx={{ p: 1, borderBottom: '1px solid var(--glass-border)' }}>
                                             <Typography variant="caption" fontWeight="950">{unit.range}</Typography>

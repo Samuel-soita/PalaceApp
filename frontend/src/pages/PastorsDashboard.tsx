@@ -7,7 +7,7 @@ import {
 import { 
     Bell, Calendar, UserPlus, Baby, Heart, BookOpen, Quote, Star, 
     ArrowRight, Droplet, CheckCircle2, Clock, Sparkles, Megaphone, 
-    ThumbsUp, Smile, Send, Shield, ChevronRight, TrendingUp
+    ThumbsUp, Smile, Send, Shield, ChevronRight, TrendingUp, Zap
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -19,6 +19,10 @@ import BaptismManager from '../components/dashboard/BaptismManager';
 import DedicationManager from '../components/dashboard/DedicationManager';
 import AppointmentManager from '../components/dashboard/AppointmentManager';
 import PartnershipManager from '../components/dashboard/PartnershipManager';
+import EventFormModal from '../components/modals/EventFormModal';
+import ProjectFormModal from '../components/modals/ProjectFormModal';
+import PlanFormModal from '../components/modals/PlanFormModal';
+import AnnouncementFormModal from '../components/modals/AnnouncementFormModal';
 
 export default function PastorsDashboard() {
     const { user, updateUser } = useAuth();
@@ -41,6 +45,12 @@ export default function PastorsDashboard() {
         message: '',
         severity: 'info'
     });
+
+    // Operational Commands
+    const [eventModalOpen, setEventModalOpen] = useState(false);
+    const [projectModalOpen, setProjectModalOpen] = useState(false);
+    const [planModalOpen, setPlanModalOpen] = useState(false);
+    const [announcementModalOpen, setAnnouncementModalOpen] = useState(false);
 
     // --- Data Streams ---
     const { data: syncData, isLoading: isSyncLoading } = useQuery(['dashboard-sync'], async () => {
@@ -104,7 +114,7 @@ export default function PastorsDashboard() {
                     .mission-marquee-pastor {
                         display: flex;
                         gap: 16px;
-                        animation: marquee-pastor 300s linear infinite;
+                        animation: marquee-pastor 1000s linear infinite;
                         width: max-content;
                     }
                     .mission-marquee-pastor:hover {
@@ -144,7 +154,7 @@ export default function PastorsDashboard() {
                         WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
                         mb: 1, letterSpacing: -3, fontSize: { xs: '2.5rem', md: '4rem' }
                     }}>
-                        PASTORAL PALACE PORTAL
+                        PASTORAL <span className="text-primary/70">PALACE PORTAL</span>
                     </Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
                         <Typography variant="subtitle1" fontWeight="800" color="textSecondary">
@@ -315,6 +325,75 @@ export default function PastorsDashboard() {
                                                 <ChevronRight size={18} color="orange" />
                                             </Button>
                                         )}
+                                    </Stack>
+                                </CardContent>
+                            </Card>
+
+                            {/* ⚔️ STRATEGIC COMMAND CENTER for Pastors */}
+                            <Card sx={{ bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid var(--primary)', borderRadius: 4 }}>
+                                <CardContent sx={{ p: 3 }}>
+                                    <Box display="flex" alignItems="center" gap={1.5} mb={3}>
+                                        <Zap size={20} color="var(--primary)" />
+                                        <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 2 }}>STRATEGIC COMMAND ACTIONS</Typography>
+                                    </Box>
+                                    <Grid container spacing={2}>
+                                        <Grid item xs={6}>
+                                            <Button fullWidth onClick={() => setEventModalOpen(true)} sx={{ height: 60, flexContent: 'column', gap: 0.5, bgcolor: 'rgba(79, 139, 255, 0.1)', border: '1px solid var(--primary)', borderRadius: 2 }}>
+                                                <Calendar size={18} color="var(--primary)" />
+                                                <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>NEW EVENT</Typography>
+                                            </Button>
+                                        </Grid>
+                                        <Grid item xs={6}>
+                                            <Button fullWidth onClick={() => setProjectModalOpen(true)} sx={{ height: 60, flexContent: 'column', gap: 0.5, bgcolor: 'rgba(0, 255, 255, 0.1)', border: '1px solid var(--cyan)', borderRadius: 2 }}>
+                                                <Star size={18} color="var(--cyan)" />
+                                                <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>NEW PROJECT</Typography>
+                                            </Button>
+                                        </Grid>
+                                        <Grid item xs={6}>
+                                            <Button fullWidth onClick={() => setPlanModalOpen(true)} sx={{ height: 60, flexContent: 'column', gap: 0.5, bgcolor: 'rgba(255, 165, 0, 0.1)', border: '1px solid orange', borderRadius: 2 }}>
+                                                <BookOpen size={18} color="orange" />
+                                                <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>NEW PLAN</Typography>
+                                            </Button>
+                                        </Grid>
+                                        <Grid item xs={6}>
+                                            <Button fullWidth onClick={() => setAnnouncementModalOpen(true)} sx={{ height: 60, flexContent: 'column', gap: 0.5, bgcolor: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--glass-border)', borderRadius: 2 }}>
+                                                <Megaphone size={18} />
+                                                <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>NEW INTEL</Typography>
+                                            </Button>
+                                        </Grid>
+                                    </Grid>
+                                </CardContent>
+                            </Card>
+
+                            <Card className="holographic-card" sx={{ p: 0, borderRadius: 0, mb: 4 }}>
+                                <CardContent sx={{ p: 3 }}>
+                                    <Box display="flex" alignItems="center" gap={1.5} mb={3}>
+                                        <Calendar size={20} color="var(--primary)" />
+                                        <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 2 }}>CHURCH MISSION TIMELINE</Typography>
+                                    </Box>
+                                    <Stack spacing={2} sx={{ maxHeight: 400, overflowY: 'auto', pr: 1, '&::-webkit-scrollbar': { width: 4 }, '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(255,255,255,0.1)' } }}>
+                                        {(() => {
+                                            const timeline = [
+                                                ...(syncData?.events || []).map((e: any) => ({ ...e, type: 'EVENT', icon: Calendar, color: 'primary' })),
+                                                ...(syncData?.projects || []).map((p: any) => ({ ...p, type: 'PROJECT', icon: Star, color: 'cyan' })),
+                                                ...(syncData?.plans || []).map((p: any) => ({ ...p, type: 'PLAN', icon: BookOpen, color: 'orange' })),
+                                            ].sort((a: any, b: any) => new Date(a.date || a.createdAt).getTime() - new Date(b.date || b.createdAt).getTime());
+
+                                            if (timeline.length === 0) return <Typography variant="caption" sx={{ opacity: 0.3, textAlign: 'center', py: 2 }}>NO UPCOMING MISSIONS</Typography>;
+
+                                            return timeline.map((item: any, idx: number) => (
+                                                <Box key={idx} sx={{ display: 'flex', gap: 2, p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderLeft: `3px solid var(--${item.color})` }}>
+                                                    <Box sx={{ minWidth: 45, textAlign: 'center' }}>
+                                                        <Typography variant="h6" fontWeight="950" sx={{ lineHeight: 1 }}>{new Date(item.date || item.createdAt).getDate()}</Typography>
+                                                        <Typography variant="caption" sx={{ fontSize: '0.6rem', opacity: 0.6 }}>{new Date(item.date || item.createdAt).toLocaleString('default', { month: 'short' }).toUpperCase()}</Typography>
+                                                    </Box>
+                                                    <Box sx={{ flexGrow: 1 }}>
+                                                        <Typography variant="subtitle2" fontWeight="950" sx={{ lineHeight: 1.2 }}>{item.title?.toUpperCase()}</Typography>
+                                                        <Typography variant="caption" sx={{ opacity: 0.5, display: 'block' }}>{item.type} | {item.location || 'GLOBAL'}</Typography>
+                                                    </Box>
+                                                </Box>
+                                            ));
+                                        })()}
                                     </Stack>
                                 </CardContent>
                             </Card>
@@ -661,6 +740,12 @@ export default function PastorsDashboard() {
             </Modal>
 
             <RequestBaptismModal open={baptismModalOpen} onClose={() => setBaptismModalOpen(false)} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+
+            {/* Operational Modals */}
+            <EventFormModal open={eventModalOpen} onClose={() => setEventModalOpen(false)} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+            <ProjectFormModal open={projectModalOpen} onClose={() => setProjectModalOpen(false)} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+            <PlanFormModal open={planModalOpen} onClose={() => setPlanModalOpen(false)} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+            <AnnouncementFormModal open={announcementModalOpen} onClose={() => setAnnouncementModalOpen(false)} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
 
 
             <Snackbar open={toast.open} autoHideDuration={6000} onClose={() => setToast({ ...toast, open: false })}>

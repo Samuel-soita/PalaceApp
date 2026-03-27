@@ -69,12 +69,13 @@ import {
     TrendingUp,
     DownloadCloud,
     UploadCloud,
-    UserMinus
+    UserCheck as UserCheckIcon
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import api from '../lib/api-client';
 import { exportQueue, importQueue } from '../lib/pwa-sync';
 import PermissionEnginePanel from '../components/watua/PermissionEnginePanel.js';
+import DashboardLayout from '../components/layout/DashboardLayout';
 
 interface User {
     id: string;
@@ -540,7 +541,7 @@ export default function WatuaDashboard() {
                                                         <Shield size={18} />
                                                     </IconButton>
                                                     <IconButton sx={{ color: '#0ea5e9' }} onClick={() => handleAction(user.id, 'MAKE_ASSOCIATE_PASTOR')} title="Appoint Associate Pastor">
-                                                        <UserMinus size={18} />
+                                                        <UserCheckIcon size={18} />
                                                     </IconButton>
                                                     <IconButton sx={{ color: '#ffcc00' }} onClick={() => {
                                                         setSelectedUser(user);
@@ -1194,7 +1195,7 @@ export default function WatuaDashboard() {
                     </Button>
                 </DialogActions>
             </Dialog>
-        </Box>
+            </Box>
     );
 }
 

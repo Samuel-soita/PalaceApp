@@ -10,7 +10,7 @@ import {
 } from '@mui/material';
 import {
     Calendar, Users, Briefcase, ChevronRight, CheckCircle2,
-    Package, TrendingUp, AlertCircle, ArrowUpRight, ShieldCheck, Plus, MapPin,
+    Package, TrendingUp, AlertCircle, ArrowUpRight, ShieldCheck, Plus, MapPin, LayoutDashboard,
     Heart, FileText, Download, Share2, Edit, Trash2, MessageSquare, Coins, Clock, Zap, Shield,
     User, Search, Filter, Sparkles, ThumbsUp, Smile, Quote, Star, Bell, Megaphone, BookOpen, Droplet
 } from 'lucide-react';
@@ -24,6 +24,7 @@ import ProjectFormModal from '../components/modals/ProjectFormModal';
 import EventFormModal from '../components/modals/EventFormModal';
 import PlanFormModal from '../components/modals/PlanFormModal';
 import AnnouncementFormModal from '../components/modals/AnnouncementFormModal';
+import FinancialLedger from '../components/dashboard/FinancialLedger';
 
 export default function DepartmentDashboard() {
     const { id } = useParams();
@@ -37,7 +38,7 @@ export default function DepartmentDashboard() {
     const effectiveId = (id && id !== 'undefined') ? id : user?.departmentId;
 
     // Permission-based flags
-    const canViewDepartment = hasPermission(PERMISSIONS.VIEW_DEPARTMENT);
+    const canViewDepartment = hasPermission(PERMISSIONS.VIEW_DEPARTMENT) || user?.role === 'SUPER_ADMIN';
 
     // Access validation
     useEffect(() => {
@@ -60,6 +61,7 @@ export default function DepartmentDashboard() {
     const [toast, setToast] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({
         open: false, message: '', severity: 'info'
     });
+    const [searchQuery, setSearchQuery] = useState('');
 
     const isReady = !!effectiveId && effectiveId !== 'undefined';
 
@@ -113,6 +115,13 @@ export default function DepartmentDashboard() {
     const isPartner = syncData?.isPartner;
     const settings = syncData?.ministrySettings;
     const account = syncData?.account;
+    const departmentMembers = syncData?.departmentMembers || [];
+    
+    // Registry Filter Logic
+    const filteredMembers = departmentMembers.filter((m: any) => 
+        m.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        m.membershipNumber.toLowerCase().includes(searchQuery.toLowerCase())
+    );
     
     return (
         <DashboardLayout>
@@ -132,7 +141,7 @@ export default function DepartmentDashboard() {
                     .mission-marquee-leader {
                         display: flex;
                         gap: 16px;
-                        animation: marquee-leader 300s linear infinite;
+                        animation: marquee-leader 1000s linear infinite;
                         width: max-content;
                     }
                     .mission-marquee-leader:hover {
@@ -165,7 +174,10 @@ export default function DepartmentDashboard() {
                         WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
                         mb: 1, letterSpacing: -3, fontSize: { xs: '2.5rem', md: '4rem' }
                     }}>
-                        {department?.name?.toUpperCase()}
+                        EXECUTIVE <span className="text-primary/70">PALACE PORTAL</span>
+                    </Typography>
+                    <Typography variant="h5" fontWeight="950" sx={{ color: 'var(--cyan)', mb: 2, letterSpacing: 1 }}>
+                        {department?.name?.toUpperCase() || 'SECTORAL COMMAND'}
                     </Typography>
                     
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
@@ -196,6 +208,28 @@ export default function DepartmentDashboard() {
                         />
                     </Box>
                 </Box>
+                
+                {/* 📊 SECTORAL STRENGTH - Unified Analytics Strip */}
+                <Box sx={{ mb: 6, display: 'flex', justifyContent: 'center', gap: 3, flexWrap: 'wrap' }}>
+                    <Card sx={{ bgcolor: 'rgba(0,180,216,0.05)', border: '1px solid rgba(0,180,216,0.2)', minWidth: 200, borderRadius: 0, position: 'relative', overflow: 'hidden' }}>
+                        <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
+                            <Typography variant="caption" fontWeight="950" sx={{ color: 'var(--cyan)', letterSpacing: 1, display: 'block', mb: 1 }}>TOTAL MISSION PERSONNEL</Typography>
+                            <Box display="flex" alignItems="baseline" gap={1}>
+                                <Typography variant="h4" fontWeight="1000" className="glow-text">{syncData?.members?.length || 0}</Typography>
+                                <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 900 }}>COVENANT MEMBERS</Typography>
+                            </Box>
+                        </CardContent>
+                    </Card>
+                    <Card sx={{ bgcolor: 'rgba(79, 139, 255, 0.05)', border: '1px solid rgba(79, 139, 255, 0.2)', minWidth: 200, borderRadius: 0, position: 'relative', overflow: 'hidden' }}>
+                        <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
+                            <Typography variant="caption" fontWeight="950" sx={{ color: 'var(--primary)', letterSpacing: 1, display: 'block', mb: 1 }}>TOTAL MISSION HEIRS</Typography>
+                            <Box display="flex" alignItems="baseline" gap={1}>
+                                <Typography variant="h4" fontWeight="1000" className="glow-text-primary">{syncData?.members?.reduce((acc: number, m: any) => acc + (m.children?.length || 0), 0) || 0}</Typography>
+                                <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 900 }}>LINKED CHILDREN</Typography>
+                            </Box>
+                        </CardContent>
+                    </Card>
+                </Box>
 
                 <Grid container spacing={4}>
                     {/* LEFT COLUMN (7): SPIRITUAL & LOCAL TACTICAL */}
@@ -210,7 +244,7 @@ export default function DepartmentDashboard() {
                                     </Box>
                                     <Chip 
                                         label={devotion?.themeOfMonth?.toUpperCase() || settings?.themeOfMonth?.toUpperCase()} 
-                                        size="small" variant="outlined" 
+                                        size="small" icon={<Sparkles size={10} />} variant="outlined" 
                                         sx={{ color: 'var(--cyan)', borderColor: 'var(--cyan-glow)', fontWeight: 900, mb: 3 }} 
                                     />
                                     
@@ -291,42 +325,115 @@ export default function DepartmentDashboard() {
                                 </Box>
                             </Box>
 
-                             {/* SECTOR FINANCIAL TELEMETRY - Restored & Holographic */}
-                             <Card className="holographic-card" sx={{ borderRadius: 0, border: '1px solid var(--glass-border)', background: 'linear-gradient(to right, rgba(0,255,0,0.03), transparent)' }}>
-                                <CardContent sx={{ p: 4 }}>
-                                    <Box display="flex" alignItems="center" gap={1.5} mb={2}>
-                                        <Coins size={20} color="var(--cyan)" />
-                                        <Typography variant="caption" fontWeight="1000" sx={{ letterSpacing: 2 }}>FINANCIAL LEDGER</Typography>
-                                    </Box>
-                                    <Grid container spacing={2}>
-                                        <Grid item xs={6}>
-                                            <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>AVAILABLE BUDGET</Typography>
-                                            <Typography variant="h4" fontWeight="950" sx={{ color: 'success.main', letterSpacing: -1 }}>
-                                                KES {account?.balance?.toLocaleString() || '0'}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={6}>
-                                            <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>TOTAL ALLOCATED</Typography>
-                                            <Typography variant="h4" fontWeight="950" sx={{ opacity: 0.8 }}>
-                                                KES {account?.totalIncome?.toLocaleString() || '0'}
-                                            </Typography>
-                                        </Grid>
-                                    </Grid>
-                                    <Box sx={{ mt: 4, bgcolor: 'rgba(0,0,0,0.2)', p: 2, borderRadius: 0, border: '1px solid rgba(255,255,255,0.05)' }}>
-                                        <Box display="flex" justifyContent="space-between" mb={1}>
-                                            <Typography variant="caption" fontWeight="900" sx={{ opacity: 0.6 }}>BUDGET UTILIZATION</Typography>
-                                            <Typography variant="caption" fontWeight="900" color="success.main">
-                                                {account?.totalIncome ? Math.round((account.totalExpenditure / account.totalIncome) * 100) : 0}%
-                                            </Typography>
-                                        </Box>
-                                        <LinearProgress 
-                                            variant="determinate" 
-                                            value={account?.totalIncome ? (account.totalExpenditure / account.totalIncome) * 100 : 0} 
-                                            sx={{ height: 4, borderRadius: 0, bgcolor: 'rgba(255,255,255,0.03)', '& .MuiLinearProgress-bar': { bgcolor: 'var(--cyan)' } }} 
-                                        />
-                                    </Box>
-                                </CardContent>
-                            </Card>
+                             {/* SECTOR FINANCIAL LEDGER - Tripartite Secured */}
+                             <FinancialLedger 
+                                account={account} 
+                                transactions={syncData?.transactions || []} 
+                                departmentId={effectiveId as string | undefined}
+                             />
+
+                             {/* 📋 DIVINE REGISTRY: FAMILY OVERWATCH - Only for Leader/Admin */}
+                             {(user?.role === 'SUPER_ADMIN' || user?.role === 'DEPARTMENT_LEADER') && (
+                               <Card className="holographic-card" sx={{ borderRadius: 0 }}>
+                                   <CardContent sx={{ p: 4 }}>
+                                       <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
+                                           <Box display="flex" alignItems="center" gap={2}>
+                                               <Users size={24} color="var(--cyan)" />
+                                               <Box>
+                                                   <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>DEPARTMENTAL REGISTRY</Typography>
+                                                   <Typography variant="caption" sx={{ color: 'var(--cyan)', fontWeight: 900 }}>MISSION READINESS TALLY</Typography>
+                                               </Box>
+                                           </Box>
+                                           <TextField 
+                                               size="small"
+                                               placeholder="SEARCH COVENANT..."
+                                               value={searchQuery}
+                                               onChange={(e) => setSearchQuery(e.target.value)}
+                                               InputProps={{
+                                                   startAdornment: (
+                                                       <InputAdornment position="start">
+                                                           <Search size={16} color="var(--cyan)" />
+                                                       </InputAdornment>
+                                                   ),
+                                                   sx: { 
+                                                       bgcolor: 'rgba(255,255,255,0.03)', 
+                                                       borderRadius: 0, 
+                                                       border: '1px solid rgba(0,255,255,0.1)',
+                                                       fontSize: '0.7rem',
+                                                       fontWeight: 900,
+                                                       width: 250
+                                                   }
+                                               }}
+                                           />
+                                       </Box>
+
+                                       <TableContainer component={Paper} sx={{ bgcolor: 'transparent', boxShadow: 'none', borderRadius: 0 }}>
+                                           <Table size="small">
+                                               <TableHead>
+                                                   <TableRow sx={{ borderBottom: '2px solid rgba(0,255,255,0.1)' }}>
+                                                       <TableCell sx={{ fontWeight: 1000, color: 'var(--cyan)', py: 2 }}>IDENTIFICATION</TableCell>
+                                                       <TableCell sx={{ fontWeight: 1000, color: 'var(--cyan)', py: 2 }}>STATUS</TableCell>
+                                                       <TableCell sx={{ fontWeight: 1000, color: 'var(--cyan)', py: 2 }}>FAMILY OVERWATCH</TableCell>
+                                                   </TableRow>
+                                               </TableHead>
+                                               <TableBody>
+                                                   {filteredMembers.map((member: any) => (
+                                                       <TableRow key={member.id} sx={{ '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' }, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                                           <TableCell sx={{ py: 2 }}>
+                                                               <Box display="flex" alignItems="center" gap={2}>
+                                                                   <Avatar src={member.avatarUrl} sx={{ width: 32, height: 32, border: '1px solid var(--cyan)' }}>{member.name[0]}</Avatar>
+                                                                   <Box>
+                                                                       <Typography variant="subtitle2" fontWeight="1000" sx={{ color: '#fff' }}>{member.name.toUpperCase()}</Typography>
+                                                                       <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 900 }}>{member.membershipNumber}</Typography>
+                                                                   </Box>
+                                                               </Box>
+                                                           </TableCell>
+                                                           <TableCell>
+                                                               <Chip label={member.status} size="small" sx={{ 
+                                                                   bgcolor: member.status === 'ACTIVE' ? 'rgba(0,180,216,0.1)' : 'rgba(255,165,0,0.1)',
+                                                                   color: member.status === 'ACTIVE' ? 'var(--cyan)' : 'orange',
+                                                                   fontWeight: 900, borderRadius: 0, fontSize: '0.6rem'
+                                                               }} />
+                                                           </TableCell>
+                                                           <TableCell>
+                                                               {member.children && member.children.length > 0 ? (
+                                                                   <Box>
+                                                                       <Box display="flex" alignItems="center" gap={1} mb={0.5}>
+                                                                           <ShieldCheck size={12} color="var(--primary)" />
+                                                                           <Typography variant="caption" fontWeight="1000" color="var(--primary)">{member.children.length} HEIRS LINKED</Typography>
+                                                                       </Box>
+                                                                       <Stack direction="row" spacing={0.5} flexWrap="wrap">
+                                                                           {member.children.map((child: any) => (
+                                                                               <Tooltip key={child.id} title={`${child.name} | GENDER: ${child.gender} | AGE: ${new Date().getFullYear() - new Date(child.dob).getFullYear()} YRS`}>
+                                                                                   <Chip 
+                                                                                       label={child.name} 
+                                                                                       size="small" 
+                                                                                       icon={child.gender === "MALE" ? <Zap size={10} /> : <Heart size={10} />} variant="outlined" 
+                                                                                       sx={{ fontSize: '0.6rem', height: 20, color: 'var(--cyan)', borderColor: 'rgba(0,255,255,0.3)', fontWeight: 900 }} 
+                                                                                   />
+                                                                               </Tooltip>
+                                                                           ))}
+                                                                       </Stack>
+                                                                   </Box>
+                                                               ) : (
+                                                                   <Typography variant="caption" sx={{ opacity: 0.3, fontWeight: 800 }}>NO LINKED KIN</Typography>
+                                                               )}
+                                                           </TableCell>
+                                                       </TableRow>
+                                                   ))}
+                                                   {filteredMembers.length === 0 && (
+                                                       <TableRow>
+                                                           <TableCell colSpan={3} sx={{ py: 8, textAlign: 'center' }}>
+                                                               <Typography variant="caption" sx={{ opacity: 0.3, fontWeight: 900, letterSpacing: 1 }}>NO MISSION PERSONNEL RECORDED</Typography>
+                                                           </TableCell>
+                                                       </TableRow>
+                                                   )}
+                                               </TableBody>
+                                           </Table>
+                                       </TableContainer>
+                                   </CardContent>
+                               </Card>
+                             )}
                         </Stack>
                     </Grid>
 
@@ -403,7 +510,12 @@ export default function DepartmentDashboard() {
                                     <Typography variant="caption" sx={{ opacity: 0.6, fontStyle: 'italic', fontWeight: 700, display: 'block', mb: 2 }}>
                                         "Partnering with Prayer Palace Apostolic Ministry for Global impact by making sure the church Budget is met"
                                     </Typography>
-                                    <Button variant="outlined" fullWidth size="small" onClick={() => setEnrollModalOpen(true)}
+                                    <Button 
+                                        startIcon={<Star size={12} />} 
+                                        variant="outlined" 
+                                        fullWidth 
+                                        size="small" 
+                                        onClick={() => setEnrollModalOpen(true)}
                                         sx={{ borderColor: 'orange', color: 'orange', fontWeight: 900, borderRadius: 0, fontSize: '0.65rem', '&:hover': { bgcolor: 'orange', color: 'black' } }}
                                     > ENROLL IN PARTNERSHIP </Button>
                                 </CardContent>

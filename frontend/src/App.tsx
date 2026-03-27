@@ -23,6 +23,7 @@ const ChildRegistration = lazy(() => import('./pages/ChildRegistration'));
 const MemberPortal = lazy(() => import('./pages/MemberPortal'));
 const Meetings = lazy(() => import('./pages/Meetings'));
 const PastorsDashboard = lazy(() => import('./pages/PastorsDashboard'));
+const BishopDashboard = lazy(() => import('./pages/BishopDashboard'));
 
 const LoadingFallback = () => (
     <Box sx={{ 
@@ -59,6 +60,10 @@ function RootRedirect() {
         return <Navigate to="/watua" replace />;
     }
 
+    if (user?.role === 'SUPER_ADMIN' || user?.role === 'SYSTEM_ADMIN' || user?.role === 'SECRETARY') {
+        return <AdminDashboard />;
+    }
+
     if (user?.role === 'MEMBER') {
         return <MemberPortal />;
     }
@@ -71,7 +76,7 @@ function RootRedirect() {
         return <Navigate to={`/department/${user.departmentId}`} replace />;
     }
 
-    // High Executives (SUPER_ADMIN, SYSTEM_ADMIN, SECRETARY) see Executive Command
+    // Default fallback
     return <AdminDashboard />;
 }
 
@@ -121,6 +126,7 @@ function App() {
                 <Route path="/pastor" element={<PrivateRoute><ExecutiveGuard><PastorsDashboard /></ExecutiveGuard></PrivateRoute>} />
                 <Route path="/department/:id" element={<PrivateRoute><DepartmentDashboard /></PrivateRoute>} />
                 <Route path="/executive" element={<PrivateRoute><ExecutiveGuard><AdminDashboard /></ExecutiveGuard></PrivateRoute>} />
+                <Route path="/bishop" element={<PrivateRoute><DepartmentGuard><BishopDashboard /></DepartmentGuard></PrivateRoute>} />
                 <Route path="/watua" element={<WatuaGuard><WatuaDashboard /></WatuaGuard>} />
                 <Route path="/" element={<PrivateRoute><RootRedirect /></PrivateRoute>} />
                 <Route path="*" element={<Navigate to="/" replace />} />
