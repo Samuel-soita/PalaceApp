@@ -551,9 +551,9 @@ export default function MemberPortal() {
                                     <Stack spacing={2} sx={{ maxHeight: 400, overflowY: 'auto', pr: 1, '&::-webkit-scrollbar': { width: 4 }, '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(255,255,255,0.1)' } }}>
                                         {(() => {
                                             const timeline = [
-                                                ...(syncData?.events || []).map(e => ({ ...e, type: 'EVENT', icon: Calendar, color: 'primary' })),
-                                                ...(syncData?.projects || []).map(p => ({ ...p, type: 'PROJECT', icon: Star, color: 'cyan' })),
-                                                ...(syncData?.plans || []).map(p => ({ ...p, type: 'PLAN', icon: BookOpen, color: 'orange' })),
+                                                ...(syncData?.events || []).map((e: any) => ({ ...e, type: 'EVENT', icon: Calendar, color: 'primary' })),
+                                                ...(syncData?.projects || []).map((p: any) => ({ ...p, type: 'PROJECT', icon: Star, color: 'cyan' })),
+                                                ...(syncData?.plans || []).map((p: any) => ({ ...p, type: 'PLAN', icon: BookOpen, color: 'orange' })),
                                             ].sort((a, b) => new Date(a.date || a.createdAt).getTime() - new Date(b.date || b.createdAt).getTime());
 
                                             if (timeline.length === 0) return <Typography variant="caption" sx={{ opacity: 0.3, textAlign: 'center', py: 2 }}>NO UPCOMING MISSIONS</Typography>;

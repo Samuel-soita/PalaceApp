@@ -233,7 +233,7 @@ export default function TopNavbar() {
             {!isStandalone && (
                 <Box sx={{ mt: 'auto', p: 2 }}>
                     <Button
-                        variant="soft"
+                        variant="contained"
                         fullWidth
                         startIcon={<Smartphone size={18} />}
                         onClick={() => { setInstallModalOpen(true); handleDrawerToggle(); }}
