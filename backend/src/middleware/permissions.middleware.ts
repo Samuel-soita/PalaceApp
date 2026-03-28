@@ -39,8 +39,21 @@ export const authorize = (permissionCode: string) => {
                 granted: o.granted
             }));
 
-            // 3. Evaluate access
-            const hasAccess = evaluateAccess(user.role, userPermissionCodes, permissionCode, mappedOverrides);
+            // 3. Evaluate access 
+            // We pass the context (departmentId from body, query or params) to enforce scoping
+            const contextDepartmentId = req.body.departmentId || req.query.departmentId || req.params.departmentId;
+            const hasAccess = evaluateAccess(user.role, userPermissionCodes, permissionCode, mappedOverrides, {
+                departmentId: contextDepartmentId
+            });
+
+            // 4. Strict Departmental Scoping for Leaders or Pastors with specific assignments
+            if (user.role === 'DEPARTMENT_LEADER' && contextDepartmentId && user.departmentId !== contextDepartmentId) {
+                return res.status(403).json({
+                    error: 'Forbidden: You do not have authority over this sectoral mission.',
+                    requiredDepartment: user.departmentId,
+                    targetDepartment: contextDepartmentId
+                });
+            }
 
             if (hasAccess) {
                 return next();

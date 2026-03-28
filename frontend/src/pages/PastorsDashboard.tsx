@@ -27,6 +27,12 @@ import AnnouncementFormModal from '../components/modals/AnnouncementFormModal';
 export default function PastorsDashboard() {
     const { user, updateUser } = useAuth();
     const queryClient = useQueryClient();
+
+    // 👨‍⚖️ Module Scoping Helper
+    const hasModule = (moduleName: string) => {
+        if (['SUPER_ADMIN', 'SYSTEM_ADMIN', 'WATUA'].includes(user?.role || '')) return true;
+        return user?.pastorModules?.some(m => m.moduleName === moduleName);
+    };
     
     // Pastoral Tool States
     const [baptismsOpen, setBaptismsOpen] = useState(false);
@@ -291,13 +297,15 @@ export default function PastorsDashboard() {
                                             </Box>
                                             <Badge badgeContent={syncData?.baptisms?.length} color="error"><ChevronRight size={18} /></Badge>
                                         </Button>
-                                        <Button fullWidth onClick={() => setDedicationOpen(true)} sx={{ justifyContent: 'space-between', bgcolor: 'rgba(255,255,255,0.05)', p: 2, border: '1px solid rgba(255,255,255,0.1)' }}>
-                                            <Box display="flex" alignItems="center" gap={2}>
-                                                <Baby size={20} color="orange" />
-                                                <Typography variant="subtitle2" fontWeight="900">Dedication Registry</Typography>
-                                            </Box>
-                                            <Badge badgeContent={syncData?.children?.length} color="error"><ChevronRight size={18} /></Badge>
-                                        </Button>
+                                        {hasModule('Child Dedication Registry') && (
+                                            <Button fullWidth onClick={() => setDedicationOpen(true)} sx={{ justifyContent: 'space-between', bgcolor: 'rgba(255,255,255,0.05)', p: 2, border: '1px solid rgba(255,255,255,0.1)' }}>
+                                                <Box display="flex" alignItems="center" gap={2}>
+                                                    <Baby size={20} color="orange" />
+                                                    <Typography variant="subtitle2" fontWeight="900">Dedication Registry</Typography>
+                                                </Box>
+                                                <Badge badgeContent={syncData?.children?.length} color="error"><ChevronRight size={18} /></Badge>
+                                            </Button>
+                                        )}
                                         <Button fullWidth onClick={() => setAppointmentsOpen(true)} sx={{ justifyContent: 'space-between', bgcolor: 'rgba(255,255,255,0.05)', p: 2, border: '1px solid rgba(255,255,255,0.1)' }}>
                                             <Box display="flex" alignItems="center" gap={2}>
                                                 <Calendar size={20} color="var(--soft-red)" />
@@ -306,7 +314,7 @@ export default function PastorsDashboard() {
                                             <ChevronRight size={18} />
                                         </Button>
                                         
-                                        {(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(user?.role || '') || user?.canManagePartnerships) && (
+                                        {hasModule('Partnership Management') && (
                                             <Button 
                                                 fullWidth 
                                                 onClick={() => setPartnershipManagerOpen(true)} 
@@ -337,12 +345,14 @@ export default function PastorsDashboard() {
                                         <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 2 }}>STRATEGIC COMMAND ACTIONS</Typography>
                                     </Box>
                                     <Grid container spacing={2}>
-                                        <Grid item xs={6}>
-                                            <Button fullWidth onClick={() => setEventModalOpen(true)} sx={{ height: 60, flexContent: 'column', gap: 0.5, bgcolor: 'rgba(79, 139, 255, 0.1)', border: '1px solid var(--primary)', borderRadius: 2 }}>
-                                                <Calendar size={18} color="var(--primary)" />
-                                                <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>NEW EVENT</Typography>
-                                            </Button>
-                                        </Grid>
+                                        {hasModule('Event Oversight') && (
+                                            <Grid item xs={6}>
+                                                <Button fullWidth onClick={() => setEventModalOpen(true)} sx={{ height: 60, flexContent: 'column', gap: 0.5, bgcolor: 'rgba(79, 139, 255, 0.1)', border: '1px solid var(--primary)', borderRadius: 2 }}>
+                                                    <Calendar size={18} color="var(--primary)" />
+                                                    <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>NEW EVENT</Typography>
+                                                </Button>
+                                            </Grid>
+                                        )}
                                         <Grid item xs={6}>
                                             <Button fullWidth onClick={() => setProjectModalOpen(true)} sx={{ height: 60, flexContent: 'column', gap: 0.5, bgcolor: 'rgba(0, 255, 255, 0.1)', border: '1px solid var(--cyan)', borderRadius: 2 }}>
                                                 <Star size={18} color="var(--cyan)" />
@@ -355,12 +365,14 @@ export default function PastorsDashboard() {
                                                 <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>NEW PLAN</Typography>
                                             </Button>
                                         </Grid>
-                                        <Grid item xs={6}>
-                                            <Button fullWidth onClick={() => setAnnouncementModalOpen(true)} sx={{ height: 60, flexContent: 'column', gap: 0.5, bgcolor: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--glass-border)', borderRadius: 2 }}>
-                                                <Megaphone size={18} />
-                                                <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>NEW INTEL</Typography>
-                                            </Button>
-                                        </Grid>
+                                        {hasModule('Devotion Publishing') && (
+                                            <Grid item xs={6}>
+                                                <Button fullWidth onClick={() => setAnnouncementModalOpen(true)} sx={{ height: 60, flexContent: 'column', gap: 0.5, bgcolor: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--glass-border)', borderRadius: 2 }}>
+                                                    <Megaphone size={18} />
+                                                    <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>NEW INTEL</Typography>
+                                                </Button>
+                                            </Grid>
+                                        )}
                                     </Grid>
                                 </CardContent>
                             </Card>

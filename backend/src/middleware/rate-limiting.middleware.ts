@@ -4,7 +4,7 @@ import rateLimit from 'express-rate-limit';
 // This supports the 400+ concurrent user requirement for MISSION-CRITICAL peaks.
 export const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, 
-    max: 500, 
+    max: 1000, 
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many authentication attempts. Safety lock engaged for 15 minutes.' }

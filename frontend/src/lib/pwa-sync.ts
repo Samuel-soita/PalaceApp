@@ -1,7 +1,8 @@
 import { openDB, IDBPDatabase } from 'idb';
+import { queryClient } from './query-client';
 
 /**
- * 🧠 ENTERPRISE-GRADE DISPATCH ENGINE (OFFLINE-FIRST) - v2.0 (Scaling Edition)
+ * 🛰️ ENTERPRISE-GRADE DISPATCH ENGINE (OFFLINE-FIRST) - v2.4.0 (Resilience Edition)
  * Mission: 600+ Concurrent Devices, Zero-Latency UI, Binary Resilience
  */
 
@@ -28,6 +29,8 @@ export interface QueuedAction {
     errorLog: string[];
     nextRetryTime?: number;
     isBinary?: boolean;
+    userRole?: string;
+    localId?: string; // For mapping temp IDs to server IDs
 }
 
 const syncChannel = new BroadcastChannel(CHANNEL_NAME);
@@ -62,9 +65,15 @@ export async function queueAction(request: Partial<QueuedAction>) {
         return null;
     }
 
-    // 2. IDEMPOTENCY CHECK (Prevent duplicate missions in rapid succession)
+    // 2. IDEMPOTENCY CHECK (Strict Deduplication mission prevention)
     const idempotencyKey = request.idempotencyKey || 
         `${request.method}-${request.url}-${JSON.stringify(request.payload).length}`;
+    
+    const existing = await db.getFromIndex(STORE_NAME, 'by-idempotency', idempotencyKey);
+    if (existing && existing.status !== 'FAILED') {
+        console.warn(`[Palace-Engine] mission collision detected for ${idempotencyKey}. Skipping dispatch.`);
+        return existing;
+    }
     
     // 3. BINARY DATA BRIDGE (Phase 9 Readiness)
     let payload = request.payload;
@@ -96,12 +105,64 @@ export async function queueAction(request: Partial<QueuedAction>) {
     await db.put(STORE_NAME, action);
     notifyUI();
     
+    // 4. OPTIMISTIC UI (Instant Feedback)
+    await applyOptimisticUpdate(action);
+
     if (navigator.onLine) {
         // Trigger async - don't block the caller
         setTimeout(processQueue, 100);
     }
     
     return action;
+}
+
+/**
+ * 🧠 OPTIMISTIC STATE MANAGER
+ * This ensures the UI reflects the action immediately, even if completely offline.
+ */
+export async function applyOptimisticUpdate(action: QueuedAction) {
+    const { url, payload, method } = action;
+
+    // 1. Determine Query Key based on URL
+    let queryKey: string[] | null = null;
+    if (url.includes('/announcements')) queryKey = ['dashboard-sync'];
+    if (url.includes('/projects')) queryKey = ['dashboard-sync'];
+    if (url.includes('/children')) queryKey = ['dashboard-sync'];
+    if (url.includes('/partnerships')) queryKey = ['dashboard-sync'];
+    
+    if (!queryKey) return;
+
+    // 2. Perform Optimistic Mutation
+    await queryClient.cancelQueries(queryKey);
+    const previousData = queryClient.getQueryData(queryKey);
+
+    if (previousData) {
+        queryClient.setQueryData(queryKey, (old: any) => {
+            if (!old) return old;
+            
+            // Shallow Copy
+            const updated = { ...old };
+            
+            // Logic based on endpoint
+            if (url.includes('/announcements')) {
+                updated.announcements = [
+                    { ...payload, id: action.id, createdAt: new Date().toISOString(), status: 'PENDING_SYNC' },
+                    ...(updated.announcements || [])
+                ];
+            }
+
+            if (url.includes('/children')) {
+                if (method === 'POST') {
+                    updated.children = [
+                        { ...payload, id: action.localId || action.id, workflowStatus: 'PENDING_SYNC' },
+                        ...(updated.children || [])
+                    ];
+                }
+            }
+            
+            return updated;
+        });
+    }
 }
 
 export async function getQueuedActions(): Promise<QueuedAction[]> {
@@ -127,12 +188,25 @@ export async function processQueue() {
 
         if (actions.length === 0) return;
 
-        // PRIORITY & TIMESTAMP SORT
+        // PRIORITY & ROLE & TIMESTAMP SORT
         const priorityScore: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+        const roleScore: Record<string, number> = { 
+            SUPER_ADMIN: 0, 
+            WATUA: 0, 
+            PASTOR: 1, 
+            DEPARTMENT_LEADER: 2, 
+            MEMBER: 3 
+        };
+        
         actions.sort((a, b) => {
             const scoreA = priorityScore[a.priority as string] ?? 1;
             const scoreB = priorityScore[b.priority as string] ?? 1;
             if (scoreA !== scoreB) return scoreA - scoreB;
+
+            const rScoreA = roleScore[a.userRole as string] ?? 3;
+            const rScoreB = roleScore[b.userRole as string] ?? 3;
+            if (rScoreA !== rScoreB) return rScoreA - rScoreB;
+
             return a.timestamp - b.timestamp;
         });
 
@@ -140,10 +214,11 @@ export async function processQueue() {
 
         let processedInThisTick = 0;
         for (const action of actions) {
-            // YIELD TO MAIN THREAD (Keep 60FPS)
+            // YIELD TO MAIN THREAD (Keep 60FPS) with JITTER
             if (processedInThisTick >= BATCH_SIZE) {
-                console.log(`[Palace-Engine] Batch limit reached. Yielding to UI...`);
-                setTimeout(processQueue, 50); // Recursive call after UI update
+                const yieldJitter = Math.random() * 200;
+                console.log(`[Palace-Engine] Batch yield triggered. Sleeping for ${yieldJitter.toFixed(0)}ms...`);
+                setTimeout(processQueue, 50 + yieldJitter); 
                 return;
             }
 

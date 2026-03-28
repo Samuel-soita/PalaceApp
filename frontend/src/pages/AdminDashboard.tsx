@@ -238,6 +238,7 @@ export default function AdminDashboard() {
                             { label: 'Dedication', icon: Baby, color: 'orange', onClick: () => setDedicationManagerOpen(true), badge: pendingDedications },
                             { label: 'Partners', icon: Star, color: 'orange', onClick: () => setPartnershipManagerOpen(true) },
                             { label: 'Appoints', icon: MessageSquare, color: 'cyan', onClick: () => setAppointmentManagerOpen(true), badge: pendingAppointments },
+                            { label: 'Health Ops', icon: RefreshCw, color: 'green', href: '/health' },
                             ...(canViewPersonnel && isOperationsExec ? [{ label: 'Departments', icon: Users, color: 'purple', href: '/departments' }] : []),
                         ].map((action, i) => (
                             <Grid item xs={6} sm={4} md={2} key={i}>

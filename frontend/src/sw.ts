@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
 import { registerRoute, NavigationRoute, setCatchHandler } from 'workbox-routing';
-import { StaleWhileRevalidate, CacheFirst, NetworkOnly } from 'workbox-strategies';
+import { StaleWhileRevalidate, CacheFirst, NetworkOnly, NetworkFirst } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 import { BackgroundSyncPlugin } from 'workbox-background-sync';
@@ -18,11 +18,9 @@ cleanupOutdatedCaches();
 // 1. PRECACHE CRITICAL ASSETS (App Shell)
 precacheAndRoute(self.__WB_MANIFEST);
 
-// 2. BACKGROUND SYNC (Native Workbox Plugin)
-// This handles low-level retries for failed mutations
-const bgSyncPlugin = new BackgroundSyncPlugin('ministerial-queue', {
-    maxRetentionTime: 24 * 60, // 24 hours
-});
+// 2. DISPATCH ENGINE DEVOLUTION
+// We devolve mutation handling to the pwa-sync.ts engine for business-logic integrity.
+// Workbox BackgroundSync is disabled for API mutations to prevent race conditions.
 
 // 3. CACHING STRATEGIES
 
@@ -50,11 +48,27 @@ registerRoute(
     })
 );
 
-// C. DYNAMIC DATA (Instant Reads via Stale-While-Revalidate)
+// C. SPIRITUAL CONTENT (Cache-First, 7-Day Window)
 registerRoute(
-    ({ url }) => url.pathname.startsWith('/api') && !url.pathname.includes('/auth'),
-    new StaleWhileRevalidate({
+    ({ url }) => url.pathname.includes('/api/devotions') || url.pathname.includes('/api/affirmations'),
+    new CacheFirst({
+        cacheName: 'spiritual-content',
+        plugins: [
+            new CacheableResponsePlugin({ statuses: [200] }),
+            new ExpirationPlugin({ 
+                maxEntries: 14, // 14 days of content
+                maxAgeSeconds: 7 * 24 * 60 * 60 
+            }),
+        ],
+    })
+);
+
+// D. DASHBOARD & SYSTEM TELEMETRY (Network-First, then Offline Cache)
+registerRoute(
+    ({ url, request }) => url.pathname.startsWith('/api') && request.method === 'GET' && !url.pathname.includes('/auth'),
+    new NetworkFirst({
         cacheName: 'api-telemetry',
+        networkTimeoutSeconds: 3, // Fast fail for snappy offline transitions
         plugins: [
             new CacheableResponsePlugin({ statuses: [200] }),
             new ExpirationPlugin({ maxEntries: 200, maxAgeSeconds: 24 * 60 * 60 }),
@@ -62,12 +76,11 @@ registerRoute(
     })
 );
 
-// D. MUTATIONS (Network Only + Background Sync Fallback)
+// E. MUTATIONS (Network Only)
+// Handled by client-side pwa-sync.ts engine if network fails
 registerRoute(
     ({ url, request }) => url.pathname.startsWith('/api') && ['POST', 'PUT', 'DELETE'].includes(request.method),
-    new NetworkOnly({
-        plugins: [bgSyncPlugin],
-    })
+    new NetworkOnly()
 );
 
 // 4. NAVIGATION FALLBACK (App Shell)

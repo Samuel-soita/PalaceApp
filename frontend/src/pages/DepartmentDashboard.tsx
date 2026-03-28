@@ -38,7 +38,7 @@ export default function DepartmentDashboard() {
     const effectiveId = (id && id !== 'undefined') ? id : user?.departmentId;
 
     // Permission-based flags
-    const canViewDepartment = hasPermission(PERMISSIONS.VIEW_DEPARTMENT) || user?.role === 'SUPER_ADMIN';
+    const canViewDepartment = hasPermission(PERMISSIONS.VIEW_DEPARTMENT) || user?.role === 'SUPER_ADMIN' || user?.role === 'WATUA';
 
     // Access validation
     useEffect(() => {

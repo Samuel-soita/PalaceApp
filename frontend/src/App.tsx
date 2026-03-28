@@ -24,6 +24,7 @@ const MemberPortal = lazy(() => import('./pages/MemberPortal'));
 const Meetings = lazy(() => import('./pages/Meetings'));
 const PastorsDashboard = lazy(() => import('./pages/PastorsDashboard'));
 const BishopDashboard = lazy(() => import('./pages/BishopDashboard'));
+const HealthDashboard = lazy(() => import('./pages/HealthDashboard'));
 
 const LoadingFallback = () => (
     <Box sx={{ 
@@ -56,15 +57,19 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 function RootRedirect() {
     const { user } = useAuth();
     
+    if (user?.role === 'SUPER_ADMIN') {
+        return <Navigate to="/bishop" replace />;
+    }
+
     if (user?.role === 'WATUA') {
         return <Navigate to="/watua" replace />;
     }
 
-    if (user?.role === 'SUPER_ADMIN' || user?.role === 'SYSTEM_ADMIN' || user?.role === 'SECRETARY') {
-        return <AdminDashboard />;
+    if (user?.role === 'SYSTEM_ADMIN' || user?.role === 'SECRETARY') {
+        return <Navigate to="/executive" replace />;
     }
 
-    if (user?.role === 'MEMBER') {
+    if (user?.role === 'MEMBER' || user?.role === 'USER') {
         return <MemberPortal />;
     }
 
@@ -77,10 +82,10 @@ function RootRedirect() {
     }
 
     // Default fallback
-    return <AdminDashboard />;
+    return <MemberPortal />;
 }
 
-function DepartmentGuard({ children }: { children: React.ReactNode }) {
+function BishopGuard({ children }: { children: React.ReactNode }) {
     const { user } = useAuth();
     if (user?.role === 'SUPER_ADMIN') return <>{children}</>;
     return <Navigate to="/" replace />;
@@ -88,11 +93,17 @@ function DepartmentGuard({ children }: { children: React.ReactNode }) {
 
 function ExecutiveGuard({ children }: { children: React.ReactNode }) {
     const { user } = useAuth();
-    // Only executives and leaders can access these routes. Members are strictly forbidden.
-    const isExecutive = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'PASTOR', 'DEPARTMENT_LEADER', 'WATUA'].includes(user?.role || '');
+    // Universal Override: System Ops + Bishop + Watua
+    const isExecutive = ['SYSTEM_ADMIN', 'SECRETARY', 'SUPER_ADMIN', 'WATUA'].includes(user?.role || '');
     if (isExecutive) return <>{children}</>;
     
-    // Explicit bounce for members or unidentified roles
+    return <Navigate to="/" replace />;
+}
+
+function PastorGuard({ children }: { children: React.ReactNode }) {
+    const { user } = useAuth();
+    const isPastor = ['PASTOR', 'ASSOCIATE_PASTOR', 'SUPER_ADMIN', 'WATUA'].includes(user?.role || '');
+    if (isPastor) return <>{children}</>;
     return <Navigate to="/" replace />;
 }
 
@@ -109,25 +120,35 @@ function App() {
             <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
-                <Route path="/departments" element={
-                    <PrivateRoute>
-                        <DepartmentGuard><Departments /></DepartmentGuard>
-                    </PrivateRoute>
-                } />
-                <Route path="/announcements" element={<PrivateRoute><ExecutiveGuard><Announcements /></ExecutiveGuard></PrivateRoute>} />
-                <Route path="/calendar" element={<PrivateRoute><ExecutiveGuard><Events /></ExecutiveGuard></PrivateRoute>} />
-                <Route path="/plans" element={<PrivateRoute><ExecutiveGuard><Plans /></ExecutiveGuard></PrivateRoute>} />
-                <Route path="/projects" element={<PrivateRoute><ExecutiveGuard><Projects /></ExecutiveGuard></PrivateRoute>} />
-                <Route path="/meetings" element={<PrivateRoute><ExecutiveGuard><Meetings /></ExecutiveGuard></PrivateRoute>} />
-                <Route path="/messages" element={<PrivateRoute><Messages /></PrivateRoute>} />
+                
+                {/* BISHOP ONLY */}
+                <Route path="/departments" element={<PrivateRoute><BishopGuard><Departments /></BishopGuard></PrivateRoute>} />
+                <Route path="/bishop" element={<PrivateRoute><BishopGuard><BishopDashboard /></BishopGuard></PrivateRoute>} />
+                
+                {/* EXECUTIVE ONLY (System Admin / Secretary) */}
+                <Route path="/executive" element={<PrivateRoute><ExecutiveGuard><AdminDashboard /></ExecutiveGuard></PrivateRoute>} />
                 <Route path="/support" element={<PrivateRoute><ExecutiveGuard><Support /></ExecutiveGuard></PrivateRoute>} />
+                
+                {/* WATUA ONLY */}
+                <Route path="/watua" element={<PrivateRoute><WatuaGuard><WatuaDashboard /></WatuaGuard></PrivateRoute>} />
+                <Route path="/health" element={<PrivateRoute><ExecutiveGuard><HealthDashboard /></ExecutiveGuard></PrivateRoute>} />
+                
+                {/* PASTOR & ABOVE (Global Visibility) */}
+                <Route path="/announcements" element={<PrivateRoute><PastorGuard><Announcements /></PastorGuard></PrivateRoute>} />
+                <Route path="/calendar" element={<PrivateRoute><PastorGuard><Events /></PastorGuard></PrivateRoute>} />
+                <Route path="/projects" element={<PrivateRoute><PastorGuard><Projects /></PastorGuard></PrivateRoute>} />
+                <Route path="/pastor" element={<PrivateRoute><PastorGuard><PastorsDashboard /></PastorGuard></PrivateRoute>} />
+                
+                {/* SCOPED MISSIONS */}
+                <Route path="/department/:id" element={<PrivateRoute><DepartmentDashboard /></PrivateRoute>} />
+                <Route path="/plans" element={<PrivateRoute><Plans /></PrivateRoute>} />
+                <Route path="/meetings" element={<PrivateRoute><Meetings /></PrivateRoute>} />
+                
+                {/* ALL AUTHENTICATED */}
+                <Route path="/messages" element={<PrivateRoute><Messages /></PrivateRoute>} />
                 <Route path="/register-child" element={<PrivateRoute><ChildRegistration /></PrivateRoute>} />
                 <Route path="/profile" element={<PrivateRoute><ProfileModal open={true} onClose={() => window.history.back()} /></PrivateRoute>} />
-                <Route path="/pastor" element={<PrivateRoute><ExecutiveGuard><PastorsDashboard /></ExecutiveGuard></PrivateRoute>} />
-                <Route path="/department/:id" element={<PrivateRoute><DepartmentDashboard /></PrivateRoute>} />
-                <Route path="/executive" element={<PrivateRoute><ExecutiveGuard><AdminDashboard /></ExecutiveGuard></PrivateRoute>} />
-                <Route path="/bishop" element={<PrivateRoute><DepartmentGuard><BishopDashboard /></DepartmentGuard></PrivateRoute>} />
-                <Route path="/watua" element={<WatuaGuard><WatuaDashboard /></WatuaGuard>} />
+                
                 <Route path="/" element={<PrivateRoute><RootRedirect /></PrivateRoute>} />
                 <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

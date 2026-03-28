@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
-import { logAudit } from '../../utils/audit.js';
+import { logAction } from '../../utils/audit.service.js';
 import { findTargetDepartmentId } from '../../utils/department-mapper.js';
 import redis, { getCachedData, setCachedData, invalidateCache } from '../../utils/redis.js';
 
@@ -44,7 +44,7 @@ export const registerChild = async (req: any, res: Response) => {
         const departmentId = await findTargetDepartmentId(new Date(dob), gender);
 
         // --- Create Child ---
-        const child = await prisma.child.create({
+        const child = await (prisma as any).child.create({
             data: {
                 name,
                 dob: new Date(dob),
@@ -55,11 +55,18 @@ export const registerChild = async (req: any, res: Response) => {
                 parentId,
                 branch,
                 departmentId,
+                assignedPastorId: req.body.assignedPastorId || null,
                 workflowStatus: isDedicated ? 'DEDICATED' : 'PENDING_DEDICATION'
-            } as any
+            }
         });
 
-        await logAudit(parentId, 'REGISTER_CHILD', 'CHILD', child.id, { name, dedicationNumber });
+        await logAction({
+            actorId: parentId,
+            actionType: 'REGISTER_CHILD',
+            entityType: 'CHILD',
+            entityId: child.id,
+            metadata: { name, dedicationNumber, assignedPastorId: req.body.assignedPastorId }
+        });
         await invalidateCache('ushering:tally');
         await invalidateCache('children:list:*');
 
@@ -98,19 +105,29 @@ export const getAllChildren = async (req: any, res: Response) => {
 
     try {
         const cachedData = await getCachedData(cacheKey);
-        if (cachedData) return res.json(cachedData);
+        // Skip cache for pastors to ensure they see real-time assignments
+        if (cachedData && (req.user as any).role !== 'PASTOR') return res.json(cachedData);
+
+        const where: any = {};
+        
+        // 🔒 PASTORAL SCOPING: Only see assigned children
+        if ((req.user as any).role === 'PASTOR') {
+            where.assignedPastorId = (req.user as any).id;
+        }
 
         const [children, total] = await Promise.all([
-            prisma.child.findMany({
+            (prisma as any).child.findMany({
+                where,
                 skip,
                 take,
                 include: { 
                     parent: { select: { name: true, membershipNumber: true } },
-                    department: { select: { name: true } }
+                    department: { select: { name: true } },
+                    assignedPastor: { select: { name: true } }
                 },
                 orderBy: { createdAt: 'desc' }
             }),
-            prisma.child.count()
+            (prisma as any).child.count({ where })
         ]);
 
         const response = {

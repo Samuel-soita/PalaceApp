@@ -16,6 +16,7 @@ interface AuthUser {
     membershipExpiry?: string;
     cardStatus?: string;
     isCardReplacementRequested?: boolean;
+    pastorModules?: { id: string; moduleName: string }[];
 }
 
 interface AuthContextType {
@@ -30,19 +31,24 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-    const [user, setUser] = useState<AuthUser | null>(null);
+    const [user, setUser] = useState<AuthUser | null>(() => {
+        const saved = localStorage.getItem('user');
+        return saved ? JSON.parse(saved) : null;
+    });
     const [token, setToken] = useState(localStorage.getItem('token'));
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         async function fetchProfile() {
-            if (token) {
+            if (token && navigator.onLine) {
                 try {
                     const res = await api.get('/auth/profile');
                     setUser(res.data);
                 } catch (error) {
                     logout();
                 }
+            } else if (!token) {
+                logout();
             }
             setLoading(false);
         }
@@ -53,17 +59,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(data.user);
         setToken(data.token);
         localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
     };
 
     const logout = () => {
         setUser(null);
         setToken(null);
         localStorage.removeItem('token');
+        localStorage.removeItem('user');
         sessionStorage.removeItem('welcome-splash-shown');
     };
 
     const updateUser = (data: any) => {
-        setUser((prev: any) => prev ? { ...prev, ...data } : data);
+        setUser((prev: any) => {
+            const updated = prev ? { ...prev, ...data } : data;
+            localStorage.setItem('user', JSON.stringify(updated));
+            return updated;
+        });
     };
 
     return (

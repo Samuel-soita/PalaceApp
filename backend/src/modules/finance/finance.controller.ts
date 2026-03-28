@@ -2,7 +2,7 @@ import { Response } from 'express';
 import prisma from '../../utils/prisma.js';
 import { TelemetryEngine } from '../../utils/health.service.js';
 
-export const recordIncome = async (req: any, res: Response) => {
+export const recordManualIncome = async (req: any, res: Response) => {
     try {
         const { id: userId, role, departmentId: userDeptId } = req.user;
         const { amount, description, departmentId } = req.body;
@@ -50,6 +50,64 @@ export const recordIncome = async (req: any, res: Response) => {
     } catch (error: any) {
         console.error('Record Income Error:', error);
         res.status(500).json({ error: 'Failed to record income.' });
+    }
+};
+
+export const getAllAccountSummaries = async (req: any, res: Response) => {
+    try {
+        const accounts = await prisma.account.findMany({
+            include: { department: { select: { name: true } } }
+        });
+        res.json(accounts);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || 'Failed to fetch global ledgers' });
+    }
+};
+
+export const getAccountSummary = async (req: any, res: Response) => {
+    const { departmentId } = req.params;
+    if (!departmentId || departmentId === 'undefined') {
+        return res.status(400).json({ error: 'Department ID is required' });
+    }
+    try {
+        let account = await prisma.account.findUnique({
+            where: { departmentId },
+            include: { department: { select: { name: true } } }
+        });
+
+        // Initialize account if it doesn't exist
+        if (!account) {
+            account = await prisma.account.create({
+                data: { departmentId, balance: 0, totalIncome: 0, totalExpenditure: 0 },
+                include: { department: { select: { name: true } } }
+            });
+        }
+
+        res.json(account);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || 'Failed to fetch ledger summary' });
+    }
+};
+
+export const getTransactions = async (req: any, res: Response) => {
+    const { departmentId } = req.params;
+    if (!departmentId || departmentId === 'undefined') {
+        return res.status(400).json({ error: 'Department ID is required' });
+    }
+    try {
+        const account = await prisma.account.findUnique({ where: { departmentId } });
+        if (!account) return res.json([]);
+
+        const transactions = await prisma.transaction.findMany({
+            where: { accountId: account.id },
+            include: { 
+                requester: { select: { name: true } }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json(transactions);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || 'Failed to fetch transaction stream' });
     }
 };
 

@@ -9,7 +9,7 @@ import {
     LayoutDashboard, Users, Calendar, Bell, 
     MessageCircle, ClipboardList, Briefcase, Heart, 
     Menu as MenuIcon, X, Church, ChevronRight, Coins, LogOut,
-    Search as SearchIcon, Command, Zap, UserCheck, Baby, TrendingUp, Shield
+    Search as SearchIcon, Command, Zap, UserCheck, Baby, TrendingUp, Shield, Smartphone, DownloadCloud
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -17,6 +17,9 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../../lib/api-client';
 import ProfileModal from '../modals/ProfileModal';
 import { useRoutePreloader } from '../../hooks/useRoutePreloader';
+import SyncIndicator from '../SyncIndicator';
+import { usePWA } from '../../hooks/usePWA';
+import InstallAppModal from '../modals/InstallAppModal';
 
 
 // Base items for admin roles
@@ -40,6 +43,8 @@ export default function TopNavbar() {
     const [mobileOpen, setMobileOpen] = useState(false);
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const [profileModalOpen, setProfileModalOpen] = useState(false);
+    const [installModalOpen, setInstallModalOpen] = useState(false);
+    const { isStandalone } = usePWA();
     const profileOpen = Boolean(anchorEl);
 
     // Search state
@@ -90,12 +95,17 @@ export default function TopNavbar() {
         return res.data;
     }, { enabled: !!user?.id, refetchInterval: 10000 });
 
+    const { data: departmentsData } = useQuery(['sidebar-departments'], async () => {
+        const res = await api.get('/departments');
+        return res.data;
+    }, { enabled: user?.role === 'SUPER_ADMIN' || user?.role === 'WATUA', staleTime: 300000 });
+
     const unreadCount = (notifications || []).filter((n: any) => !n.read).length || 0;
 
     const isMember = user?.role === 'MEMBER';
     const isPastor = user?.role === 'PASTOR' || user?.role === 'ASSOCIATE_PASTOR';
     const isDeptLeader = user?.role === 'DEPARTMENT_LEADER';
-    const isHighAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'SYSTEM_ADMIN' || user?.role === 'SECRETARY';
+    const isHighAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'SYSTEM_ADMIN' || user?.role === 'SECRETARY' || user?.role === 'WATUA';
     
     const primaryNavItems = isMember 
         ? memberNavItems 
@@ -179,6 +189,68 @@ export default function TopNavbar() {
                     );
                 })}
             </List>
+
+            {/* SECTORAL COMMAND OVERRIDE - For Bishop and Watua */}
+            {(user?.role === 'SUPER_ADMIN' || user?.role === 'WATUA') && departmentsData && departmentsData.length > 0 && (
+                <>
+                    <Divider sx={{ my: 1, borderColor: 'rgba(255,255,255,0.05)' }} />
+                    <Typography variant="caption" sx={{ px: 3, py: 1, display: 'block', color: 'var(--cyan)', fontWeight: 900, letterSpacing: 2 }}>
+                        SECTORAL COMMAND
+                    </Typography>
+                    <List sx={{ px: 2 }} disablePadding>
+                        {departmentsData.map((dept: any) => {
+                            const href = `/department/${dept.id}`;
+                            const isActive = location.pathname === href;
+                            return (
+                                <ListItem key={dept.id} disablePadding sx={{ mb: 0.5 }}>
+                                    <ListItemButton 
+                                        component={Link} 
+                                        to={href}
+                                        onClick={handleDrawerToggle}
+                                        sx={{ 
+                                            borderRadius: 0, py: 0.5,
+                                            border: isActive ? '1px solid var(--primary-glow)' : '1px solid transparent',
+                                            bgcolor: isActive ? 'rgba(79, 139, 255, 0.1)' : 'transparent',
+                                            color: isActive ? 'primary.main' : 'text.secondary',
+                                            '&:hover': { bgcolor: 'rgba(79, 139, 255, 0.1)', color: 'primary.main' }
+                                        }}
+                                    >
+                                        <ListItemIcon sx={{ color: isActive ? 'var(--cyan)' : 'inherit', minWidth: 32 }}>
+                                            <Users size={14} />
+                                        </ListItemIcon>
+                                        <ListItemText 
+                                            primary={dept.name} 
+                                            primaryTypographyProps={{ fontSize: '0.8rem', fontWeight: isActive ? 800 : 500 }} 
+                                        />
+                                    </ListItemButton>
+                                </ListItem>
+                            );
+                        })}
+                    </List>
+                </>
+            )}
+
+            {!isStandalone && (
+                <Box sx={{ mt: 'auto', p: 2 }}>
+                    <Button
+                        variant="soft"
+                        fullWidth
+                        startIcon={<Smartphone size={18} />}
+                        onClick={() => { setInstallModalOpen(true); handleDrawerToggle(); }}
+                        sx={{ 
+                            justifyContent: 'flex-start', py: 1.5, px: 2,
+                            bgcolor: 'rgba(193, 117, 255, 0.1)',
+                            border: '1px solid rgba(193, 117, 255, 0.2)',
+                            color: '#c175ff',
+                            fontWeight: 900,
+                            letterSpacing: 1,
+                            '&:hover': { bgcolor: 'rgba(193, 117, 255, 0.2)' }
+                        }}
+                    >
+                        INSTALL APP
+                    </Button>
+                </Box>
+            )}
         </Box>
     );
 
@@ -272,6 +344,11 @@ export default function TopNavbar() {
 
                         <Box sx={{ flexGrow: 0, ml: 'auto', display: 'flex', alignItems: 'center', gap: 2 }}>
                             
+                            {/* 🛰️ SYNC TELEMETRY */}
+                            <Box sx={{ display: { xs: 'none', lg: 'block' }, mr: 1 }}>
+                                <SyncIndicator />
+                            </Box>
+
                             {/* Global Search Bar */}
                             <Box ref={searchRef} sx={{ position: 'relative', display: { xs: 'none', md: 'block' } }}>
                                 <Box sx={{ 
@@ -458,6 +535,32 @@ export default function TopNavbar() {
                                     <LogOut size={16} />
                                     <Typography variant="body2" fontWeight={700}>Sign Out</Typography>
                                 </MenuItem>
+                                
+                                {!isStandalone && (
+                                    <>
+                                        <Divider sx={{ borderColor: 'var(--glass-border)' }} />
+                                        <MenuItem
+                                            onClick={() => { handleProfileClose(); setInstallModalOpen(true); }}
+                                            sx={{ 
+                                                gap: 1.5, py: 1.5, 
+                                                color: 'var(--cyan)',
+                                                bgcolor: 'rgba(0, 255, 234, 0.05)',
+                                                '&:hover': { bgcolor: 'rgba(0, 255, 234, 0.15)' }
+                                            }}
+                                        >
+                                            <DownloadCloud size={16} />
+                                            <Typography variant="body2" fontWeight={900}>INSTALL APP</Typography>
+                                            <Box sx={{ 
+                                                ml: 'auto', px: 0.8, py: 0.2, 
+                                                bgcolor: 'var(--cyan)', color: 'black', 
+                                                fontSize: '0.6rem', fontWeight: 900, 
+                                                borderRadius: 0 
+                                            }}>
+                                                OFFLINE
+                                            </Box>
+                                        </MenuItem>
+                                    </>
+                                )}
                             </Menu>
                         </Box>
                     </Toolbar>
@@ -481,6 +584,7 @@ export default function TopNavbar() {
             </Drawer>
             
             <ProfileModal open={profileModalOpen} onClose={() => setProfileModalOpen(false)} />
+            <InstallAppModal open={installModalOpen} onClose={() => setInstallModalOpen(false)} />
         </>
     );
 }

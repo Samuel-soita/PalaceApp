@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import * as usersController from './users.controller.js';
-import { authenticate, authorize } from '../../middleware/auth.middleware.js';
+import { authenticate, authorize, moduleGuard } from '../../middleware/auth.middleware.js';
 import { mutationLimiter } from '../../middleware/rate-limiting.middleware.js';
 
 const router = Router();
 
-router.get('/', authenticate, usersController.getUsers);
-router.get('/pending', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR']), usersController.getPendingUsers);
-router.patch('/:id/status', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR']), usersController.activateUser);
+router.get('/', authenticate, moduleGuard('MemberRegistration'), usersController.getUsers);
+router.get('/pending', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR']), moduleGuard('MemberRegistration'), usersController.getPendingUsers);
+router.patch('/:id/status', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR']), mutationLimiter, moduleGuard('MemberRegistration'), usersController.activateUser);
 router.patch('/:id/mark-paid', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY']), usersController.markCardAsPaid);
 
 // Watua Intervention Routes
@@ -26,6 +26,13 @@ router.post('/card-renewal/request', authenticate, usersController.requestCardRe
 router.post('/:id/card-renewal/approve', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY']), usersController.approveCardRenewal);
 
 import * as watuaController from './watua.controller.js';
+
+import * as pastorController from './pastor.controller.js';
+
+// 👨‍⚖️ Pastoral Responsibility Engine (DYNAMIC MODULE SCOPING)
+router.get('/pastor/assigned-modules', authenticate, authorize(['PASTOR', 'SUPER_ADMIN', 'SYSTEM_ADMIN']), pastorController.getPastorModules);
+router.post('/pastor/modules/assign', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN']), mutationLimiter, pastorController.assignModuleToPastor);
+router.delete('/pastor/modules/revoke/:id', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN']), mutationLimiter, pastorController.revokeModuleFromPastor);
 
 // Watua Dual-Auth Routes
 router.post('/technical/action', authenticate, authorize(['WATUA']), mutationLimiter, watuaController.initiateCriticalAction);

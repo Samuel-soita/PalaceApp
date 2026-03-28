@@ -31,13 +31,24 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
         async ({ id, amount, paymentMethod, referenceCode }: any) => 
             api.post(`/partnerships/${id}/ledger`, { amount, paymentMethod, referenceCode }),
         {
-            onSuccess: () => {
+            onSuccess: (res: any) => {
+                const wasQueued = res.data._queued;
+                
+                // 🚀 OPTIMISTIC CACHE UPDATE (Manual for complex UI)
+                if (wasQueued) {
+                    console.log('[Palace-Portal] Financial mission queued offline.');
+                }
+
                 queryClient.invalidateQueries(['all-partnerships']);
                 queryClient.invalidateQueries(['dashboard-sync']);
                 setSelectedPartner(null);
                 setPaymentAmount('');
                 setReferenceCode('');
                 setErrorMsg('');
+
+                if (wasQueued) {
+                    // Show a specific alert if possible or rely on the global sync indicator
+                }
             },
             onError: (err: any) => {
                 setErrorMsg(err.response?.data?.error || 'Failed to reconcile ledger.');

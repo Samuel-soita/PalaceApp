@@ -12,6 +12,7 @@ interface PWAState {
     canInstall: boolean;
     installPromptEvent: BeforeInstallPromptEvent | null;
     triggerInstall: () => Promise<void>;
+    isStandalone: boolean;
     updateSW: () => void;
     dismissUpdate: () => void;
     dismissInstall: () => void;
@@ -28,6 +29,7 @@ export function usePWA(): PWAState {
     const [offlineReady, setOfflineReady] = useState(false);
     const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
     const [canInstall, setCanInstall] = useState(false);
+    const [isStandalone, setIsStandalone] = useState(false);
 
     useEffect(() => {
         // Capture the install prompt
@@ -46,9 +48,14 @@ export function usePWA(): PWAState {
         window.addEventListener('pwa-offline-ready', handleOfflineReady);
 
         // Already installed (standalone) — no install prompt needed
-        if (window.matchMedia('(display-mode: standalone)').matches) {
-            setCanInstall(false);
-        }
+        const checkStandalone = () => {
+            const standalone = window.matchMedia('(display-mode: standalone)').matches 
+                || (window.navigator as any).standalone === true;
+            setIsStandalone(standalone);
+            if (standalone) setCanInstall(false);
+        };
+
+        checkStandalone();
 
         return () => {
             window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
@@ -79,5 +86,15 @@ export function usePWA(): PWAState {
         setInstallPromptEvent(null);
     };
 
-    return { needRefresh, offlineReady, canInstall, installPromptEvent, triggerInstall, updateSW, dismissUpdate, dismissInstall };
+    return { 
+        needRefresh, 
+        offlineReady, 
+        canInstall, 
+        installPromptEvent, 
+        triggerInstall, 
+        isStandalone,
+        updateSW, 
+        dismissUpdate, 
+        dismissInstall 
+    };
 }

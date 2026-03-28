@@ -42,12 +42,21 @@ export default function ChildRegistration() {
         setError('');
         setLoading(true);
 
+        const localId = `TEMP-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+        setDedicationNumber(localId);
+
         try {
             const res = await api.post('/children', { 
                 name, dob, gender, branch, 
-                isDedicated, dedicationCardNumber 
+                isDedicated, dedicationCardNumber,
+                localId // Pass to sync engine via api-client
             });
-            setDedicationNumber(res.data.child.dedicationNumber);
+
+            if (res.data._queued) {
+                console.log('[Palace-Portal] Mission queued offline:', localId);
+            } else {
+                setDedicationNumber(res.data.child.dedicationNumber);
+            }
             setSuccess(true);
             // Reset form
             setName('');
@@ -66,17 +75,18 @@ export default function ChildRegistration() {
         return (
             <Container maxWidth="sm" sx={{ py: 8 }}>
                 <Paper className="holographic-card" sx={{ p: 4, textAlign: 'center', bgcolor: 'background.paper', border: '1px solid var(--cyan)' }}>
-                    <Baby size={64} color="var(--cyan)" style={{ margin: '0 auto 16px', animation: 'float 3s infinite ease-in-out' }} />
                     <Typography variant="h4" fontWeight="950" gutterBottom className="glow-text">
-                        REGISTRATION SECURED
+                        {dedicationNumber.startsWith('TEMP-') ? 'REGISTRATION QUEUED' : 'REGISTRATION SECURED'}
                     </Typography>
                     <Typography color="textSecondary" sx={{ mb: 3, fontWeight: 500 }}>
-                        Your child has been successfully integrated into the ministry registry.
+                        {dedicationNumber.startsWith('TEMP-') 
+                            ? 'Your mission has been queued locally and will sync once connectivity returns.'
+                            : 'Your child has been successfully integrated into the ministry registry.'}
                     </Typography>
 
                     <Box sx={{ bgcolor: 'rgba(0,180,216,0.1)', p: 3, borderRadius: 0, mb: 4, border: '1px dashed var(--cyan)' }}>
                         <Typography variant="caption" color="var(--cyan)" sx={{ letterSpacing: 2, fontWeight: 900 }}>
-                            MINISTRY TRACKING ID
+                            {dedicationNumber.startsWith('TEMP-') ? 'OFFLINE TRACKING ID' : 'MINISTRY TRACKING ID'}
                         </Typography>
                         <Typography variant="h4" fontWeight="900" sx={{ mt: 1, letterSpacing: -1 }}>
                             {dedicationNumber}

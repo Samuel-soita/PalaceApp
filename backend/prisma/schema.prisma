@@ -62,6 +62,8 @@ model User {
   transactionApprovals       TransactionApproval[]
   sessions                   Session[]
   supportRequests            SupportRequest[]
+  pastorModuleAccess         PastorModuleAccess[]   @relation("PastorModulePermissions")
+  assignedChildren           Child[]                @relation("PastorAssignments")
   transactionsRequested      Transaction[]          @relation("TransactionRequester")
   authenticator              User?                  @relation("UserAuthenticator", fields: [authenticatedById], references: [id])
   authenticatedUsers         User[]                 @relation("UserAuthenticator")
@@ -75,6 +77,7 @@ model User {
   @@index([dob])
   @@index([gender])
   @@index([deletedAt])
+  @@index([updatedAt])
 }
 
 model Child {
@@ -100,8 +103,10 @@ model Child {
   version                    Int         @default(0)
   dedicationPaymentReference String?
   isDedicationPaid           Boolean     @default(false)
+  assignedPastorId           String?
   department                 Department? @relation(fields: [departmentId], references: [id])
   parent                     User        @relation("ParentChildren", fields: [parentId], references: [id])
+  assignedPastor             User?       @relation("PastorAssignments", fields: [assignedPastorId], references: [id])
 
   @@unique([name, dob, branch])
   @@index([name])
@@ -111,6 +116,8 @@ model Child {
   @@index([branch])
   @@index([dob])
   @@index([deletedAt])
+  @@index([updatedAt])
+  @@index([assignedPastorId])
 }
 
 model Devotion {
@@ -123,6 +130,7 @@ model Devotion {
   createdAt    DateTime              @default(now())
   version      Int                   @default(0)
   interactions DevotionInteraction[]
+  affirmations Affirmation[]
 }
 
 model DevotionInteraction {
@@ -164,6 +172,7 @@ model Department {
   managers      User[]         @relation("DeptManagers")
 
   @@index([deletedAt])
+  @@index([updatedAt])
 }
 
 model Event {
@@ -197,6 +206,7 @@ model Event {
   @@index([approvalStatus])
   @@index([departmentId])
   @@index([deletedAt])
+  @@index([updatedAt])
 }
 
 model Meeting {
@@ -228,6 +238,7 @@ model Meeting {
   approvals        MeetingApproval[]
 
   @@index([deletedAt])
+  @@index([updatedAt])
 }
 
 model Announcement {
@@ -256,6 +267,7 @@ model Announcement {
   @@index([isGlobal])
   @@index([isMajor])
   @@index([deletedAt])
+  @@index([updatedAt])
 }
 
 model Volunteer {
@@ -299,6 +311,7 @@ model Project {
   @@index([approvalStatus])
   @@index([departmentId])
   @@index([deletedAt])
+  @@index([updatedAt])
 }
 
 model ProjectUpdate {
@@ -329,6 +342,7 @@ model Plan {
   @@index([approvalStatus])
   @@index([departmentId])
   @@index([deletedAt])
+  @@index([updatedAt])
 }
 
 model Message {
@@ -360,6 +374,7 @@ model Account {
   totalIncome      Float         @default(0)
   totalExpenditure Float         @default(0)
   updatedAt        DateTime      @updatedAt
+  deletedAt        DateTime?
   version          Int           @default(0)
   department       Department    @relation(fields: [departmentId], references: [id])
   transactions     Transaction[]
@@ -376,6 +391,9 @@ model Transaction {
   date          DateTime              @default(now())
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
+  deletedAt     DateTime?
+  deletedBy     String?
+  deletedReason String?
   version       Int                   @default(0)
   account       Account               @relation(fields: [accountId], references: [id])
   requester     User                  @relation("TransactionRequester", fields: [requestedById], references: [id])
@@ -383,6 +401,7 @@ model Transaction {
 
   @@index([accountId])
   @@index([status])
+  @@index([updatedAt])
 }
 
 model TransactionApproval {
@@ -442,16 +461,18 @@ model AnnouncementApproval {
 
 model SupportRequest {
   id             String   @id @default(uuid())
-  eventId        String
+  eventId        String?
   requesterId    String
   title          String
   description    String
-  amountRequired Float    @default(1500)
+  amountRequired Float    @default(0)
   proofImageUrl  String?
   status         String   @default("OPEN")
+  category       String   @default("EVENT_FUNDING")
+  adminReply     String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  event          Event    @relation(fields: [eventId], references: [id])
+  event          Event?   @relation(fields: [eventId], references: [id])
   requester      User     @relation(fields: [requesterId], references: [id])
 }
 
@@ -509,6 +530,7 @@ model AuditLog {
   @@index([actorId])
   @@index([entityId])
   @@index([createdAt])
+  @@index([actionType])
 }
 
 model Baptism {
@@ -548,6 +570,8 @@ model Affirmation {
   date      DateTime @unique @default(now())
   createdAt DateTime @default(now())
   version   Int      @default(0)
+  devotionId String?
+  devotion   Devotion? @relation(fields: [devotionId], references: [id])
 }
 
 model Partnership {
@@ -570,6 +594,7 @@ model Partnership {
 
   @@index([userId])
   @@index([deletedAt])
+  @@index([updatedAt])
 }
 
 model PartnershipLedger {
@@ -587,9 +612,11 @@ model PartnershipLedger {
   deletedBy       String?
   deletedReason   String?
   partnership     Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  updatedAt       DateTime    @updatedAt
 
   @@index([partnershipId])
   @@index([deletedAt])
+  @@index([updatedAt])
 }
 
 model Appointment {
@@ -684,6 +711,8 @@ model SystemMetric {
   failedJobs      Int
   wsConnections   Int
   pendingApproval Int
+  syncSuccessRate Float    @default(0)
+  failureRate     Float    @default(0)
   createdAt       DateTime @default(now())
 }
 
@@ -708,6 +737,18 @@ model Session {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model PastorModuleAccess {
+  id          String   @id @default(uuid())
+  pastorId    String
+  moduleKey   String   // MemberRegistration, ChildDedication, PartnershipManagement, etc.
+  permissions Json     // { "read": true, "write": true, "approve": true }
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  pastor      User     @relation("PastorModulePermissions", fields: [pastorId], references: [id], onDelete: Cascade)
+
+  @@unique([pastorId, moduleKey])
 }
 
 model Budget {

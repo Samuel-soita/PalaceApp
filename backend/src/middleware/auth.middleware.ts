@@ -13,6 +13,7 @@ export interface AuthRequest extends Request {
         status?: string;
         isSuspended?: boolean;
         canManagePartnerships?: boolean;
+        pastorModules?: string[];
     };
 }
 
@@ -52,10 +53,20 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
         }
 
         
+        let pastorModules: string[] = [];
+        if (user.role === 'PASTOR') {
+            const mods = await (prisma as any).pastorModuleAccess.findMany({
+                where: { pastorId: user.id },
+                select: { moduleKey: true }
+            });
+            pastorModules = mods.map((m: any) => m.moduleKey);
+        }
+
         req.user = {
             ...decoded,
             managedDepartments: (user as any).managedDepartments || [],
-            canManagePartnerships: (user as any).canManagePartnerships || false
+            canManagePartnerships: (user as any).canManagePartnerships || false,
+            pastorModules
         };
         next();
     } catch (error) {
@@ -93,3 +104,32 @@ export const departmentGuard = (req: AuthRequest, res: Response, next: NextFunct
 
     res.status(403).json({ error: 'Access denied to this department' });
 };
+
+/**
+ * 👨‍⚖️ MODULE-LEVEL SCOPING GUARD - v2.4.0
+ * Ensures Pastors only access modules assigned to them.
+ */
+export const moduleGuard = (moduleKey: string) => {
+    return (req: AuthRequest, res: Response, next: NextFunction) => {
+        if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+
+        // Bypassing Roles (Full Authority)
+        if (['SUPER_ADMIN', 'WATUA', 'SYSTEM_ADMIN', 'SECRETARY'].includes(req.user.role)) {
+            return next();
+        }
+
+        // Pastor Scoping Logic
+        if (req.user.role === 'PASTOR') {
+            if (req.user.pastorModules?.includes(moduleKey)) {
+                return next();
+            }
+            return res.status(403).json({ 
+                error: `SECURITY ALERT: You do not have the '${moduleKey}' module assigned to your profile. Contact Bishop.` 
+            });
+        }
+
+        // Non-Pastors (Members/Leaders) - Fallback to role-based access
+        next();
+    };
+};
+

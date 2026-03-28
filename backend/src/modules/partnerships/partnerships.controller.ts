@@ -94,6 +94,32 @@ export const addLedgerTransaction = async (req: any, res: Response) => {
                 }
             });
 
+            // 4. Financial Unification: Pipe Funds into Global Treasury 
+            // In 2.4.0, all Covenant Partnership streams flow directly to the unified ledger.
+            let treasuryDept = await tx.department.findUnique({ where: { name: 'Global Treasury' } });
+            if (!treasuryDept) {
+                treasuryDept = await tx.department.create({ 
+                    data: { name: 'Global Treasury', description: 'Central Command Unified Finance Ledger' } 
+                });
+            }
+
+            const treasuryAccount = await tx.account.upsert({
+                where: { departmentId: treasuryDept.id },
+                update: { balance: { increment: Number(amount) }, totalIncome: { increment: Number(amount) } },
+                create: { departmentId: treasuryDept.id, balance: Number(amount), totalIncome: Number(amount) }
+            });
+
+            await tx.transaction.create({
+                data: {
+                    accountId: treasuryAccount.id,
+                    type: 'INCOME',
+                    amount: Number(amount),
+                    description: `Covenant Partnership Remittance [Ref: ${referenceCode}]`,
+                    status: 'APPROVED',
+                    requestedById: actorId
+                }
+            });
+
             return [newLedger, p];
         });
 

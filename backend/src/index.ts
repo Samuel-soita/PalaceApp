@@ -27,6 +27,8 @@ import permissionsRoutes from './modules/permissions/permissions.routes.js';
 import financeRoutes from './modules/finance/finance.routes.js';
 import { bootstrapSystem } from './utils/bootstrap.js';
 import recoveryRoutes from './modules/recovery/recovery.routes.js';
+import syncRoutes from './modules/sync/sync.routes.js';
+import healthRoutes from './modules/health/health.routes.js';
 import cluster from 'cluster';
 import os from 'os';
 
@@ -65,8 +67,11 @@ const limiter = rateLimit({
     message: { error: 'Too many requests from this IP, please try again after a minute.' }
 });
 
+import { auditLogger } from './middleware/audit.middleware.js';
+
 // Apply to all routes
 app.use(limiter);
+// app.use(auditLogger); // Moved to router-level to capture authenticated user context
 
 // Skip redundant loginRateLimiter at the root if it's already in authRoutes
 // app.use('/auth/login', loginRateLimiter);
@@ -128,6 +133,8 @@ if (useCluster && cluster.isPrimary) {
     app.use('/permissions', permissionsRoutes);
     app.use('/finance', financeRoutes);
     app.use('/recovery', recoveryRoutes);
+    app.use('/sync', syncRoutes);
+    app.use('/system-health', healthRoutes);
 
     // SILENCE DEVTOOLS NOISE
     app.get('/.well-known/*', (req, res) => res.status(204).end());

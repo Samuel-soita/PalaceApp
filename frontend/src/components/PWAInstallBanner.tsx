@@ -57,12 +57,12 @@ export default function PWAInstallBanner() {
                     {/* App icon */}
                     <Box sx={{
                         width: 44, height: 44, flexShrink: 0,
-                        background: 'rgba(79, 139, 255, 0.15)',
-                        border: '1px solid rgba(79, 139, 255, 0.3)',
+                        background: 'rgba(79, 139, 255, 0.1)',
+                        border: '1px solid rgba(79, 139, 255, 0.2)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: '#4f8bff'
+                        overflow: 'hidden', p: 0.5
                     }}>
-                        <Shield size={22} />
+                        <img src="/logo.png" alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                     </Box>
 
                     <Box flex={1} minWidth={0}>

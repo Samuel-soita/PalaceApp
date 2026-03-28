@@ -12,7 +12,7 @@ export async function bootstrapSystem() {
     await seedPermissions();
 
     // 2. Initial Departments (Essential Infrastructure)
-    const initialDepts = process.env.INITIAL_DEPARTMENTS?.split(',') || ['Pastoral', 'Secretariat', 'Ushering', 'Media'];
+    const initialDepts = process.env.INITIAL_DEPARTMENTS?.split(',') || ['Pastoral', 'Ushering & Protocol', 'Media and ICT', 'Youth', 'Children'];
     for (const name of initialDepts) {
         const trimmed = name.trim();
         if (!trimmed) continue;

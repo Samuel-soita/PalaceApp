@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
-import { logAudit } from '../../utils/audit.js';
+import { logAction } from '../../utils/audit.service.js';
 
 export const getDailyDevotion = async (req: Request, res: Response) => {
     try {
@@ -62,7 +62,13 @@ export const interactWithDevotion = async (req: any, res: Response) => {
             data: { devotionId, userId, type, value }
         });
 
-        await logAudit(userId, `DEVOTION_${type}`, 'DEVOTION', devotionId, { value });
+        await logAction({
+            actorId: userId,
+            actionType: `DEVOTION_${type}`,
+            entityType: 'DEVOTION',
+            entityId: devotionId,
+            metadata: { value }
+        });
 
         res.json({ message: 'Interaction recorded.', interaction });
     } catch (error) {
@@ -70,3 +76,87 @@ export const interactWithDevotion = async (req: any, res: Response) => {
         res.status(500).json({ error: 'Failed to record interaction.' });
     }
 };
+
+/**
+ * 📖 DEVOTION Spiritual Engine - v2.4.0
+ * Logic to automate affirmation extraction from devotion content.
+ */
+export const createDevotion = async (req: Request, res: Response) => {
+    try {
+        const { title, content, themeOfMonth, themeOfYear, date } = req.body;
+        const actor = (req as any).user;
+
+        const devotion = await prisma.devotion.create({
+            data: {
+                title,
+                content,
+                themeOfMonth,
+                themeOfYear,
+                date: new Date(date || new Date())
+            }
+        });
+
+        // 🧠 NLP-LITE: AFFIRMATION EXTRACTION
+        const affirmationText = extractAffirmationFromContent(content);
+        
+        const affirmation = await prisma.affirmation.create({
+            data: {
+                content: affirmationText,
+                date: devotion.date,
+                devotionId: devotion.id
+            }
+        });
+
+        await logAction({
+            actorId: actor.id,
+            actorRole: actor.role,
+            actionType: 'CREATE_DEVOTION',
+            entityType: 'DEVOTION',
+            entityId: devotion.id,
+            afterState: { devotion, affirmation }
+        });
+
+        res.json({ success: true, data: { devotion, affirmation } });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const getDevotions = async (req: Request, res: Response) => {
+    try {
+        const devotions = await prisma.devotion.findMany({
+            orderBy: { date: 'desc' },
+            take: 30,
+            include: { affirmations: true }
+        });
+        res.json({ success: true, data: devotions });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * Helper: Extract the most powerful "faith" sentence as an affirmation.
+ */
+function extractAffirmationFromContent(content: string): string {
+    const sentences = content.split(/[.!?]/).filter(s => s.trim().length > 10);
+    
+    // Keywords indicating affirmation/prophetic statement
+    const keywords = ['I am', 'I will', 'You are', 'manifest', 'favor', 'blessed', 'victorious', 'established', 'Word', 'Lord'];
+    
+    let bestSentence = sentences[0] || "I am walking in divine favor today.";
+    let maxMatches = 0;
+
+    for (const sentence of sentences) {
+        let matches = 0;
+        for (const kw of keywords) {
+            if (sentence.toLowerCase().includes(kw.toLowerCase())) matches++;
+        }
+        if (matches > maxMatches) {
+            maxMatches = matches;
+            bestSentence = sentence.trim();
+        }
+    }
+
+    return bestSentence + "!";
+}

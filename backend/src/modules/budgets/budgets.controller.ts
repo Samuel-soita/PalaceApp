@@ -122,3 +122,66 @@ export const deleteBudget = async (req: any, res: Response) => {
         res.status(400).json({ error: error.message || 'Failed to delete budget' });
     }
 };
+
+/**
+ * 2.4.0 Kernel: Unified Financial Ledger Binding.
+ * All budget contributions must flow into the department's actual Account.
+ */
+export const fundBudget = async (req: any, res: Response) => {
+    const { id: budgetId } = req.params;
+    const { amount, referenceCode } = req.body;
+    const actorId = req.user.id;
+
+    if (!amount || amount <= 0) {
+        return res.status(400).json({ error: 'Contribution amount must be strictly positive.' });
+    }
+
+    try {
+        const budget = await prisma.budget.findUnique({ where: { id: budgetId } });
+        if (!budget) return res.status(404).json({ error: 'Budget not found.' });
+
+        const result = await prisma.$transaction(async (tx) => {
+            // 1. Record the contribution
+            const contribution = await tx.budgetContributor.create({
+                data: {
+                    budgetId,
+                    userId: actorId,
+                    amount: Number(amount)
+                }
+            });
+
+            // 2. Fund the Department Account directly (Unified Ledger)
+            const account = await tx.account.upsert({
+                where: { departmentId: budget.departmentId },
+                update: { balance: { increment: Number(amount) }, totalIncome: { increment: Number(amount) } },
+                create: { departmentId: budget.departmentId, balance: Number(amount), totalIncome: Number(amount) }
+            });
+
+            // 3. Record the Transaction
+            const transaction = await tx.transaction.create({
+                data: {
+                    accountId: account.id,
+                    type: 'INCOME',
+                    amount: Number(amount),
+                    description: `Budget Funding: ${budget.title} [Ref: ${referenceCode || 'CASH'}]`,
+                    status: 'APPROVED',
+                    requestedById: actorId
+                }
+            });
+
+            return { contribution, transaction };
+        });
+
+        // Invalidate Cache
+        const keys = await redis.keys('budgets:*');
+        if (keys.length > 0) await redis.del(...keys);
+
+        res.status(201).json({ 
+            message: 'Budget funded successfully. Funds transferred to Department Account.',
+            data: result.contribution
+        });
+    } catch (error: any) {
+        console.error('[BUDGET_FUNDING_ERROR]', error);
+        res.status(500).json({ error: 'System failed to process budget funding.' });
+    }
+};
