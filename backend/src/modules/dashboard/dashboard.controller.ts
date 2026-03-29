@@ -123,17 +123,21 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 (prisma as any).affirmation ? (prisma as any).affirmation.findFirst({ where: { date: new Date(new Date().setHours(0,0,0,0)) } }) : Promise.resolve(null),
                 prisma.partnership.findFirst({ where: { userId, status: 'ACTIVE' } }),
                 (isAdmin || isLeader) 
-                    ? (effectiveDeptId || userDeptId 
-                        ? prisma.account.findUnique({ where: { departmentId: effectiveDeptId || userDeptId } })
-                        : prisma.account.aggregate({ _sum: { balance: true, totalIncome: true, totalExpenditure: true } }).then(agg => ({ 
-                            id: 'GLOBAL', 
-                            balance: agg._sum.balance || 0, 
-                            totalIncome: agg._sum.totalIncome || 0, 
-                            totalExpenditure: agg._sum.totalExpenditure || 0 
-                        }))) 
+                    ? (effectiveDeptId 
+                        ? prisma.account.findUnique({ where: { departmentId: effectiveDeptId } })
+                        : (isAdmin 
+                            ? prisma.account.aggregate({ _sum: { balance: true, totalIncome: true, totalExpenditure: true } }).then(agg => ({ 
+                                id: 'GLOBAL', 
+                                balance: agg._sum.balance || 0, 
+                                totalIncome: agg._sum.totalIncome || 0, 
+                                totalExpenditure: agg._sum.totalExpenditure || 0 
+                            }))
+                            : Promise.resolve(null))) 
                     : Promise.resolve(null),
                 (isAdmin || isLeader) ? (prisma.transaction as any).findMany({ 
-                    where: effectiveDeptId ? { account: { departmentId: effectiveDeptId } } : (userDeptId ? { account: { departmentId: userDeptId } } : {}),
+                    where: effectiveDeptId 
+                        ? { account: { departmentId: effectiveDeptId } } 
+                        : (isAdmin ? {} : { id: 'none' }), // Admins see all if no dept, others see none
                     take: 75,
                     orderBy: { createdAt: 'desc' },
                     include: { approvals: true, requester: { select: { name: true } } }

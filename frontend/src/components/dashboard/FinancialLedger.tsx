@@ -104,8 +104,8 @@ export default function FinancialLedger({ account, transactions, departmentId }:
 
     return (
         <Card className="holographic-card" sx={{ borderRadius: 0, border: '1px solid var(--glass-border)', background: 'linear-gradient(135deg, rgba(0,0,0,0.8), rgba(0,255,255,0.02))' }}>
-            <CardContent sx={{ p: 4 }}>
-                <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
+            <CardContent sx={{ p: 2 }}>
+                <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
                     <Box display="flex" alignItems="center" gap={2}>
                         <Box sx={{ p: 1, bgcolor: 'rgba(0,255,255,0.1)', border: '1px solid var(--cyan)' }}>
                             <Landmark size={24} color="var(--cyan)" />
@@ -116,44 +116,46 @@ export default function FinancialLedger({ account, transactions, departmentId }:
                         </Box>
                     </Box>
                     {(isLeader || isBishop || isWatua) && (
-                        <Stack direction="row" spacing={2}>
+                        <Stack direction="row" spacing={1}>
                             <Button 
                                 variant="outlined" 
-                                startIcon={<Plus size={16} />} 
+                                size="small"
+                                startIcon={<Plus size={14} />} 
                                 onClick={() => setIncomeOpen(true)}
-                                sx={{ borderColor: 'var(--cyan)', color: 'var(--cyan)', fontWeight: 900, borderRadius: 0 }}
-                            > RECORD INCOME </Button>
+                                sx={{ borderColor: 'var(--cyan)', color: 'var(--cyan)', fontWeight: 900, borderRadius: 0, fontSize: '0.65rem' }}
+                            > RECORD </Button>
                             <Button 
                                 variant="contained" 
-                                startIcon={<Send size={16} />} 
+                                size="small"
+                                startIcon={<Send size={14} />} 
                                 onClick={() => setWithdrawOpen(true)}
-                                sx={{ bgcolor: 'var(--cyan)', color: '#000', fontWeight: 950, borderRadius: 0, '&:hover': { bgcolor: '#fff' } }}
-                            > REQUEST FUNDS </Button>
+                                sx={{ bgcolor: 'var(--cyan)', color: '#000', fontWeight: 950, borderRadius: 0, fontSize: '0.65rem', '&:hover': { bgcolor: '#fff' } }}
+                            > REQUEST </Button>
                         </Stack>
                     )}
                 </Box>
 
-                <Grid container spacing={4} mb={6}>
+                <Grid container spacing={2} mb={3}>
                     <Grid item xs={12} md={4}>
-                        <Box sx={{ p: 3, bgcolor: 'rgba(255,255,255,0.02)', borderLeft: '4px solid var(--cyan)' }}>
-                            <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>AVAILABLE MISSION FUNDS</Typography>
-                            <Typography variant="h3" fontWeight="1000" sx={{ color: 'var(--cyan)', letterSpacing: -2 }}>
+                        <Box sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderLeft: '3px solid var(--cyan)' }}>
+                            <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800, fontSize: '0.65rem' }}>AVAILABLE MISSION FUNDS</Typography>
+                            <Typography variant="h5" fontWeight="1000" sx={{ color: 'var(--cyan)', letterSpacing: -1 }}>
                                 KES {account?.balance?.toLocaleString() || '0'}
                             </Typography>
                         </Box>
                     </Grid>
                     <Grid item xs={12} md={4}>
-                        <Box sx={{ p: 3, bgcolor: 'rgba(255,255,255,0.02)', borderLeft: '4px solid #00ff00' }}>
-                            <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>TOTAL SECTOR INCOME</Typography>
-                            <Typography variant="h4" fontWeight="950" sx={{ opacity: 0.9 }}>
+                        <Box sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderLeft: '3px solid #00ff00' }}>
+                            <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800, fontSize: '0.65rem' }}>TOTAL SECTOR INCOME</Typography>
+                            <Typography variant="h6" fontWeight="950" sx={{ opacity: 0.8 }}>
                                 KES {account?.totalIncome?.toLocaleString() || '0'}
                             </Typography>
                         </Box>
                     </Grid>
                     <Grid item xs={12} md={4}>
-                        <Box sx={{ p: 3, bgcolor: 'rgba(255,255,255,0.02)', borderLeft: '4px solid #ff4f4f' }}>
-                            <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>TOTAL EXPENDITURE</Typography>
-                            <Typography variant="h4" fontWeight="950" sx={{ opacity: 0.9 }}>
+                        <Box sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderLeft: '3px solid #ff4f4f' }}>
+                            <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800, fontSize: '0.65rem' }}>TOTAL EXPENDITURE</Typography>
+                            <Typography variant="h6" fontWeight="950" sx={{ opacity: 0.8 }}>
                                 KES {account?.totalExpenditure?.toLocaleString() || '0'}
                             </Typography>
                         </Box>
@@ -161,8 +163,8 @@ export default function FinancialLedger({ account, transactions, departmentId }:
                 </Grid>
 
                 <Box>
-                    <Typography variant="caption" fontWeight="1000" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1, letterSpacing: 2 }}>
-                        <History size={16} /> RECENT MISSION TRANSACTIONS
+                    <Typography variant="caption" fontWeight="1000" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1, letterSpacing: 1, fontSize: '0.65rem' }}>
+                        <History size={14} /> RECENT TRANSACTIONS (LAST 5)
                     </Typography>
                     <TableContainer sx={{ bgcolor: 'transparent' }}>
                         <Table size="small">
@@ -176,7 +178,7 @@ export default function FinancialLedger({ account, transactions, departmentId }:
                                 </TableRow>
                             </TableHead>
                             <TableBody>
-                                {transactions?.map((tx) => {
+                                {transactions?.slice(0, 5).map((tx) => {
                                     const canSign = (
                                         (isLeader && !tx.approvals.some((a: any) => a.role === 'DEPARTMENT_LEADER')) ||
                                         (isBishop && !tx.approvals.some((a: any) => a.role === 'SUPER_ADMIN')) ||

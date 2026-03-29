@@ -332,8 +332,8 @@ export default function DepartmentDashboard() {
                                 departmentId={effectiveId as string | undefined}
                              />
 
-                             {/* 📋 DIVINE REGISTRY: FAMILY OVERWATCH - Only for Leader/Admin */}
-                             {(user?.role === 'SUPER_ADMIN' || user?.role === 'DEPARTMENT_LEADER') && (
+                             {/* 📋 DIVINE REGISTRY: FAMILY OVERWATCH - Only for Ushering/Admin */}
+                             {(user?.role === 'SUPER_ADMIN' || (user?.role === 'DEPARTMENT_LEADER' && department?.name?.toUpperCase()?.includes('USHERING'))) && (
                                <Card className="holographic-card" sx={{ borderRadius: 0 }}>
                                    <CardContent sx={{ p: 4 }}>
                                        <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
