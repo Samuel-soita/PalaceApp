@@ -78,7 +78,7 @@ export default function BishopDashboard() {
                             <Typography variant="caption" fontWeight="1000" sx={{ letterSpacing: 4, color: 'var(--cyan)' }}>MISSION COMMAND INTELLIGENCE</Typography>
                         </Box>
                         <Typography variant="h2" fontWeight="1000" sx={{ letterSpacing: -3, color: 'white', lineHeight: 1 }}>
-                            BISHOP'S <span style={{ color: 'rgba(255,255,255,0.3)' }}>STRATEGIC PORTAL</span>
+                            PALACE <span style={{ color: 'rgba(255,255,255,0.3)' }}>CONTROL PORTAL</span>
                         </Typography>
                     </Box>
                     <Box sx={{ textAlign: 'right' }}>
@@ -277,7 +277,7 @@ export default function BishopDashboard() {
                                             ...(syncData?.children?.map((c: any) => ({ ...c, title: `Child Dedication: ${c.name}`, type: 'DEDICATION' })) || [])
                                         ].sort((a, b) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime()).slice(0, 10).map((item: any, idx: number) => (
                                             <Box key={idx} sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderLeft: `2px solid ${item.type === 'ALERT' ? '#ff4f4f' : 'var(--cyan)'}` }}>
-                                                <Typography variant="caption" fontWeight="900" color="var(--cyan)" sx={{ fontSize: '0.6rem' }}>{item.type} — {new Date(item.createdAt || item.date).toLocaleDateString()}</Typography>
+                                                <Typography variant="caption" fontWeight="900" color="var(--cyan)" sx={{ fontSize: '0.6rem' }}>{item.type} — {item.createdAt || item.date ? new Date(item.createdAt || item.date).toLocaleDateString() : "N/A"}</Typography>
                                                 <Typography variant="subtitle2" fontWeight="900" sx={{ mt: 0.5 }}>{item.title?.toUpperCase()}</Typography>
                                             </Box>
                                         ))}
@@ -293,7 +293,7 @@ export default function BishopDashboard() {
                                         {syncData?.auditLogs?.map((log: any) => (
                                             <Box key={log.id} mb={2}>
                                                 <Typography variant="caption" sx={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: '0.6rem' }}>
-                                                    {new Date(log.createdAt).toLocaleString()}
+                                                    {log.createdAt ? new Date(log.createdAt).toLocaleString() : "N/A"}
                                                 </Typography>
                                                 <Typography variant="caption" fontWeight="900" sx={{ color: 'var(--cyan)' }}>[{log.actor.name}]</Typography>
                                                 <Typography variant="caption" sx={{ ml: 1, opacity: 0.7 }}>{log.actionType}</Typography>

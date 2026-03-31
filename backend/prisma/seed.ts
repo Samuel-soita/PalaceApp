@@ -10,15 +10,15 @@ const DEPARTMENTS = [
     '3 SixTeen Generation', 
     'Royal Tribe of Light', 
     'Rising star generation',
-    'Pastoral & Secretariat',
+    'Pastoral',
     'Ushering & Protocol',
     'Media & ICT',
     'Praise and worship',
     'Hospitality & Welfare',
     'Mission & Evangelism',
     'Technical, Sound & Lighting',
-    'Treasury & Finance',
-    'Deacons Board',
+    'Treasury  DEpartment ',
+    'Deacons  Department ',
     'Intercessory & Prayer'
 ];
 

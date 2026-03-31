@@ -13,9 +13,10 @@ interface ProjectFormModalProps {
     onClose: () => void;
     project?: any;
     onSuccess: () => void;
+    defaultDepartmentId?: string;
 }
 
-export default function ProjectFormModal({ open, onClose, project, onSuccess }: ProjectFormModalProps) {
+export default function ProjectFormModal({ open, onClose, project, onSuccess, defaultDepartmentId }: ProjectFormModalProps) {
     const { user } = useAuth();
     const [formData, setFormData] = useState({
         title: '',
@@ -24,7 +25,7 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess }: 
         progress: 0,
         budget: 0,
         isMajor: false,
-        departmentId: user?.departmentId || '',
+        departmentId: defaultDepartmentId || user?.departmentId || '',
         pastorIds: [] as string[]
     });
 
@@ -48,11 +49,11 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess }: 
                 progress: 0,
                 budget: 0,
                 isMajor: false,
-                departmentId: user?.departmentId || '',
+                departmentId: defaultDepartmentId || user?.departmentId || '',
                 pastorIds: []
             });
         }
-    }, [project, open, user]);
+    }, [project, open, user, defaultDepartmentId]);
 
     const { data: departments } = useQuery(['departments'], async () => {
         const res = await api.get('/departments');

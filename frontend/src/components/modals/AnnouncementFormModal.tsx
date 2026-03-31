@@ -14,9 +14,10 @@ interface AnnouncementFormModalProps {
     onClose: () => void;
     announcement?: any;
     onSuccess: () => void;
+    defaultDepartmentId?: string;
 }
 
-export default function AnnouncementFormModal({ open, onClose, announcement, onSuccess }: AnnouncementFormModalProps) {
+export default function AnnouncementFormModal({ open, onClose, announcement, onSuccess, defaultDepartmentId }: AnnouncementFormModalProps) {
     const { user } = useAuth();
     const [formData, setFormData] = useState({
         title: '',
@@ -24,7 +25,7 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
         priority: 'NORMAL',
         isMajor: false,
         audience: 'DEPARTMENTAL', // 'DEPARTMENTAL' or 'CHURCH_WIDE'
-        departmentId: user?.departmentId || '',
+        departmentId: defaultDepartmentId || user?.departmentId || '',
         pastorIds: [] as string[]
     });
 
@@ -52,11 +53,11 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                 priority: 'NORMAL',
                 isMajor: false,
                 audience: 'DEPARTMENTAL',
-                departmentId: user?.departmentId || '',
+                departmentId: defaultDepartmentId || user?.departmentId || '',
                 pastorIds: []
             });
         }
-    }, [announcement, open, user]);
+    }, [announcement, open, user, defaultDepartmentId]);
 
     const { data: departments } = useQuery(['departments'], async () => {
         const res = await api.get('/departments');

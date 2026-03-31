@@ -90,9 +90,13 @@ export const createProject = async (req: Request, res: Response) => {
     const { title, description, departmentId, budget, status, deadline, pastorIds } = req.body;
     const user = (req as any).user;
 
-    const isManaging = user.managedDepartments?.some((d: any) => d.id === departmentId) || user.departmentId === departmentId;
-    if (['DEPARTMENT_LEADER', 'PASTOR'].includes(user.role) && !isManaging) {
-        return res.status(403).json({ error: 'Unauthorized' });
+    const isExecutive = ['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role);
+    const targetDeptId = departmentId || user.departmentId;
+
+    const isManaging = user.managedDepartments?.some((d: any) => d.id === targetDeptId) || user.departmentId === targetDeptId;
+    
+    if (!isExecutive && user.role === 'DEPARTMENT_LEADER' && !isManaging) {
+        return res.status(403).json({ error: 'Leaders can only create projects for their own department' });
     }
 
     if (user.role === 'MEMBER') {
@@ -108,7 +112,7 @@ export const createProject = async (req: Request, res: Response) => {
             data: {
                 title,
                 description,
-                departmentId,
+                departmentId: targetDeptId,
                 budget: Number(budget) || 0,
                 status: status || 'PLANNED',
                 isMajor: req.body.isMajor === true,

@@ -90,7 +90,8 @@ export const createEvent = async (req: any, res: Response) => {
     const { title, description, date, time, location, eventType, budgetNeeded, volunteersNeeded, departmentId, pastorIds, attachmentUrl } = req.body;
     
     const isExecutive = ['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR'].includes(req.user?.role);
-    const isManaging = req.user?.managedDepartments?.some((d: any) => d.id === departmentId) || req.user?.departmentId === departmentId;
+    const targetDeptId = departmentId || req.user?.departmentId;
+    const isManaging = req.user?.managedDepartments?.some((d: any) => d.id === targetDeptId) || req.user?.departmentId === targetDeptId;
     
     if (!isExecutive && req.user?.role === 'DEPARTMENT_LEADER' && !isManaging) {
         return res.status(403).json({ error: 'Leaders can only create events for their own department' });
@@ -127,7 +128,8 @@ export const createEvent = async (req: any, res: Response) => {
 
         const event = await prisma.event.create({
             data: {
-                title, description, location, eventType, departmentId,
+                title, description, location, eventType, 
+                departmentId: targetDeptId,
                 date: new Date(date), time,
                 budgetNeeded: Number(budgetNeeded) || 0,
                 volunteersNeeded: Number(volunteersNeeded) || 0,

@@ -8,67 +8,72 @@ datasource db {
 }
 
 model User {
-  id                         String                 @id @default(uuid())
-  idNumber                   String                 @unique
-  dob                        DateTime
-  gender                     String?
-  name                       String
-  avatarUrl                  String?
-  membershipNumber           String                 @unique
-  membershipNumberUpdatedAt  DateTime?
-  status                     String                 @default("PENDING")
-  role                       String                 @default("MEMBER")
-  departmentId               String?
-  phoneNumber                String?
-  profilePhoto               String?
-  deletionRequested          Boolean                @default(false)
-  authenticatedAt            DateTime?
-  authenticatedById          String?
-  wrongdoingCount            Int                    @default(0)
-  isSuspended                Boolean                @default(false)
-  lastSuspendedAt            DateTime?
-  createdAt                  DateTime               @default(now())
-  updatedAt                  DateTime               @updatedAt
-  isCardPaid                 Boolean                @default(false)
-  isPartner                  Boolean                @default(false)
-  canManagePartnerships      Boolean                @default(false)
-  deletedAt                  DateTime?
-  deletedBy                  String?
-  deletedReason              String?
-  version                    Int                    @default(0)
-  cardStatus                 String                 @default("ACTIVE")
-  isCardReplacementRequested Boolean                @default(false)
-  membershipExpiry           DateTime?
-  announcements              Announcement[]
-  announcementApprovals      AnnouncementApproval[]
-  appointmentsByMember       Appointment[]          @relation("MemberAppointments")
-  appointmentsAsTarget       Appointment[]          @relation("TargetAppointments")
-  auditLogs                  AuditLog[]
-  baptisms                   Baptism[]              @relation("UserBaptisms")
-  budgetContributions        BudgetContributor[]
-  children                   Child[]                @relation("ParentChildren")
-  devotionInteractions       DevotionInteraction[]
-  eventApprovals             EventApproval[]
-  assignedFollowUps          Meeting[]              @relation("MeetingFollowUp")
-  meetingsOrganized          Meeting[]              @relation("MeetingOrganizer")
-  meetingApprovals           MeetingApproval[]
-  receivedMessages           Message[]              @relation("MessageReceiver")
-  sentMessages               Message[]              @relation("MessageSender")
-  notifications              Notification[]
-  partnerships               Partnership[]          @relation("UserPartnerships")
-  permissionOverrides        PermissionOverride[]   @relation("UserOverrides")
-  planApprovals              PlanApproval[]
-  projectApprovals           ProjectApproval[]
-  transactionApprovals       TransactionApproval[]
-  sessions                   Session[]
-  supportRequests            SupportRequest[]
-  pastorModuleAccess         PastorModuleAccess[]   @relation("PastorModulePermissions")
-  assignedChildren           Child[]                @relation("PastorAssignments")
-  transactionsRequested      Transaction[]          @relation("TransactionRequester")
-  authenticator              User?                  @relation("UserAuthenticator", fields: [authenticatedById], references: [id])
-  authenticatedUsers         User[]                 @relation("UserAuthenticator")
-  department                 Department?            @relation("DeptLeader", fields: [departmentId], references: [id])
-  managedDepartments         Department[]           @relation("DeptManagers")
+  id                                             String                 @id @default(uuid())
+  idNumber                                       String                 @unique
+  dob                                            DateTime
+  gender                                         String?
+  name                                           String
+  avatarUrl                                      String?
+  membershipNumber                               String                 @unique
+  membershipNumberUpdatedAt                      DateTime?
+  status                                         String                 @default("PENDING")
+  role                                           String                 @default("MEMBER")
+  departmentId                                   String?
+  phoneNumber                                    String?
+  profilePhoto                                   String?
+  deletionRequested                              Boolean                @default(false)
+  authenticatedAt                                DateTime?
+  authenticatedById                              String?
+  wrongdoingCount                                Int                    @default(0)
+  isSuspended                                    Boolean                @default(false)
+  lastSuspendedAt                                DateTime?
+  createdAt                                      DateTime               @default(now())
+  updatedAt                                      DateTime               @updatedAt
+  isCardPaid                                     Boolean                @default(false)
+  isPartner                                      Boolean                @default(false)
+  canManagePartnerships                          Boolean                @default(false)
+  deletedAt                                      DateTime?
+  deletedBy                                      String?
+  deletedReason                                  String?
+  version                                        Int                    @default(0)
+  cardStatus                                     String                 @default("ACTIVE")
+  isCardReplacementRequested                     Boolean                @default(false)
+  membershipExpiry                               DateTime?
+  announcements                                  Announcement[]
+  Announcement_Announcement_targetPastorIdToUser Announcement[]         @relation("Announcement_targetPastorIdToUser")
+  announcementApprovals                          AnnouncementApproval[]
+  appointmentsByMember                           Appointment[]          @relation("MemberAppointments")
+  appointmentsAsTarget                           Appointment[]          @relation("TargetAppointments")
+  auditLogs                                      AuditLog[]
+  baptisms                                       Baptism[]              @relation("UserBaptisms")
+  budgetContributions                            BudgetContributor[]
+  assignedChildren                               Child[]                @relation("PastorAssignments")
+  children                                       Child[]                @relation("ParentChildren")
+  devotionInteractions                           DevotionInteraction[]
+  Event                                          Event[]
+  eventApprovals                                 EventApproval[]
+  assignedFollowUps                              Meeting[]              @relation("MeetingFollowUp")
+  meetingsOrganized                              Meeting[]              @relation("MeetingOrganizer")
+  Meeting_Meeting_targetPastorIdToUser           Meeting[]              @relation("Meeting_targetPastorIdToUser")
+  meetingApprovals                               MeetingApproval[]
+  receivedMessages                               Message[]              @relation("MessageReceiver")
+  sentMessages                                   Message[]              @relation("MessageSender")
+  notifications                                  Notification[]
+  partnerships                                   Partnership[]          @relation("UserPartnerships")
+  pastorModuleAccess                             PastorModuleAccess[]   @relation("PastorModulePermissions")
+  permissionOverrides                            PermissionOverride[]   @relation("UserOverrides")
+  Plan                                           Plan[]
+  planApprovals                                  PlanApproval[]
+  Project                                        Project[]
+  projectApprovals                               ProjectApproval[]
+  sessions                                       Session[]
+  supportRequests                                SupportRequest[]
+  transactionsRequested                          Transaction[]          @relation("TransactionRequester")
+  transactionApprovals                           TransactionApproval[]
+  authenticator                                  User?                  @relation("UserAuthenticator", fields: [authenticatedById], references: [id])
+  authenticatedUsers                             User[]                 @relation("UserAuthenticator")
+  department                                     Department?            @relation("DeptLeader", fields: [departmentId], references: [id])
+  managedDepartments                             Department[]           @relation("DeptManagers")
 
   @@index([name])
   @@index([status])
@@ -104,9 +109,9 @@ model Child {
   dedicationPaymentReference String?
   isDedicationPaid           Boolean     @default(false)
   assignedPastorId           String?
+  assignedPastor             User?       @relation("PastorAssignments", fields: [assignedPastorId], references: [id])
   department                 Department? @relation(fields: [departmentId], references: [id])
   parent                     User        @relation("ParentChildren", fields: [parentId], references: [id])
-  assignedPastor             User?       @relation("PastorAssignments", fields: [assignedPastorId], references: [id])
 
   @@unique([name, dob, branch])
   @@index([name])
@@ -129,8 +134,8 @@ model Devotion {
   date         DateTime              @unique @default(now())
   createdAt    DateTime              @default(now())
   version      Int                   @default(0)
-  interactions DevotionInteraction[]
   affirmations Affirmation[]
+  interactions DevotionInteraction[]
 }
 
 model DevotionInteraction {
@@ -197,7 +202,9 @@ model Event {
   deletedBy         String?
   deletedReason     String?
   version           Int              @default(0)
+  targetPastorId    String?
   department        Department       @relation(fields: [departmentId], references: [id])
+  User              User?            @relation(fields: [targetPastorId], references: [id])
   approvals         EventApproval[]
   messages          Message[]
   supportRequests   SupportRequest[]
@@ -210,57 +217,61 @@ model Event {
 }
 
 model Meeting {
-  id               String            @id @default(uuid())
-  title            String
-  departmentId     String
-  date             DateTime
-  time             String
-  venue            String
-  meetingType      String
-  agenda           String
-  organizerId      String
-  followUpPersonId String?
-  followUpDeadline DateTime?
-  followUpStatus   String            @default("PENDING")
-  meetingStatus    String            @default("PENDING_APPROVAL")
-  minutes          String?
-  attendance       String?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  isPartnerOnly    Boolean           @default(false)
-  deletedAt        DateTime?
-  deletedBy        String?
-  deletedReason    String?
-  version          Int               @default(0)
-  department       Department        @relation(fields: [departmentId], references: [id])
-  followUpPerson   User?             @relation("MeetingFollowUp", fields: [followUpPersonId], references: [id])
-  organizer        User              @relation("MeetingOrganizer", fields: [organizerId], references: [id])
-  approvals        MeetingApproval[]
+  id                                String            @id @default(uuid())
+  title                             String
+  departmentId                      String
+  date                              DateTime
+  time                              String
+  venue                             String
+  meetingType                       String
+  agenda                            String
+  organizerId                       String
+  followUpPersonId                  String?
+  followUpDeadline                  DateTime?
+  followUpStatus                    String            @default("PENDING")
+  meetingStatus                     String            @default("PENDING_APPROVAL")
+  minutes                           String?
+  attendance                        String?
+  createdAt                         DateTime          @default(now())
+  updatedAt                         DateTime          @updatedAt
+  isPartnerOnly                     Boolean           @default(false)
+  deletedAt                         DateTime?
+  deletedBy                         String?
+  deletedReason                     String?
+  version                           Int               @default(0)
+  targetPastorId                    String?
+  department                        Department        @relation(fields: [departmentId], references: [id])
+  followUpPerson                    User?             @relation("MeetingFollowUp", fields: [followUpPersonId], references: [id])
+  organizer                         User              @relation("MeetingOrganizer", fields: [organizerId], references: [id])
+  User_Meeting_targetPastorIdToUser User?             @relation("Meeting_targetPastorIdToUser", fields: [targetPastorId], references: [id])
+  approvals                         MeetingApproval[]
 
   @@index([deletedAt])
   @@index([updatedAt])
 }
 
 model Announcement {
-  id            String                 @id @default(uuid())
-  title         String
-  content       String
-  priority      String                 @default("NORMAL")
-  isGlobal      Boolean                @default(false)
-  status        String                 @default("PENDING")
-  expiry        DateTime?
-  authorId      String
-  departmentId  String?
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
-  isMajor       Boolean                @default(false)
-  deletedAt     DateTime?
-  deletedBy     String?
-  deletedReason String?
-  version       Int                    @default(0)
-  author        User                   @relation(fields: [authorId], references: [id])
-  department    Department?            @relation(fields: [departmentId], references: [id])
-  approvals     AnnouncementApproval[]
+  id                                     String                 @id @default(uuid())
+  title                                  String
+  content                                String
+  priority                               String                 @default("NORMAL")
+  isGlobal                               Boolean                @default(false)
+  status                                 String                 @default("PENDING")
+  expiry                                 DateTime?
+  authorId                               String
+  departmentId                           String?
+  createdAt                              DateTime               @default(now())
+  updatedAt                              DateTime               @updatedAt
+  isMajor                                Boolean                @default(false)
+  deletedAt                              DateTime?
+  deletedBy                              String?
+  deletedReason                          String?
+  version                                Int                    @default(0)
+  targetPastorId                         String?
+  author                                 User                   @relation(fields: [authorId], references: [id])
+  department                             Department?            @relation(fields: [departmentId], references: [id])
+  User_Announcement_targetPastorIdToUser User?                  @relation("Announcement_targetPastorIdToUser", fields: [targetPastorId], references: [id])
+  approvals                              AnnouncementApproval[]
 
   @@index([status])
   @@index([departmentId])
@@ -302,8 +313,10 @@ model Project {
   deletedBy         String?
   deletedReason     String?
   version           Int               @default(0)
+  targetPastorId    String?
   messages          Message[]
   department        Department        @relation(fields: [departmentId], references: [id])
+  User              User?             @relation(fields: [targetPastorId], references: [id])
   approvals         ProjectApproval[]
   updates           ProjectUpdate[]
 
@@ -336,7 +349,9 @@ model Plan {
   deletedBy      String?
   deletedReason  String?
   version        Int            @default(0)
+  targetPastorId String?
   department     Department     @relation(fields: [departmentId], references: [id])
+  User           User?          @relation(fields: [targetPastorId], references: [id])
   approvals      PlanApproval[]
 
   @@index([approvalStatus])
@@ -374,8 +389,8 @@ model Account {
   totalIncome      Float         @default(0)
   totalExpenditure Float         @default(0)
   updatedAt        DateTime      @updatedAt
-  deletedAt        DateTime?
   version          Int           @default(0)
+  deletedAt        DateTime?
   department       Department    @relation(fields: [departmentId], references: [id])
   transactions     Transaction[]
 }
@@ -391,10 +406,10 @@ model Transaction {
   date          DateTime              @default(now())
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
+  version       Int                   @default(0)
   deletedAt     DateTime?
   deletedBy     String?
   deletedReason String?
-  version       Int                   @default(0)
   account       Account               @relation(fields: [accountId], references: [id])
   requester     User                  @relation("TransactionRequester", fields: [requestedById], references: [id])
   approvals     TransactionApproval[]
@@ -468,10 +483,10 @@ model SupportRequest {
   amountRequired Float    @default(0)
   proofImageUrl  String?
   status         String   @default("OPEN")
-  category       String   @default("EVENT_FUNDING")
-  adminReply     String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  adminReply     String?
+  category       String   @default("EVENT_FUNDING")
   event          Event?   @relation(fields: [eventId], references: [id])
   requester      User     @relation(fields: [requesterId], references: [id])
 }
@@ -565,11 +580,11 @@ model MinistrySettings {
 }
 
 model Affirmation {
-  id        String   @id @default(uuid())
-  content   String
-  date      DateTime @unique @default(now())
-  createdAt DateTime @default(now())
-  version   Int      @default(0)
+  id         String    @id @default(uuid())
+  content    String
+  date       DateTime  @unique @default(now())
+  createdAt  DateTime  @default(now())
+  version    Int       @default(0)
   devotionId String?
   devotion   Devotion? @relation(fields: [devotionId], references: [id])
 }
@@ -611,8 +626,8 @@ model PartnershipLedger {
   deletedAt       DateTime?
   deletedBy       String?
   deletedReason   String?
-  partnership     Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
   updatedAt       DateTime    @updatedAt
+  partnership     Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
 
   @@index([partnershipId])
   @@index([deletedAt])
@@ -711,9 +726,9 @@ model SystemMetric {
   failedJobs      Int
   wsConnections   Int
   pendingApproval Int
-  syncSuccessRate Float    @default(0)
-  failureRate     Float    @default(0)
   createdAt       DateTime @default(now())
+  failureRate     Float    @default(0)
+  syncSuccessRate Float    @default(0)
 }
 
 model FeatureFlag {
@@ -742,8 +757,8 @@ model Session {
 model PastorModuleAccess {
   id          String   @id @default(uuid())
   pastorId    String
-  moduleKey   String   // MemberRegistration, ChildDedication, PartnershipManagement, etc.
-  permissions Json     // { "read": true, "write": true, "approve": true }
+  moduleKey   String
+  permissions Json
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   pastor      User     @relation("PastorModulePermissions", fields: [pastorId], references: [id], onDelete: Cascade)

@@ -12,7 +12,24 @@ export async function bootstrapSystem() {
     await seedPermissions();
 
     // 2. Initial Departments (Essential Infrastructure)
-    const initialDepts = process.env.INITIAL_DEPARTMENTS?.split(',') || ['Pastoral', 'Ushering & Protocol', 'Media and ICT', 'Youth', 'Children'];
+    const defaultDepts = [
+        'PPAM ABRAHAM GENERATION', 
+        'Esther Arise', 
+        '3 SixTeen Generation', 
+        'Royal Tribe of Light', 
+        'Rising star generation',
+        'Pastoral',
+        'Ushering & Protocol',
+        'Media & ICT',
+        'Praise and worship',
+        'Hospitality & Welfare',
+        'Mission & Evangelism',
+        'Technical, Sound & Lighting',
+        'Treasury  DEpartment ',
+        'Deacons  Department ',
+        'Intercessory & Prayer'
+    ];
+    const initialDepts = process.env.INITIAL_DEPARTMENTS?.split(',') || defaultDepts;
     for (const name of initialDepts) {
         const trimmed = name.trim();
         if (!trimmed) continue;

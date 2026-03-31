@@ -190,6 +190,50 @@ export default function TopNavbar() {
                 })}
             </List>
 
+            {/* COMMAND CONSOLE - Universal Dashboard Access for Bishop and Watua */}
+            {(user?.role === 'SUPER_ADMIN' || user?.role === 'WATUA') && (
+                <>
+                    <Divider sx={{ my: 1, borderColor: 'rgba(255,255,255,0.05)' }} />
+                    <Typography variant="caption" sx={{ px: 3, py: 1, display: 'block', color: 'orange', fontWeight: 950, letterSpacing: 2 }}>
+                        COMMAND CONSOLE
+                    </Typography>
+                    <List sx={{ px: 2 }} disablePadding>
+                        {[
+                            { name: 'PALACE CONTROL', href: '/bishop', icon: Shield, color: 'var(--cyan)' },
+                            { name: 'PASTORAL DESK', href: '/pastor', icon: Briefcase, color: 'primary.main' },
+                            { name: 'MEMBER VIEW', href: '/member-portal', icon: LayoutDashboard, color: 'success.main' },
+                            ...(user?.role === 'WATUA' ? [{ name: 'SYSTEM TERMINAL', href: '/watua', icon: Command, color: '#c175ff' }] : []),
+                        ].map((item) => {
+                            const isActive = location.pathname === item.href;
+                            return (
+                                <ListItem key={item.name} disablePadding sx={{ mb: 0.5 }}>
+                                    <ListItemButton 
+                                        component={Link} 
+                                        to={item.href}
+                                        onClick={handleDrawerToggle}
+                                        sx={{ 
+                                            borderRadius: 0, py: 0.5,
+                                            border: isActive ? '1px solid orange' : '1px solid transparent',
+                                            bgcolor: isActive ? 'rgba(255, 165, 0, 0.1)' : 'transparent',
+                                            color: isActive ? 'orange' : 'text.secondary',
+                                            '&:hover': { bgcolor: 'rgba(255, 165, 0, 0.05)', color: 'orange' }
+                                        }}
+                                    >
+                                        <ListItemIcon sx={{ color: isActive ? 'orange' : item.color, minWidth: 32 }}>
+                                            <item.icon size={16} />
+                                        </ListItemIcon>
+                                        <ListItemText 
+                                            primary={item.name} 
+                                            primaryTypographyProps={{ fontSize: '0.8rem', fontWeight: isActive ? 900 : 600 }} 
+                                        />
+                                    </ListItemButton>
+                                </ListItem>
+                            );
+                        })}
+                    </List>
+                </>
+            )}
+
             {/* SECTORAL COMMAND OVERRIDE - For Bishop and Watua */}
             {(user?.role === 'SUPER_ADMIN' || user?.role === 'WATUA') && departmentsData && departmentsData.length > 0 && (
                 <>
@@ -301,7 +345,7 @@ export default function TopNavbar() {
                             <Church size={28} color="var(--cyan)" />
                             {user?.role === 'MEMBER' 
                                 ? "PRAYER PALACE PORTAL" 
-                                : (user?.role === 'SUPER_ADMIN' ? "BISHOP | MISSION COMMAND" : "EXECUTIVE PALACE PORTAL")}
+                                : (user?.role === 'SUPER_ADMIN' ? "PALACE CONTROL PORTAL" : "EXECUTIVE PALACE PORTAL")}
                         </Typography>
 
                         {/* Primary Horizontal Navigation */}
@@ -341,6 +385,7 @@ export default function TopNavbar() {
                                 );
                             })}
                         </Box>
+
 
                         <Box sx={{ flexGrow: 0, ml: 'auto', display: 'flex', alignItems: 'center', gap: 2 }}>
                             

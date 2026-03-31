@@ -561,8 +561,8 @@ export default function MemberPortal() {
                                             return timeline.map((item, idx) => (
                                                 <Box key={idx} sx={{ display: 'flex', gap: 2, p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderLeft: `3px solid var(--${item.color})` }}>
                                                     <Box sx={{ minWidth: 45, textAlign: 'center' }}>
-                                                        <Typography variant="h6" fontWeight="950" sx={{ lineHeight: 1 }}>{new Date(item.date || item.createdAt).getDate()}</Typography>
-                                                        <Typography variant="caption" sx={{ fontSize: '0.6rem', opacity: 0.6 }}>{new Date(item.date || item.createdAt).toLocaleString('default', { month: 'short' }).toUpperCase()}</Typography>
+                                                        <Typography variant="h6" fontWeight="950" sx={{ lineHeight: 1 }}>{item.date || item.createdAt ? (new Date(item.date || item.createdAt).getDate() || '--') : '--'}</Typography>
+                                                        <Typography variant="caption" sx={{ fontSize: '0.6rem', opacity: 0.6 }}>{item.date || item.createdAt ? new Date(item.date || item.createdAt).toLocaleString('default', { month: 'short' }).toUpperCase() : 'N/A'}</Typography>
                                                     </Box>
                                                     <Box sx={{ flexGrow: 1 }}>
                                                         <Typography variant="subtitle2" fontWeight="950" sx={{ lineHeight: 1.2 }}>{item.title?.toUpperCase()}</Typography>
@@ -603,16 +603,16 @@ export default function MemberPortal() {
                                                     <Grid container spacing={1} mb={2}>
                                                         <Grid item xs={6}>
                                                             <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>COMMITTED</Typography>
-                                                            <Typography variant="h6" fontWeight={950}>{syncData?.partnership?.amount || 0} KES</Typography>
+                                                            <Typography variant="h6" fontWeight={950}>{(syncData?.partnership?.amount || 0).toLocaleString()} KES</Typography>
                                                         </Grid>
                                                         <Grid item xs={6}>
                                                             <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>PAID TO DATE</Typography>
-                                                            <Typography variant="h6" fontWeight={950} color="success.main">{syncData?.partnership?.paidAmount || 0} KES</Typography>
+                                                            <Typography variant="h6" fontWeight={950} color="success.main">{(syncData?.partnership?.paidAmount || 0).toLocaleString()} KES</Typography>
                                                         </Grid>
                                                         <Grid item xs={12}>
                                                             <Box sx={{ mt: 1, p: 1.5, bgcolor: 'rgba(255,0,0,0.05)', border: '1px solid rgba(255,0,0,0.1)', textAlign: 'center' }}>
                                                                 <Typography variant="caption" fontWeight={900} color="error" sx={{ display: 'block' }}>
-                                                                    OUTSTANDING BALANCE: {syncData?.partnership?.balance || 0} KES
+                                                                    OUTSTANDING BALANCE: {(syncData?.partnership?.balance || 0).toLocaleString()} KES
                                                                 </Typography>
                                                                 <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 700, opacity: 0.7, mt: 0.5, display: 'block' }}>
                                                                     KINDLY PURPOSE TO COMPLETE YOUR PARTNERSHIP AMOUNT FOR THE CHURCH BUDGET

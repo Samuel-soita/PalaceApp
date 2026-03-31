@@ -13,16 +13,17 @@ interface PlanFormModalProps {
     onClose: () => void;
     plan?: any;
     onSuccess: () => void;
+    defaultDepartmentId?: string;
 }
 
-export default function PlanFormModal({ open, onClose, plan, onSuccess }: PlanFormModalProps) {
+export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultDepartmentId }: PlanFormModalProps) {
     const { user } = useAuth();
     const [formData, setFormData] = useState({
         title: '',
         type: 'MONTHLY',
         description: '',
         isMajor: false,
-        departmentId: user?.departmentId || '',
+        departmentId: defaultDepartmentId || user?.departmentId || '',
         pastorIds: [] as string[]
     });
 
@@ -42,11 +43,11 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess }: PlanFo
                 type: 'MONTHLY',
                 description: '',
                 isMajor: false,
-                departmentId: user?.departmentId || '',
+                departmentId: defaultDepartmentId || user?.departmentId || '',
                 pastorIds: []
             });
         }
-    }, [plan, open, user]);
+    }, [plan, open, user, defaultDepartmentId]);
 
     const { data: pastors } = useQuery(['pastors'], async () => {
         const res = await api.get('/users?role=PASTOR');

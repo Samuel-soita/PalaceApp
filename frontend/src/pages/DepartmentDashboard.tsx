@@ -4,15 +4,10 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import api from '../lib/api-client';
 import {
     Typography, Grid, Card, CardContent, Box, Button, Chip, Divider, LinearProgress,
-    Avatar, Tooltip, Paper, IconButton, Skeleton, useMediaQuery, useTheme,
-    Table, TableBody, TableCell, TableContainer, TableHead, TableRow, 
-    InputAdornment, TextField, Modal, Backdrop, Fade, Stack, Snackbar, Alert, Badge, Container
+    Avatar, Skeleton, useMediaQuery, useTheme, Modal, Backdrop, Fade, Stack, Snackbar, Alert, Container
 } from '@mui/material';
 import {
-    Calendar, Users, Briefcase, ChevronRight, CheckCircle2,
-    Package, TrendingUp, AlertCircle, ArrowUpRight, ShieldCheck, Plus, MapPin, LayoutDashboard,
-    Heart, FileText, Download, Share2, Edit, Trash2, MessageSquare, Coins, Clock, Zap, Shield,
-    User, Search, Filter, Sparkles, ThumbsUp, Smile, Quote, Star, Bell, Megaphone, BookOpen, Droplet
+    Calendar, Briefcase, Sparkles, ThumbsUp, Smile, Heart, FileText, Bell, Megaphone, Star, BookOpen
 } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
@@ -35,7 +30,7 @@ export default function DepartmentDashboard() {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-    const effectiveId = (id && id !== 'undefined') ? id : user?.departmentId;
+    const effectiveId = ((id && id !== 'undefined') ? id : user?.departmentId) ?? undefined;
 
     // Permission-based flags
     const canViewDepartment = hasPermission(PERMISSIONS.VIEW_DEPARTMENT) || user?.role === 'SUPER_ADMIN' || user?.role === 'WATUA';
@@ -46,7 +41,9 @@ export default function DepartmentDashboard() {
             navigate('/', { replace: true });
             return;
         }
-        if (user?.role === 'DEPARTMENT_LEADER' && effectiveId && effectiveId !== user.departmentId) {
+        // Secure Sectoral Lockdown: Leaders can ONLY view their own command sector.
+        // Safety check: only redirect if user.departmentId is actually set.
+        if (user?.role === 'DEPARTMENT_LEADER' && user.departmentId && effectiveId && effectiveId !== user.departmentId) {
             navigate(`/department/${user.departmentId}`, { replace: true });
         }
     }, [canViewDepartment, effectiveId, user, navigate]);
@@ -61,7 +58,6 @@ export default function DepartmentDashboard() {
     const [toast, setToast] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({
         open: false, message: '', severity: 'info'
     });
-    const [searchQuery, setSearchQuery] = useState('');
 
     const isReady = !!effectiveId && effectiveId !== 'undefined';
 
@@ -115,13 +111,6 @@ export default function DepartmentDashboard() {
     const isPartner = syncData?.isPartner;
     const settings = syncData?.ministrySettings;
     const account = syncData?.account;
-    const departmentMembers = syncData?.departmentMembers || [];
-    
-    // Registry Filter Logic
-    const filteredMembers = departmentMembers.filter((m: any) => 
-        m.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        m.membershipNumber.toLowerCase().includes(searchQuery.toLowerCase())
-    );
     
     return (
         <DashboardLayout>
@@ -209,27 +198,7 @@ export default function DepartmentDashboard() {
                     </Box>
                 </Box>
                 
-                {/* 📊 SECTORAL STRENGTH - Unified Analytics Strip */}
-                <Box sx={{ mb: 6, display: 'flex', justifyContent: 'center', gap: 3, flexWrap: 'wrap' }}>
-                    <Card sx={{ bgcolor: 'rgba(0,180,216,0.05)', border: '1px solid rgba(0,180,216,0.2)', minWidth: 200, borderRadius: 0, position: 'relative', overflow: 'hidden' }}>
-                        <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
-                            <Typography variant="caption" fontWeight="950" sx={{ color: 'var(--cyan)', letterSpacing: 1, display: 'block', mb: 1 }}>TOTAL MISSION PERSONNEL</Typography>
-                            <Box display="flex" alignItems="baseline" gap={1}>
-                                <Typography variant="h4" fontWeight="1000" className="glow-text">{syncData?.members?.length || 0}</Typography>
-                                <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 900 }}>COVENANT MEMBERS</Typography>
-                            </Box>
-                        </CardContent>
-                    </Card>
-                    <Card sx={{ bgcolor: 'rgba(79, 139, 255, 0.05)', border: '1px solid rgba(79, 139, 255, 0.2)', minWidth: 200, borderRadius: 0, position: 'relative', overflow: 'hidden' }}>
-                        <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
-                            <Typography variant="caption" fontWeight="950" sx={{ color: 'var(--primary)', letterSpacing: 1, display: 'block', mb: 1 }}>TOTAL MISSION HEIRS</Typography>
-                            <Box display="flex" alignItems="baseline" gap={1}>
-                                <Typography variant="h4" fontWeight="1000" className="glow-text-primary">{syncData?.members?.reduce((acc: number, m: any) => acc + (m.children?.length || 0), 0) || 0}</Typography>
-                                <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 900 }}>LINKED CHILDREN</Typography>
-                            </Box>
-                        </CardContent>
-                    </Card>
-                </Box>
+                {/* 📊 SECTORAL STRENGTH - Removed from Frontend for Security Hardening */}
 
                 <Grid container spacing={4}>
                     {/* LEFT COLUMN (7): SPIRITUAL & LOCAL TACTICAL */}
@@ -331,109 +300,6 @@ export default function DepartmentDashboard() {
                                 transactions={syncData?.transactions || []} 
                                 departmentId={effectiveId as string | undefined}
                              />
-
-                             {/* 📋 DIVINE REGISTRY: FAMILY OVERWATCH - Only for Ushering/Admin */}
-                             {(user?.role === 'SUPER_ADMIN' || (user?.role === 'DEPARTMENT_LEADER' && department?.name?.toUpperCase()?.includes('USHERING'))) && (
-                               <Card className="holographic-card" sx={{ borderRadius: 0 }}>
-                                   <CardContent sx={{ p: 4 }}>
-                                       <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
-                                           <Box display="flex" alignItems="center" gap={2}>
-                                               <Users size={24} color="var(--cyan)" />
-                                               <Box>
-                                                   <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>DEPARTMENTAL REGISTRY</Typography>
-                                                   <Typography variant="caption" sx={{ color: 'var(--cyan)', fontWeight: 900 }}>MISSION READINESS TALLY</Typography>
-                                               </Box>
-                                           </Box>
-                                           <TextField 
-                                               size="small"
-                                               placeholder="SEARCH COVENANT..."
-                                               value={searchQuery}
-                                               onChange={(e) => setSearchQuery(e.target.value)}
-                                               InputProps={{
-                                                   startAdornment: (
-                                                       <InputAdornment position="start">
-                                                           <Search size={16} color="var(--cyan)" />
-                                                       </InputAdornment>
-                                                   ),
-                                                   sx: { 
-                                                       bgcolor: 'rgba(255,255,255,0.03)', 
-                                                       borderRadius: 0, 
-                                                       border: '1px solid rgba(0,255,255,0.1)',
-                                                       fontSize: '0.7rem',
-                                                       fontWeight: 900,
-                                                       width: 250
-                                                   }
-                                               }}
-                                           />
-                                       </Box>
-
-                                       <TableContainer component={Paper} sx={{ bgcolor: 'transparent', boxShadow: 'none', borderRadius: 0 }}>
-                                           <Table size="small">
-                                               <TableHead>
-                                                   <TableRow sx={{ borderBottom: '2px solid rgba(0,255,255,0.1)' }}>
-                                                       <TableCell sx={{ fontWeight: 1000, color: 'var(--cyan)', py: 2 }}>IDENTIFICATION</TableCell>
-                                                       <TableCell sx={{ fontWeight: 1000, color: 'var(--cyan)', py: 2 }}>STATUS</TableCell>
-                                                       <TableCell sx={{ fontWeight: 1000, color: 'var(--cyan)', py: 2 }}>FAMILY OVERWATCH</TableCell>
-                                                   </TableRow>
-                                               </TableHead>
-                                               <TableBody>
-                                                   {filteredMembers.map((member: any) => (
-                                                       <TableRow key={member.id} sx={{ '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' }, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                                           <TableCell sx={{ py: 2 }}>
-                                                               <Box display="flex" alignItems="center" gap={2}>
-                                                                   <Avatar src={member.avatarUrl} sx={{ width: 32, height: 32, border: '1px solid var(--cyan)' }}>{member.name[0]}</Avatar>
-                                                                   <Box>
-                                                                       <Typography variant="subtitle2" fontWeight="1000" sx={{ color: '#fff' }}>{member.name.toUpperCase()}</Typography>
-                                                                       <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 900 }}>{member.membershipNumber}</Typography>
-                                                                   </Box>
-                                                               </Box>
-                                                           </TableCell>
-                                                           <TableCell>
-                                                               <Chip label={member.status} size="small" sx={{ 
-                                                                   bgcolor: member.status === 'ACTIVE' ? 'rgba(0,180,216,0.1)' : 'rgba(255,165,0,0.1)',
-                                                                   color: member.status === 'ACTIVE' ? 'var(--cyan)' : 'orange',
-                                                                   fontWeight: 900, borderRadius: 0, fontSize: '0.6rem'
-                                                               }} />
-                                                           </TableCell>
-                                                           <TableCell>
-                                                               {member.children && member.children.length > 0 ? (
-                                                                   <Box>
-                                                                       <Box display="flex" alignItems="center" gap={1} mb={0.5}>
-                                                                           <ShieldCheck size={12} color="var(--primary)" />
-                                                                           <Typography variant="caption" fontWeight="1000" color="var(--primary)">{member.children.length} HEIRS LINKED</Typography>
-                                                                       </Box>
-                                                                       <Stack direction="row" spacing={0.5} flexWrap="wrap">
-                                                                           {member.children.map((child: any) => (
-                                                                               <Tooltip key={child.id} title={`${child.name} | GENDER: ${child.gender} | AGE: ${new Date().getFullYear() - new Date(child.dob).getFullYear()} YRS`}>
-                                                                                   <Chip 
-                                                                                       label={child.name} 
-                                                                                       size="small" 
-                                                                                       icon={child.gender === "MALE" ? <Zap size={10} /> : <Heart size={10} />} variant="outlined" 
-                                                                                       sx={{ fontSize: '0.6rem', height: 20, color: 'var(--cyan)', borderColor: 'rgba(0,255,255,0.3)', fontWeight: 900 }} 
-                                                                                   />
-                                                                               </Tooltip>
-                                                                           ))}
-                                                                       </Stack>
-                                                                   </Box>
-                                                               ) : (
-                                                                   <Typography variant="caption" sx={{ opacity: 0.3, fontWeight: 800 }}>NO LINKED KIN</Typography>
-                                                               )}
-                                                           </TableCell>
-                                                       </TableRow>
-                                                   ))}
-                                                   {filteredMembers.length === 0 && (
-                                                       <TableRow>
-                                                           <TableCell colSpan={3} sx={{ py: 8, textAlign: 'center' }}>
-                                                               <Typography variant="caption" sx={{ opacity: 0.3, fontWeight: 900, letterSpacing: 1 }}>NO MISSION PERSONNEL RECORDED</Typography>
-                                                           </TableCell>
-                                                       </TableRow>
-                                                   )}
-                                               </TableBody>
-                                           </Table>
-                                       </TableContainer>
-                                   </CardContent>
-                               </Card>
-                             )}
                         </Stack>
                     </Grid>
 
@@ -467,7 +333,7 @@ export default function DepartmentDashboard() {
                                                         </Box>
                                                         <Typography variant="subtitle2" fontWeight="950" sx={{ lineHeight: 1.2 }}>{intel.title?.toUpperCase()}</Typography>
                                                         <Box display="flex" justifyContent="space-between" alignItems="center" mt={1}>
-                                                            <Typography variant="caption" sx={{ opacity: 0.4, fontSize: '0.6rem', fontWeight: 700 }}>{new Date(intel.createdAt || intel.date).toLocaleDateString()}</Typography>
+                                                            <Typography variant="caption" sx={{ opacity: 0.4, fontSize: '0.6rem', fontWeight: 700 }}>{intel.createdAt || intel.date ? new Date(intel.createdAt || intel.date).toLocaleDateString() : "N/A"}</Typography>
                                                             <Button size="small" sx={{ p: 0, minWidth: 0, color: 'var(--cyan)', fontWeight: 900, fontSize: '0.65rem', '&:hover': { color: 'white' } }}>DETAILS</Button>
                                                         </Box>
                                                     </CardContent>
@@ -526,10 +392,37 @@ export default function DepartmentDashboard() {
             </Container>
 
             {/* Modals - Aligned with PastorsDashboardraw terminal feel */}
-            <ProjectFormModal open={projectModal.open} onClose={() => setProjectModal({ open: false, data: null })} project={projectModal.data} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} />
-            <EventFormModal open={eventModal.open} onClose={() => setEventModal({ open: false, data: null })} event={eventModal.data} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} />
-            <PlanFormModal open={planModal.open} onClose={() => setPlanModal({ open: false, data: null })} plan={planModal.data} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} />
-            <AnnouncementFormModal open={announcementModal.open} onClose={() => setAnnouncementModal({ open: false, data: null })} announcement={announcementModal.data} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} />
+            <ProjectFormModal 
+                open={projectModal.open} 
+                onClose={() => setProjectModal({ open: false, data: null })} 
+                project={projectModal.data} 
+                defaultDepartmentId={effectiveId}
+                onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} 
+            />
+            
+            <EventFormModal 
+                open={eventModal.open} 
+                onClose={() => setEventModal({ open: false, data: null })} 
+                event={eventModal.data} 
+                defaultDepartmentId={effectiveId}
+                onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} 
+            />
+            
+            <PlanFormModal 
+                open={planModal.open} 
+                onClose={() => setPlanModal({ open: false, data: null })} 
+                plan={planModal.data} 
+                defaultDepartmentId={effectiveId}
+                onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} 
+            />
+            
+            <AnnouncementFormModal 
+                open={announcementModal.open} 
+                onClose={() => setAnnouncementModal({ open: false, data: null })} 
+                announcement={announcementModal.data} 
+                defaultDepartmentId={effectiveId}
+                onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} 
+            />
 
             {/* 💰 COVENANT PARTNERSHIP ENROLLMENT MODAL - pixel-perfect from PastorsDashboard */}
             <Modal
@@ -540,7 +433,7 @@ export default function DepartmentDashboard() {
                 BackdropProps={{ timeout: 500, sx: { backdropFilter: 'blur(12px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
             >
                 <Fade in={enrollModalOpen}>
-                    <Box sx={{ 
+                    <Box tabIndex={-1} sx={{ 
                         position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
                         width: { xs: '90%', sm: 400 },
                         bgcolor: '#0a0a0a', border: '1px solid orange',

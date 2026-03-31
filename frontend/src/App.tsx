@@ -149,6 +149,8 @@ function App() {
                 <Route path="/register-child" element={<PrivateRoute><ChildRegistration /></PrivateRoute>} />
                 <Route path="/profile" element={<PrivateRoute><ProfileModal open={true} onClose={() => window.history.back()} /></PrivateRoute>} />
                 
+                <Route path="/member-portal" element={<PrivateRoute><MemberPortal /></PrivateRoute>} />
+                
                 <Route path="/" element={<PrivateRoute><RootRedirect /></PrivateRoute>} />
                 <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

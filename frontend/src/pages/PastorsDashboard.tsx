@@ -191,8 +191,8 @@ export default function PastorsDashboard() {
                 </Box>
 
                 <Grid container spacing={4}>
-                    {/* Left Column (7): Spiritual & Personal Tactical */}
-                    <Grid item xs={12} lg={7}>
+                    {/* Left Column (6): Spiritual, Personal & Major Intelligence */}
+                    <Grid item xs={12} lg={6}>
                         {/* Interactive Devotion */}
                         <Card sx={{ mb: 4, bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: 4 }}>
                             <CardContent sx={{ p: 4 }}>
@@ -278,10 +278,136 @@ export default function PastorsDashboard() {
                                 ))}
                             </Box>
                         </Box>
+
+                        {/* Latest Church Intel (Moved to Left Column for balance) */}
+                        <Card className="holographic-card" sx={{ p: 0, borderRadius: 0, mb: 4 }}>
+                            <CardContent sx={{ p: 3 }}>
+                                <Box display="flex" alignItems="center" gap={1.5} mb={4}>
+                                    <Bell size={20} color="var(--primary)" />
+                                    <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 2 }}>LATEST CHURCH INTEL</Typography>
+                                </Box>
+
+                                <Stack spacing={2}>
+                                    {/* 💰 PARTNER INTELLIGENCE / CTA */}
+                                    <Card 
+                                        sx={{ 
+                                            p: 0, 
+                                            borderRadius: 0, 
+                                            border: syncData?.isPartner ? '1px solid var(--primary-glow)' : '1px solid rgba(255, 165, 0, 0.4)',
+                                            background: syncData?.isPartner ? 'rgba(79, 139, 255, 0.05)' : 'rgba(255, 165, 0, 0.05)'
+                                        }}
+                                    >
+                                        {syncData?.isPartner ? (
+                                            <CardContent sx={{ p: 2 }}>
+                                                <Box display="flex" alignItems="center" gap={2} mb={2}>
+                                                    <Avatar sx={{ bgcolor: 'orange', width: 32, height: 32, boxShadow: '0 0 10px rgba(255,165,0,0.5)' }}><Star size={16} /></Avatar>
+                                                    <Typography variant="caption" fontWeight="1000" sx={{ color: 'orange', letterSpacing: 1 }}>COVENANT PARTNERSHIP STATUS</Typography>
+                                                </Box>
+                                                
+                                                <Grid container spacing={1} mb={2}>
+                                                    <Grid item xs={6}>
+                                                        <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>COMMITTED</Typography>
+                                                        <Typography variant="h6" fontWeight={950}>{(syncData?.partnership?.amount || 0).toLocaleString()} KES</Typography>
+                                                    </Grid>
+                                                    <Grid item xs={6}>
+                                                        <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>PAID TO DATE</Typography>
+                                                        <Typography variant="h6" fontWeight={950} color="success.main">{(syncData?.partnership?.paidAmount || 0).toLocaleString()} KES</Typography>
+                                                    </Grid>
+                                                    <Grid item xs={12}>
+                                                        <Box sx={{ mt: 1, p: 1.5, bgcolor: 'rgba(255,0,0,0.05)', border: '1px solid rgba(255,0,0,0.1)', textAlign: 'center' }}>
+                                                            <Typography variant="caption" fontWeight={900} color="error" sx={{ display: 'block' }}>
+                                                                OUTSTANDING BALANCE: {(syncData?.partnership?.balance || 0).toLocaleString()} KES
+                                                            </Typography>
+                                                            <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 700, opacity: 0.7, mt: 0.5, display: 'block' }}>
+                                                                KINDLY PURPOSE TO COMPLETE YOUR PARTNERSHIP AMOUNT FOR THE CHURCH BUDGET
+                                                            </Typography>
+                                                        </Box>
+                                                    </Grid>
+                                                </Grid>
+
+                                                <Typography variant="caption" sx={{ opacity: 0.6, fontStyle: 'italic', fontWeight: 700 }}>
+                                                    "Partnering with Prayer Palace Apostolic Ministry for Global impact by making sure the church Budget is met"
+                                                </Typography>
+                                            </CardContent>
+                                        ) : (
+                                            <CardContent sx={{ p: 2 }}>
+                                                <Box display="flex" alignItems="center" gap={2} mb={1}>
+                                                    <Avatar sx={{ bgcolor: 'orange', width: 32, height: 32 }}><Star size={16} /></Avatar>
+                                                    <Typography variant="caption" fontWeight="900" sx={{ color: 'orange' }}>PARTNERSHIP VISION</Typography>
+                                                </Box>
+                                                <Typography variant="subtitle2" fontWeight="950" sx={{ mb: 1 }}>BECOME A PRAYER PALACE PARTNER</Typography>
+                                                <Typography variant="caption" sx={{ opacity: 0.7, display: 'block', mb: 2, lineHeight: 1.4 }}>
+                                                    Fuel the mission. Enroll monthly to receive strategic financial intelligence. Renew with varying amounts as led.
+                                                </Typography>
+                                                <Button 
+                                                    variant="outlined" 
+                                                    fullWidth 
+                                                    size="small" 
+                                                    component={Link}
+                                                    to="/"
+                                                    onClick={(e) => { e.preventDefault(); setEnrollModalOpen(true); }}
+                                                    sx={{ borderColor: 'orange', color: 'orange', fontWeight: 900, borderRadius: 0, fontSize: '0.65rem' }}
+                                                >
+                                                    ENROLL IN PARTNERSHIP
+                                                </Button>
+                                            </CardContent>
+                                        )}
+                                    </Card>
+
+                                    {(() => {
+                                        const globalIntel = [
+                                            ...(syncData?.announcements || []).filter((a: any) => a.isGlobal).map((a: any) => ({ ...a, intelType: 'CHURCH UPDATE', icon: Megaphone, color: 'cyan' })),
+                                            ...(syncData?.events || []).filter((e: any) => e.isMajor).map((e: any) => ({ ...e, intelType: 'MAJOR EVENT', icon: Calendar, color: 'primary' })),
+                                            ...(syncData?.projects || []).filter((p: any) => p.isMajor).map((p: any) => ({ ...p, intelType: 'STRATEGIC PROJECT', icon: Star, color: 'cyan' })),
+                                            ...(syncData?.plans || []).filter((p: any) => p.isMajor).map((p: any) => ({ ...p, intelType: 'MINISTRY PLAN', icon: BookOpen, color: 'orange' })),
+                                        ].sort((a,b) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime()).slice(0, 10);
+
+                                        if (globalIntel.length === 0) {
+                                            return (
+                                                <Typography variant="caption" sx={{ textAlign: 'center', opacity: 0.3, py: 4, fontWeight: 900 }}>
+                                                    NO GLOBAL INTEL REPORTED
+                                                </Typography>
+                                            );
+                                        }
+
+                                        return globalIntel.map((intel) => (
+                                            <Card key={`${intel.intelType}-${intel.id}`} sx={{ p: 0, bgcolor: 'rgba(255,255,255,0.02)', borderLeft: `3px solid var(--${intel.color})`, borderRadius: 0 }}>
+                                                <CardContent sx={{ p: 2 }}>
+                                                    <Box display="flex" alignItems="center" gap={1} mb={0.5}>
+                                                        <intel.icon size={12} color={`var(--${intel.color})`} />
+                                                        <Typography variant="caption" fontWeight="950" color={intel.color}>{intel.intelType}</Typography>
+                                                    </Box>
+                                                    <Typography variant="subtitle2" fontWeight="950" sx={{ lineHeight: 1.2 }}>{intel.title?.toUpperCase()}</Typography>
+                                                    {intel.content && (
+                                                        <Typography variant="caption" sx={{ opacity: 0.6, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', mt: 0.5, lineHeight: 1.3 }}>
+                                                            {intel.content}
+                                                        </Typography>
+                                                    )}
+                                                    <Box display="flex" justifyContent="space-between" alignItems="center" mt={1}>
+                                                        <Typography variant="caption" sx={{ opacity: 0.4, fontSize: '0.6rem', fontWeight: 700 }}>
+                                                            {intel.createdAt || intel.date ? new Date(intel.createdAt || intel.date).toLocaleDateString() : 'N/A'}
+                                                        </Typography>
+                                                        <Button size="small" sx={{ p: 0, minWidth: 0, color: 'var(--cyan)', fontWeight: 900, fontSize: '0.65rem' }}>DETAILS</Button>
+                                                    </Box>
+                                                </CardContent>
+                                            </Card>
+                                        ));
+                                    })()}
+                                </Stack>
+                            </CardContent>
+                        </Card>
+
+                        {/* Divine Mandate (Moved to Left Column for balance) */}
+                        <Card className="holographic-card divine-mandate-card" sx={{ p: 4, mb: 4, border: '1px solid var(--primary-glow) !important' }}>
+                            <Typography variant="h6" fontWeight="950" mb={1} sx={{ color: 'var(--cyan)', letterSpacing: 2 }}>DIVINE MANDATE</Typography>
+                            <Typography variant="h5" className="divine-text" sx={{ opacity: 0.9, lineHeight: 1.4, fontStyle: 'italic' }}>
+                                "{syncData?.affirmation?.content || "I walk in divine health and supernatural protection."}"
+                            </Typography>
+                        </Card>
                     </Grid>
 
-                    {/* Right Column (5): Pastoral Command & Intelligence */}
-                    <Grid item xs={12} lg={5}>
+                    {/* Right Column (6): Pastoral Command & Tactical Mission */}
+                    <Grid item xs={12} lg={6}>
                         <Stack spacing={4}>
                             {/* Mission Action Terminal (Pastoral Tools) */}
                             <Card className="pastor-live-card" sx={{ bgcolor: 'rgba(255,255,255,0.03)', border: '2px solid var(--cyan)', borderRadius: 4 }}>
@@ -347,27 +473,27 @@ export default function PastorsDashboard() {
                                     <Grid container spacing={2}>
                                         {hasModule('Event Oversight') && (
                                             <Grid item xs={6}>
-                                                <Button fullWidth onClick={() => setEventModalOpen(true)} sx={{ height: 60, flexContent: 'column', gap: 0.5, bgcolor: 'rgba(79, 139, 255, 0.1)', border: '1px solid var(--primary)', borderRadius: 2 }}>
+                                                <Button fullWidth onClick={() => setEventModalOpen(true)} sx={{ height: 60, display: 'flex', flexDirection: 'column', gap: 0.5, bgcolor: 'rgba(79, 139, 255, 0.1)', border: '1px solid var(--primary)', borderRadius: 2 }}>
                                                     <Calendar size={18} color="var(--primary)" />
                                                     <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>NEW EVENT</Typography>
                                                 </Button>
                                             </Grid>
                                         )}
                                         <Grid item xs={6}>
-                                            <Button fullWidth onClick={() => setProjectModalOpen(true)} sx={{ height: 60, flexContent: 'column', gap: 0.5, bgcolor: 'rgba(0, 255, 255, 0.1)', border: '1px solid var(--cyan)', borderRadius: 2 }}>
+                                            <Button fullWidth onClick={() => setProjectModalOpen(true)} sx={{ height: 60, display: 'flex', flexDirection: 'column', gap: 0.5, bgcolor: 'rgba(0, 255, 255, 0.1)', border: '1px solid var(--cyan)', borderRadius: 2 }}>
                                                 <Star size={18} color="var(--cyan)" />
                                                 <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>NEW PROJECT</Typography>
                                             </Button>
                                         </Grid>
                                         <Grid item xs={6}>
-                                            <Button fullWidth onClick={() => setPlanModalOpen(true)} sx={{ height: 60, flexContent: 'column', gap: 0.5, bgcolor: 'rgba(255, 165, 0, 0.1)', border: '1px solid orange', borderRadius: 2 }}>
+                                            <Button fullWidth onClick={() => setPlanModalOpen(true)} sx={{ height: 60, display: 'flex', flexDirection: 'column', gap: 0.5, bgcolor: 'rgba(255, 165, 0, 0.1)', border: '1px solid orange', borderRadius: 2 }}>
                                                 <BookOpen size={18} color="orange" />
                                                 <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>NEW PLAN</Typography>
                                             </Button>
                                         </Grid>
                                         {hasModule('Devotion Publishing') && (
                                             <Grid item xs={6}>
-                                                <Button fullWidth onClick={() => setAnnouncementModalOpen(true)} sx={{ height: 60, flexContent: 'column', gap: 0.5, bgcolor: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--glass-border)', borderRadius: 2 }}>
+                                                <Button fullWidth onClick={() => setAnnouncementModalOpen(true)} sx={{ height: 60, display: 'flex', flexDirection: 'column', gap: 0.5, bgcolor: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--glass-border)', borderRadius: 2 }}>
                                                     <Megaphone size={18} />
                                                     <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>NEW INTEL</Typography>
                                                 </Button>
@@ -383,7 +509,7 @@ export default function PastorsDashboard() {
                                         <Calendar size={20} color="var(--primary)" />
                                         <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 2 }}>CHURCH MISSION TIMELINE</Typography>
                                     </Box>
-                                    <Stack spacing={2} sx={{ maxHeight: 400, overflowY: 'auto', pr: 1, '&::-webkit-scrollbar': { width: 4 }, '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(255,255,255,0.1)' } }}>
+                                    <Stack spacing={2} sx={{ maxHeight: 600, overflowY: 'auto', pr: 1, '&::-webkit-scrollbar': { width: 4 }, '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(255,255,255,0.1)' } }}>
                                         {(() => {
                                             const timeline = [
                                                 ...(syncData?.events || []).map((e: any) => ({ ...e, type: 'EVENT', icon: Calendar, color: 'primary' })),
@@ -396,8 +522,10 @@ export default function PastorsDashboard() {
                                             return timeline.map((item: any, idx: number) => (
                                                 <Box key={idx} sx={{ display: 'flex', gap: 2, p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderLeft: `3px solid var(--${item.color})` }}>
                                                     <Box sx={{ minWidth: 45, textAlign: 'center' }}>
-                                                        <Typography variant="h6" fontWeight="950" sx={{ lineHeight: 1 }}>{new Date(item.date || item.createdAt).getDate()}</Typography>
-                                                        <Typography variant="caption" sx={{ fontSize: '0.6rem', opacity: 0.6 }}>{new Date(item.date || item.createdAt).toLocaleString('default', { month: 'short' }).toUpperCase()}</Typography>
+                                                        <Typography variant="h6" fontWeight="950" sx={{ lineHeight: 1 }}>
+                                                            {item.date || item.createdAt ? (new Date(item.date || item.createdAt).getDate() || '--') : '--'}
+                                                        </Typography>
+                                                        <Typography variant="caption" sx={{ fontSize: '0.6rem', opacity: 0.6 }}>{item.date || item.createdAt ? new Date(item.date || item.createdAt).toLocaleString('default', { month: 'short' }).toUpperCase() : 'N/A'}</Typography>
                                                     </Box>
                                                     <Box sx={{ flexGrow: 1 }}>
                                                         <Typography variant="subtitle2" fontWeight="950" sx={{ lineHeight: 1.2 }}>{item.title?.toUpperCase()}</Typography>
@@ -408,131 +536,6 @@ export default function PastorsDashboard() {
                                         })()}
                                     </Stack>
                                 </CardContent>
-                            </Card>
-
-                            <Card className="holographic-card" sx={{ p: 0, borderRadius: 0 }}>
-                                <CardContent sx={{ p: 3 }}>
-                                    <Box display="flex" alignItems="center" gap={1.5} mb={4}>
-                                        <Bell size={20} color="var(--primary)" />
-                                        <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 2 }}>LATEST CHURCH INTEL</Typography>
-                                    </Box>
-
-                                    <Stack spacing={2}>
-                                        {/* 💰 PARTNER INTELLIGENCE / CTA */}
-                                        <Card 
-                                            sx={{ 
-                                                p: 0, 
-                                                borderRadius: 0, 
-                                                border: syncData?.isPartner ? '1px solid var(--primary-glow)' : '1px solid rgba(255, 165, 0, 0.4)',
-                                                background: syncData?.isPartner ? 'rgba(79, 139, 255, 0.05)' : 'rgba(255, 165, 0, 0.05)'
-                                            }}
-                                        >
-                                            {syncData?.isPartner ? (
-                                                <CardContent sx={{ p: 2 }}>
-                                                    <Box display="flex" alignItems="center" gap={2} mb={2}>
-                                                        <Avatar sx={{ bgcolor: 'orange', width: 32, height: 32, boxShadow: '0 0 10px rgba(255,165,0,0.5)' }}><Star size={16} /></Avatar>
-                                                        <Typography variant="caption" fontWeight="1000" sx={{ color: 'orange', letterSpacing: 1 }}>COVENANT PARTNERSHIP STATUS</Typography>
-                                                    </Box>
-                                                    
-                                                    <Grid container spacing={1} mb={2}>
-                                                        <Grid item xs={6}>
-                                                            <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>COMMITTED</Typography>
-                                                            <Typography variant="h6" fontWeight={950}>{syncData?.partnership?.amount || 0} KES</Typography>
-                                                        </Grid>
-                                                        <Grid item xs={6}>
-                                                            <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>PAID TO DATE</Typography>
-                                                            <Typography variant="h6" fontWeight={950} color="success.main">{syncData?.partnership?.paidAmount || 0} KES</Typography>
-                                                        </Grid>
-                                                        <Grid item xs={12}>
-                                                            <Box sx={{ mt: 1, p: 1.5, bgcolor: 'rgba(255,0,0,0.05)', border: '1px solid rgba(255,0,0,0.1)', textAlign: 'center' }}>
-                                                                <Typography variant="caption" fontWeight={900} color="error" sx={{ display: 'block' }}>
-                                                                    OUTSTANDING BALANCE: {syncData?.partnership?.balance || 0} KES
-                                                                </Typography>
-                                                                <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 700, opacity: 0.7, mt: 0.5, display: 'block' }}>
-                                                                    KINDLY PURPOSE TO COMPLETE YOUR PARTNERSHIP AMOUNT FOR THE CHURCH BUDGET
-                                                                </Typography>
-                                                            </Box>
-                                                        </Grid>
-                                                    </Grid>
-
-                                                    <Typography variant="caption" sx={{ opacity: 0.6, fontStyle: 'italic', fontWeight: 700 }}>
-                                                        "Partnering with Prayer Palace Apostolic Ministry for Global impact by making sure the church Budget is met"
-                                                    </Typography>
-                                                </CardContent>
-                                            ) : (
-                                                <CardContent sx={{ p: 2 }}>
-                                                    <Box display="flex" alignItems="center" gap={2} mb={1}>
-                                                        <Avatar sx={{ bgcolor: 'orange', width: 32, height: 32 }}><Star size={16} /></Avatar>
-                                                        <Typography variant="caption" fontWeight="900" sx={{ color: 'orange' }}>PARTNERSHIP VISION</Typography>
-                                                    </Box>
-                                                    <Typography variant="subtitle2" fontWeight="950" sx={{ mb: 1 }}>BECOME A PRAYER PALACE PARTNER</Typography>
-                                                    <Typography variant="caption" sx={{ opacity: 0.7, display: 'block', mb: 2, lineHeight: 1.4 }}>
-                                                        Fuel the mission. Enroll monthly to receive strategic financial intelligence. Renew with varying amounts as led.
-                                                    </Typography>
-                                                    <Button 
-                                                        variant="outlined" 
-                                                        fullWidth 
-                                                        size="small" 
-                                                        component={Link}
-                                                        to="/"
-                                                        onClick={(e) => { e.preventDefault(); setEnrollModalOpen(true); }}
-                                                        sx={{ borderColor: 'orange', color: 'orange', fontWeight: 900, borderRadius: 0, fontSize: '0.65rem' }}
-                                                    >
-                                                        ENROLL IN PARTNERSHIP
-                                                    </Button>
-                                                </CardContent>
-                                            )}
-                                        </Card>
-
-                                        {(() => {
-                                            const globalIntel = [
-                                                ...(syncData?.announcements || []).filter((a: any) => a.isGlobal).map((a: any) => ({ ...a, intelType: 'CHURCH UPDATE', icon: Megaphone, color: 'cyan' })),
-                                                ...(syncData?.events || []).filter((e: any) => e.isMajor).map((e: any) => ({ ...e, intelType: 'MAJOR EVENT', icon: Calendar, color: 'primary' })),
-                                                ...(syncData?.projects || []).filter((p: any) => p.isMajor).map((p: any) => ({ ...p, intelType: 'STRATEGIC PROJECT', icon: Star, color: 'cyan' })),
-                                                ...(syncData?.plans || []).filter((p: any) => p.isMajor).map((p: any) => ({ ...p, intelType: 'MINISTRY PLAN', icon: BookOpen, color: 'orange' })),
-                                            ].sort((a,b) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime()).slice(0, 10);
-
-                                            if (globalIntel.length === 0) {
-                                                return (
-                                                    <Typography variant="caption" sx={{ textAlign: 'center', opacity: 0.3, py: 4, fontWeight: 900 }}>
-                                                        NO GLOBAL INTEL REPORTED
-                                                    </Typography>
-                                                );
-                                            }
-
-                                            return globalIntel.map((intel) => (
-                                                <Card key={`${intel.intelType}-${intel.id}`} sx={{ p: 0, bgcolor: 'rgba(255,255,255,0.02)', borderLeft: `3px solid var(--${intel.color})`, borderRadius: 0 }}>
-                                                    <CardContent sx={{ p: 2 }}>
-                                                        <Box display="flex" alignItems="center" gap={1} mb={0.5}>
-                                                            <intel.icon size={12} color={`var(--${intel.color})`} />
-                                                            <Typography variant="caption" fontWeight="950" color={intel.color}>{intel.intelType}</Typography>
-                                                        </Box>
-                                                        <Typography variant="subtitle2" fontWeight="950" sx={{ lineHeight: 1.2 }}>{intel.title?.toUpperCase()}</Typography>
-                                                        {intel.content && (
-                                                            <Typography variant="caption" sx={{ opacity: 0.6, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', mt: 0.5, lineHeight: 1.3 }}>
-                                                                {intel.content}
-                                                            </Typography>
-                                                        )}
-                                                        <Box display="flex" justifyContent="space-between" alignItems="center" mt={1}>
-                                                            <Typography variant="caption" sx={{ opacity: 0.4, fontSize: '0.6rem', fontWeight: 700 }}>
-                                                                {new Date(intel.createdAt || intel.date).toLocaleDateString()}
-                                                            </Typography>
-                                                            <Button size="small" sx={{ p: 0, minWidth: 0, color: 'var(--cyan)', fontWeight: 900, fontSize: '0.65rem' }}>DETAILS</Button>
-                                                        </Box>
-                                                    </CardContent>
-                                                </Card>
-                                            ));
-                                        })()}
-                                    </Stack>
-                                </CardContent>
-                            </Card>
-
-                            {/* Divine Mandate (Affirmations) */}
-                            <Card className="holographic-card divine-mandate-card" sx={{ p: 4, border: '1px solid var(--primary-glow) !important' }}>
-                                <Typography variant="h6" fontWeight="950" mb={1} sx={{ color: 'var(--cyan)', letterSpacing: 2 }}>DIVINE MANDATE</Typography>
-                                <Typography variant="h5" className="divine-text" sx={{ opacity: 0.9, lineHeight: 1.4, fontStyle: 'italic' }}>
-                                    "{syncData?.affirmation?.content || "I walk in divine health and supernatural protection."}"
-                                </Typography>
                             </Card>
                         </Stack>
                     </Grid>
@@ -554,7 +557,7 @@ export default function PastorsDashboard() {
                 BackdropProps={{ timeout: 500, sx: { backdropFilter: 'blur(12px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
             >
                 <Fade in={enrollModalOpen}>
-                    <Box sx={{ 
+                    <Box tabIndex={-1} sx={{ 
                         position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
                         width: { xs: '90%', sm: 400 },
                         bgcolor: '#0a0a0a', border: '1px solid orange',

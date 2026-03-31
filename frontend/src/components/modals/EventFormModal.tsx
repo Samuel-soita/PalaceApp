@@ -13,9 +13,10 @@ interface EventFormModalProps {
     onClose: () => void;
     event?: any;
     onSuccess: () => void;
+    defaultDepartmentId?: string;
 }
 
-export default function EventFormModal({ open, onClose, event, onSuccess }: EventFormModalProps) {
+export default function EventFormModal({ open, onClose, event, onSuccess, defaultDepartmentId }: EventFormModalProps) {
     const { user } = useAuth();
     const [formData, setFormData] = useState({
         title: '',
@@ -23,7 +24,7 @@ export default function EventFormModal({ open, onClose, event, onSuccess }: Even
         time: '',
         location: '',
         description: '',
-        departmentId: user?.departmentId || '',
+        departmentId: defaultDepartmentId || user?.departmentId || '',
         budgetNeeded: 0,
         volunteersNeeded: 0,
         status: 'PLANNED',
@@ -55,7 +56,7 @@ export default function EventFormModal({ open, onClose, event, onSuccess }: Even
                 time: '',
                 location: '',
                 description: '',
-                departmentId: user?.departmentId || '',
+                departmentId: defaultDepartmentId || user?.departmentId || '',
                 budgetNeeded: 0,
                 volunteersNeeded: 0,
                 status: 'PLANNED',
@@ -64,7 +65,7 @@ export default function EventFormModal({ open, onClose, event, onSuccess }: Even
                 pastorIds: []
             });
         }
-    }, [event, open, user]);
+    }, [event, open, user, defaultDepartmentId]);
 
     const { data: departments } = useQuery(['departments'], async () => {
         const res = await api.get('/departments');

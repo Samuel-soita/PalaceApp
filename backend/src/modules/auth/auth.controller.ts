@@ -219,6 +219,10 @@ export const login = async (req: Request, res: Response) => {
 
 export const getProfile = async (req: any, res: Response) => {
     try {
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({ error: 'Authorization required' });
+        }
+
         const user = await prisma.user.findUnique({ 
             where: { id: req.user.id },
             include: { 
@@ -243,33 +247,39 @@ export const getProfile = async (req: any, res: Response) => {
                 });
             }
         }
-        // --- Fetch Permissions & Overrides ---
-        const rolePermissions = await prisma.rolePermission.findMany({
-            where: { role: { name: user.role } },
-            include: { permission: true }
-        });
 
-        const overrides = await prisma.permissionOverride.findMany({
-            where: { 
-                userId: user.id,
-                expiresAt: { gt: new Date() }
-            },
-            include: { permission: true }
-        });
+        // --- Fetch Permissions & Overrides (fault-tolerant) ---
+        let finalPermissions: string[] = [];
+        try {
+            const rolePermissions = await prisma.rolePermission.findMany({
+                where: { role: { name: user.role } },
+                include: { permission: true }
+            });
 
-        const basePerms = rolePermissions.map((rp: any) => rp.permission.code);
-        const overrideGrants = overrides.filter((o: any) => o.granted).map((o: any) => o.permission.code);
-        const overrideRevokes = overrides.filter((o: any) => !o.granted).map((o: any) => o.permission.code);
+            const overrides = await prisma.permissionOverride.findMany({
+                where: { 
+                    userId: user.id,
+                    expiresAt: { gt: new Date() }
+                },
+                include: { permission: true }
+            });
 
-        const finalPermissions = [...new Set([...basePerms, ...overrideGrants])]
-            .filter(code => !overrideRevokes.includes(code));
+            const basePerms = rolePermissions.map((rp: any) => rp.permission.code);
+            const overrideGrants = overrides.filter((o: any) => o.granted).map((o: any) => o.permission.code);
+            const overrideRevokes = overrides.filter((o: any) => !o.granted).map((o: any) => o.permission.code);
+
+            finalPermissions = [...new Set([...basePerms, ...overrideGrants])]
+                .filter(code => !overrideRevokes.includes(code));
+        } catch (permError) {
+            console.warn('[getProfile] Permissions fetch failed (non-blocking):', (permError as any).message);
+        }
 
         res.json({
             ...user,
             permissions: finalPermissions
         });
     } catch (error) {
-        console.error('Get Profile Error:', error);
+        console.error('[getProfile] Error:', error);
         res.status(500).json({ error: 'Failed to fetch profile', details: (error as any).message });
     }
 };

@@ -103,7 +103,8 @@ export const createPlan = async (req: AuthRequest, res: Response) => {
     const { type, title, description, departmentId, pastorIds } = req.body;
     
     const isExecutive = ['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'SECRETARY'].includes(req.user!.role);
-    const isManaging = req.user!.managedDepartments?.some((d: any) => d.id === departmentId) || req.user!.departmentId === departmentId;
+    const targetDeptId = departmentId || req.user?.departmentId;
+    const isManaging = req.user!.managedDepartments?.some((d: any) => d.id === targetDeptId) || req.user!.departmentId === targetDeptId;
     
     if (!isExecutive && req.user!.role === 'DEPARTMENT_LEADER' && !isManaging) {
         return res.status(403).json({ error: 'Leaders can only create plans for their own mission sector' });
@@ -120,7 +121,8 @@ export const createPlan = async (req: AuthRequest, res: Response) => {
     try {
         const plan = await prisma.plan.create({
             data: {
-                type, title, description, departmentId,
+                type, title, description,
+                departmentId: targetDeptId,
                 isMajor: req.body.isMajor === true,
                 approvalStatus: 'PENDING_APPROVAL',
             },
