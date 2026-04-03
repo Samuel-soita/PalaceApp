@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { 
     Container, Grid, Typography, Box, Card, CardContent, Button, Avatar, Chip, 
-    IconButton, LinearProgress, Stack, Divider, Badge, Paper, Tooltip
+    IconButton, LinearProgress, Stack, Divider, Badge, Paper, Tooltip, Snackbar, Alert
 } from '@mui/material';
 import { 
     Shield, Activity, Users, Landmark, Zap, Globe, 
     TrendingUp, MessageSquare, Bell, Star, ChevronRight, 
     Search, Filter, LayoutDashboard, Briefcase, Coins,
-    ArrowUpRight, Clock, CheckCircle2, AlertCircle, Send
+    ArrowUpRight, Clock, CheckCircle2, AlertCircle, Send, Wrench, FileText,
+    Calendar, Target
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -15,6 +16,14 @@ import api from '../lib/api-client';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { Link } from 'react-router-dom';
 import FinancialLedger from '../components/dashboard/FinancialLedger';
+import RepairApprovalManager from '../components/dashboard/RepairApprovalManager';
+import MissionReportsViewer from '../components/dashboard/MissionReportsViewer';
+import { OperationalTimeline } from '../components/dashboard/OperationalTimeline';
+import EventFormModal from '../components/modals/EventFormModal';
+import ProjectFormModal from '../components/modals/ProjectFormModal';
+import PlanFormModal from '../components/modals/PlanFormModal';
+import AnnouncementFormModal from '../components/modals/AnnouncementFormModal';
+import DepartmentReportModal from '../components/modals/DepartmentReportModal';
 
 export default function BishopDashboard() {
     const { user } = useAuth();
@@ -34,9 +43,66 @@ export default function BishopDashboard() {
         return res.data;
     });
 
+    const [eventModalOpen, setEventModalOpen] = useState(false);
+    const [projectModalOpen, setProjectModalOpen] = useState(false);
+    const [planModalOpen, setPlanModalOpen] = useState(false);
+    const [announcementModalOpen, setAnnouncementModalOpen] = useState(false);
+    const [reportModalOpen, setReportModalOpen] = useState(false);
+    const [toast, setToast] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({
+        open: false,
+        message: '',
+        severity: 'info'
+    });
+
+    // ─── Edit States ────────────────────────────────────────────────────────
+    const [editingProject, setEditingProject] = useState<any>(null);
+    const [editingEvent, setEditingEvent] = useState<any>(null);
+    const [editingPlan, setEditingPlan] = useState<any>(null);
+    const [editingAnnouncement, setEditingAnnouncement] = useState<any>(null);
+
     // --- Intelligence Analytics ---
     const totalBalance = syncData?.account?.balance || 0;
     const pendingApprovals = syncData?.transactions?.filter((tx: any) => tx.status !== 'APPROVED' && tx.type === 'WITHDRAWAL').length || 0;
+
+    // ─── Delete Mutation ─────────────────────────────────────────────────────
+    const deleteMutation = useMutation(
+        async ({ id, type }: { id: string; type: string }) => {
+            const endpoint = {
+                PROJECT: `/projects/${id}`,
+                EVENT: `/events/${id}`,
+                PLAN: `/plans/${id}`,
+                MEETING: `/meetings/${id}`,
+                ANNOUNCEMENT: `/announcements/${id}`
+            }[type];
+            return api.delete(endpoint!);
+        },
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries(['dashboard-sync']);
+                setToast({ open: true, message: 'Record decommissioned successfully.', severity: 'success' });
+            },
+            onError: (err: any) => {
+                setToast({ 
+                    open: true, 
+                    message: err.response?.data?.error || 'Failed to delete record.', 
+                    severity: 'error' 
+                });
+            }
+        }
+    );
+
+    const handleEdit = (item: any) => {
+        const type = item.type || (item.priority ? 'ANNOUNCEMENT' : 'PROJECT');
+        if (type === 'PROJECT') { setEditingProject(item); setProjectModalOpen(true); }
+        if (type === 'EVENT') { setEditingEvent(item); setEventModalOpen(true); }
+        if (type === 'PLAN') { setEditingPlan(item); setPlanModalOpen(true); }
+        if (type === 'ANNOUNCEMENT' || type === 'ALERT') { setEditingAnnouncement(item); setAnnouncementModalOpen(true); }
+    };
+
+    const handleDelete = (item: any) => {
+        const type = item.type || (item.priority ? 'ANNOUNCEMENT' : 'PROJECT');
+        deleteMutation.mutate({ id: item.id, type });
+    };
 
     return (
         <DashboardLayout>
@@ -139,7 +205,44 @@ export default function BishopDashboard() {
                             </CardContent>
                         </Card>
                     </Grid>
+                </Grid>
 
+                {/* MISSION COMMAND HUB - Creation Center */}
+                <Box sx={{ mt: 4, mb: 4 }}>
+                    <Typography variant="caption" fontWeight="1000" sx={{ letterSpacing: 3, color: 'var(--primary)', mb: 2, display: 'block' }}>MISSION COMMAND HUB</Typography>
+                    <Grid container spacing={2}>
+                        {[
+                            { label: 'NEW PROJECT', icon: Briefcase, color: 'var(--cyan)', onClick: () => setProjectModalOpen(true) },
+                            { label: 'HOST EVENT', icon: Calendar, color: 'var(--primary)', onClick: () => setEventModalOpen(true) },
+                            { label: 'STRATEGIC PLAN', icon: Target, color: 'pink', onClick: () => setPlanModalOpen(true) },
+                            { label: 'SUBMIT REPORT', icon: FileText, color: 'var(--cyan)', onClick: () => setReportModalOpen(true) },
+                            { label: 'GLOBAL ALERT', icon: Bell, color: 'orange', onClick: () => setAnnouncementModalOpen(true) },
+                        ].map((action, i) => (
+                            <Grid item xs={6} sm={4} md={2.4} key={i}>
+                                <Button
+                                    fullWidth
+                                    onClick={action.onClick}
+                                    sx={{
+                                        py: 3, display: 'flex', flexDirection: 'column', gap: 1.5,
+                                        bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)',
+                                        borderRadius: 0, color: 'white',
+                                        '&:hover': {
+                                            bgcolor: 'rgba(255,255,255,0.05)',
+                                            borderColor: action.color,
+                                            transform: 'translateY(-4px)',
+                                            boxShadow: `0 10px 20px -10px ${action.color}`
+                                        }
+                                    }}
+                                >
+                                    <action.icon size={22} color={action.color} />
+                                    <Typography variant="caption" fontWeight="1000" sx={{ fontSize: '0.65rem', letterSpacing: 1 }}>{action.label}</Typography>
+                                </Button>
+                            </Grid>
+                        ))}
+                    </Grid>
+                </Box>
+
+                <Grid container spacing={4}>
                     {/* MAIN COMMAND AREA */}
                     <Grid item xs={12} lg={8}>
                         <Stack spacing={4}>
@@ -148,6 +251,17 @@ export default function BishopDashboard() {
                                 account={syncData?.account} 
                                 transactions={syncData?.transactions || []} 
                             />
+
+                            {/* TECHNICAL REPAIR AUTHORIZATIONS */}
+                            <Card className="mission-intel-card" sx={{ borderLeft: '4px solid #ff4d4d' }}>
+                                <CardContent sx={{ p: 4 }}>
+                                    <Box display="flex" alignItems="center" gap={2} mb={3}>
+                                        <Wrench size={24} color="#ff4d4d" />
+                                        <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>REPAIR AUTHORIZATIONS</Typography>
+                                    </Box>
+                                    <RepairApprovalManager />
+                                </CardContent>
+                            </Card>
 
                             {/* SECTORAL OVERWATCH */}
                             <Card className="mission-intel-card">
@@ -285,6 +399,17 @@ export default function BishopDashboard() {
                                 </CardContent>
                             </Card>
 
+                            {/* MISSION REPORTS OVERWATCH */}
+                            <Card className="mission-intel-card" sx={{ border: '1px solid rgba(0, 255, 255, 0.2) !important', mb: 3 }}>
+                                <CardContent sx={{ p: 3 }}>
+                                    <Box display="flex" alignItems="center" gap={1.5} mb={3}>
+                                        <FileText size={20} color="var(--cyan)" />
+                                        <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 2 }}>MISSION COMMAND REPORTS (PDF)</Typography>
+                                    </Box>
+                                    <MissionReportsViewer limit={10} />
+                                </CardContent>
+                            </Card>
+
                             {/* AUDIT COMMAND LOG */}
                             <Card className="mission-intel-card" sx={{ border: '1px solid rgba(255,255,255,0.05) !important' }}>
                                 <CardContent sx={{ p: 3 }}>
@@ -326,6 +451,16 @@ export default function BishopDashboard() {
                     </Grid>
                 </Grid>
             </Container>
+
+            <EventFormModal open={eventModalOpen} onClose={() => { setEventModalOpen(false); setEditingEvent(null); }} event={editingEvent} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+            <ProjectFormModal open={projectModalOpen} onClose={() => { setProjectModalOpen(false); setEditingProject(null); }} project={editingProject} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+            <PlanFormModal open={planModalOpen} onClose={() => { setPlanModalOpen(false); setEditingPlan(null); }} plan={editingPlan} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+            <AnnouncementFormModal open={announcementModalOpen} onClose={() => { setAnnouncementModalOpen(false); setEditingAnnouncement(null); }} announcement={editingAnnouncement} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+            <DepartmentReportModal open={reportModalOpen} onClose={() => setReportModalOpen(false)} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+            
+            <Snackbar open={toast.open} autoHideDuration={4000} onClose={() => setToast({ ...toast, open: false })} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+                <Alert onClose={() => setToast({ ...toast, open: false })} severity={toast.severity} variant="filled" sx={{ width: '100%', borderRadius: 2 }}>{toast.message}</Alert>
+            </Snackbar>
         </DashboardLayout>
     );
 }

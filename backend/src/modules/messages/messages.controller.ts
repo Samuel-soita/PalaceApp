@@ -8,6 +8,7 @@ export const getMessages = async (req: Request, res: Response) => {
 
     // RULE: Communication is ONLY between leaders. Members are excluded.
     if (!currentUser || currentUser.role === 'MEMBER') {
+        console.error('getMessages returning 403. currentUser:', currentUser);
         return res.status(403).json({ error: 'Communication infrastructure is reserved for Leadership only.' });
     }
 
@@ -25,9 +26,10 @@ export const getMessages = async (req: Request, res: Response) => {
                     ]
                 } as any)
             },
-            include: { 
-                sender: { select: { name: true, role: true, avatarUrl: true } }, 
-                receiver: { select: { name: true, avatarUrl: true } } 
+            include: {
+                sender: { select: { name: true, role: true, avatarUrl: true } },
+                receiver: { select: { name: true, avatarUrl: true } },
+                taggedUsers: { select: { id: true, name: true, role: true } }
             } as any,
             orderBy: { createdAt: 'asc' },
         });
@@ -35,8 +37,8 @@ export const getMessages = async (req: Request, res: Response) => {
             const sender = msg.sender;
             const receiver = msg.receiver;
 
-            const isSenderLeader = sender?.role === 'DEPARTMENT_LEADER' || sender?.role === 'SUPER_ADMIN' || sender?.role === 'WATUA';
-            
+            const isSenderLeader = sender?.role === 'DEPARTMENT_LEADER' || sender?.role === 'SUPER_ADMIN' || sender?.role === 'WATUA' || sender?.role === 'PASTOR';
+
             return {
                 ...msg,
                 sender: {
@@ -48,8 +50,8 @@ export const getMessages = async (req: Request, res: Response) => {
                     receiver: {
                         ...receiver,
                         // If it's a private chat, receiver info is also important
-                        name: (msg.receiver?.role === 'DEPARTMENT_LEADER' || msg.receiver?.role === 'SUPER_ADMIN') ? receiver.name : 'Ministry Member',
-                        avatarUrl: (msg.receiver?.role === 'DEPARTMENT_LEADER' || msg.receiver?.role === 'SUPER_ADMIN') ? receiver.avatarUrl : null
+                        name: (receiver?.role === 'DEPARTMENT_LEADER' || receiver?.role === 'SUPER_ADMIN' || receiver?.role === 'PASTOR' || receiver?.role === 'WATUA') ? receiver.name : 'Ministry Member',
+                        avatarUrl: (receiver?.role === 'DEPARTMENT_LEADER' || receiver?.role === 'SUPER_ADMIN' || receiver?.role === 'PASTOR' || receiver?.role === 'WATUA') ? receiver.avatarUrl : null
                     }
                 })
             };
@@ -62,8 +64,8 @@ export const getMessages = async (req: Request, res: Response) => {
 };
 
 export const createMessage = async (req: Request, res: Response) => {
-    const { content, senderId, receiverId, departmentId, projectId, eventId, chatType, taggedDepartmentIds } = req.body;
-    
+    const { content, senderId, receiverId, departmentId, projectId, eventId, chatType, taggedUserIds, taggedDepartmentIds } = req.body;
+
     // Inappropriate keywords check (Moderation)
     const inappropriateKeywords = ['gossip', 'attack', 'abuse', 'hate', 'foul', 'badword']; // Placeholder keywords
     const isFlagged = inappropriateKeywords.some(keyword => content.toLowerCase().includes(keyword));
@@ -73,7 +75,7 @@ export const createMessage = async (req: Request, res: Response) => {
         if (!sender || sender.role === 'MEMBER') {
             return res.status(403).json({ error: 'Communication infrastructure is reserved for Leadership only.' });
         }
-        
+
         if ((sender as any)?.isSuspended) {
             return res.status(403).json({ error: 'Your account is suspended due to moderation policy.' });
         }
@@ -88,12 +90,17 @@ export const createMessage = async (req: Request, res: Response) => {
                 eventId,
                 chatType: chatType || 'DEPARTMENT',
                 isFlagged,
-                flagReason: isFlagged ? 'Inappropriate content detected' : null
+                flagReason: isFlagged ? 'Inappropriate content detected' : null,
+                taggedDepartmentIds: taggedDepartmentIds || [],
+                taggedUsers: taggedUserIds ? {
+                    connect: taggedUserIds.map((id: string) => ({ id }))
+                } : undefined
             } as any,
-            include: { 
+            include: {
                 sender: { select: { id: true, name: true, role: true, avatarUrl: true, wrongdoingCount: true } },
                 receiver: { select: { name: true, avatarUrl: true } },
-                department: { select: { name: true } }
+                department: { select: { name: true } },
+                taggedUsers: { select: { id: true, name: true } }
             } as any,
         });
 
@@ -127,7 +134,7 @@ export const createMessage = async (req: Request, res: Response) => {
         }
 
         // Sanitize before response/emit
-        const isSenderLeader = (message as any).sender?.role === 'DEPARTMENT_LEADER' || (message as any).sender?.role === 'SUPER_ADMIN' || (message as any).sender?.role === 'WATUA';
+        const isSenderLeader = (message as any).sender?.role === 'DEPARTMENT_LEADER' || (message as any).sender?.role === 'SUPER_ADMIN' || (message as any).sender?.role === 'WATUA' || (message as any).sender?.role === 'PASTOR';
         const sanitizedMessage = {
             ...message,
             sender: {
@@ -138,20 +145,35 @@ export const createMessage = async (req: Request, res: Response) => {
             ...((message as any).receiver && {
                 receiver: {
                     ...(message as any).receiver,
-                    name: ((message as any).receiver?.role === 'DEPARTMENT_LEADER' || (message as any).receiver?.role === 'SUPER_ADMIN') ? (message as any).receiver.name : 'Ministry Member',
-                    avatarUrl: ((message as any).receiver?.role === 'DEPARTMENT_LEADER' || (message as any).receiver?.role === 'SUPER_ADMIN') ? (message as any).receiver.avatarUrl : null
+                    name: ((message as any).receiver?.role === 'DEPARTMENT_LEADER' || (message as any).receiver?.role === 'SUPER_ADMIN' || (message as any).receiver?.role === 'PASTOR' || (message as any).receiver?.role === 'WATUA') ? (message as any).receiver.name : 'Ministry Member',
+                    avatarUrl: ((message as any).receiver?.role === 'DEPARTMENT_LEADER' || (message as any).receiver?.role === 'SUPER_ADMIN' || (message as any).receiver?.role === 'PASTOR' || (message as any).receiver?.role === 'WATUA') ? (message as any).receiver.avatarUrl : null
                 }
             })
         };
 
-        const roomId = receiverId ? [senderId, receiverId].sort().join('-') : ((message as any).departmentId || (message as any).projectId || (message as any).eventId);
+        const roomId = receiverId ? [senderId, receiverId].sort().join('-') : ((message as any).departmentId || (message as any).projectId || (message as any).eventId || ((message as any).chatType === 'GLOBAL' ? 'church-wide' : null));
         if (roomId) {
-            emitToRoom(roomId, 'receive_message', sanitizedMessage);
+            emitToRoom(roomId, 'new-message', sanitizedMessage);
         }
 
         // Handle Mentions/Notifications (Slightly modified to use sanitized name if needed)
         const notificationName = isSenderLeader ? (message as any).sender.name : 'A member';
-        
+
+        // Notify Tagged Users
+        if (taggedUserIds && Array.isArray(taggedUserIds)) {
+            for (const tId of taggedUserIds) {
+                if (tId === senderId) continue; // Don't notify self
+                await prisma.notification.create({
+                    data: {
+                        userId: tId,
+                        title: '🗨️ Tagged in Comms',
+                        message: `${notificationName} tagged you in a communication.`,
+                        type: 'MESSAGE'
+                    }
+                });
+            }
+        }
+
         if ((message as any).departmentId && !receiverId) {
             // ... (keep as is, notifications use internal logic)
         }
@@ -168,12 +190,11 @@ export const updateMessage = async (req: Request, res: Response) => {
     try {
         const message = await prisma.message.update({
             where: { id },
-            // @ts-ignore - Prisma might need a rebuild to see these fields in some IDEs
             data: { content, isEdited: true },
             include: { sender: { select: { name: true, role: true } } },
         });
 
-        const roomId = (message as any).departmentId || (message as any).projectId || (message as any).eventId;
+        const roomId = (message as any).departmentId || (message as any).projectId || (message as any).eventId || ((message as any).chatType === 'GLOBAL' ? 'church-wide' : null);
         if (roomId) {
             emitToRoom(roomId, 'message_edited', message);
         }
@@ -190,13 +211,13 @@ export const deleteMessage = async (req: Request, res: Response) => {
         // Soft delete
         const message = await prisma.message.update({
             where: { id },
-            // @ts-ignore
+
             data: { isDeleted: true, content: 'This message was deleted' },
         });
 
-        const roomId = message.departmentId || message.projectId || message.eventId;
+        const roomId = message.departmentId || message.projectId || message.eventId || (message.chatType === 'GLOBAL' ? 'church-wide' : null);
         if (roomId) {
-            emitToRoom(roomId, 'message_deleted', { id, roomId });
+            emitToRoom(roomId as string, 'message_deleted', { id, roomId });
         }
 
         res.json(message);

@@ -12,8 +12,16 @@ export const getPastorModules = async (req: Request, res: Response) => {
         const user = (req as any).user;
         if (!user) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
+        const { userId } = req.query;
+        
+        // If userId is provided, ensure requester is an admin/watua
+        let targetId = user.id;
+        if (userId && ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'WATUA'].includes(user.role)) {
+            targetId = userId as string;
+        }
+
         const modules = await (prisma as any).pastorModuleAccess.findMany({
-            where: { pastorId: user.id }
+            where: { pastorId: targetId }
         });
 
         return res.json({

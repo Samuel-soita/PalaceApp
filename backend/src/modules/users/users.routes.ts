@@ -1,42 +1,70 @@
 import { Router } from 'express';
-import * as usersController from './users.controller.js';
+import { 
+    getUsers, 
+    getPendingUsers, 
+    activateUser, 
+    markCardAsPaid,
+    getUsersTechnical,
+    getSystemStats,
+    getSystemDiagnostics,
+    getAuditLogsTechnical,
+    getTrashHub,
+    restoreEntity,
+    getFeatureFlags,
+    updateFeatureFlag,
+    executeIntervention,
+    updateUserBioTechnical,
+    enrollPartnership,
+    requestCardRenewal,
+    approveCardRenewal,
+    searchUsers
+} from './users.controller.js';
 import { authenticate, authorize, moduleGuard } from '../../middleware/auth.middleware.js';
 import { mutationLimiter } from '../../middleware/rate-limiting.middleware.js';
+import { validate } from '../../middleware/validate.middleware.js';
+import { UserUpdateSchema, UserRegistrationSchema } from '../../schemas/UserSchema.js';
 
 const router = Router();
 
-router.get('/', authenticate, moduleGuard('MemberRegistration'), usersController.getUsers);
-router.get('/pending', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR']), moduleGuard('MemberRegistration'), usersController.getPendingUsers);
-router.patch('/:id/status', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR']), mutationLimiter, moduleGuard('MemberRegistration'), usersController.activateUser);
-router.patch('/:id/mark-paid', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY']), usersController.markCardAsPaid);
+router.use(authenticate);
 
-// Watua Intervention Routes
-router.get('/technical/all', authenticate, authorize(['WATUA']), usersController.getUsersTechnical);
-router.get('/technical/stats', authenticate, authorize(['WATUA']), usersController.getSystemStats);
-router.get('/technical/diagnostics', authenticate, authorize(['WATUA']), usersController.getSystemDiagnostics);
-router.get('/technical/audit/all', authenticate, authorize(['WATUA']), usersController.getAuditLogsTechnical);
-router.get('/technical/trash', authenticate, authorize(['WATUA']), usersController.getTrashHub);
-router.post('/technical/restore/:id', authenticate, authorize(['WATUA', 'SUPER_ADMIN']), mutationLimiter, usersController.restoreEntity);
-router.get('/technical/flags', authenticate, authorize(['WATUA']), usersController.getFeatureFlags);
-router.patch('/technical/flags', authenticate, authorize(['WATUA']), mutationLimiter, usersController.updateFeatureFlag);
-router.post('/technical/intervention/:id', authenticate, authorize(['WATUA', 'SUPER_ADMIN', 'SECRETARY']), mutationLimiter, usersController.executeIntervention);
-router.patch('/technical/bio/:id', authenticate, authorize(['WATUA']), mutationLimiter, usersController.updateUserBioTechnical);
-router.post('/partnership/enroll', authenticate, usersController.enrollPartnership);
-router.post('/card-renewal/request', authenticate, usersController.requestCardRenewal);
-router.post('/:id/card-renewal/approve', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY']), usersController.approveCardRenewal);
+// 👤 CORE USER MANAGEMENT
+router.get('/', moduleGuard('MemberRegistration'), getUsers);
+router.get('/pending', authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR']), moduleGuard('MemberRegistration'), getPendingUsers);
+router.patch('/:id/status', authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR']), mutationLimiter, moduleGuard('MemberRegistration'), activateUser);
+router.patch('/:id/mark-paid', authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY']), markCardAsPaid);
+router.get('/search-members', searchUsers);
 
+// 🎁 PARTNERSHIP & CARD SERVICES
+router.post('/partnership/enroll', mutationLimiter, enrollPartnership);
+router.post('/card-renewal/request', mutationLimiter, requestCardRenewal);
+router.post('/:id/card-renewal/approve', authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY']), approveCardRenewal);
+
+// 🛠️ WATUA TECHNICAL KERNEL (SYSTEM ENGINEER ONLY)
+const watuaOnly = authorize(['WATUA']);
+const highPrivilege = authorize(['WATUA', 'SUPER_ADMIN']);
+
+router.get('/technical/all', watuaOnly, getUsersTechnical);
+router.get('/technical/stats', watuaOnly, getSystemStats);
+router.get('/technical/diagnostics', watuaOnly, getSystemDiagnostics);
+router.get('/technical/audit/all', watuaOnly, getAuditLogsTechnical);
+router.get('/technical/trash', watuaOnly, getTrashHub);
+router.post('/technical/restore/:id', highPrivilege, mutationLimiter, restoreEntity);
+router.get('/technical/flags', watuaOnly, getFeatureFlags);
+router.patch('/technical/flags', watuaOnly, mutationLimiter, updateFeatureFlag);
+router.post('/technical/intervention/:id', authorize(['WATUA', 'SUPER_ADMIN', 'SECRETARY']), mutationLimiter, executeIntervention);
+router.patch('/technical/bio/:id', watuaOnly, mutationLimiter, validate(UserUpdateSchema), updateUserBioTechnical);
+
+// 👨‍🏫 PASTORAL CORE & WATUA DUAL-AUTH
 import * as watuaController from './watua.controller.js';
-
 import * as pastorController from './pastor.controller.js';
 
-// 👨‍⚖️ Pastoral Responsibility Engine (DYNAMIC MODULE SCOPING)
-router.get('/pastor/assigned-modules', authenticate, authorize(['PASTOR', 'SUPER_ADMIN', 'SYSTEM_ADMIN']), pastorController.getPastorModules);
-router.post('/pastor/modules/assign', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN']), mutationLimiter, pastorController.assignModuleToPastor);
-router.delete('/pastor/modules/revoke/:id', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN']), mutationLimiter, pastorController.revokeModuleFromPastor);
+router.get('/pastor/assigned-modules', authorize(['PASTOR', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'WATUA']), pastorController.getPastorModules);
+router.post('/pastor/modules/assign', highPrivilege, mutationLimiter, pastorController.assignModuleToPastor);
+router.delete('/pastor/modules/revoke/:id', highPrivilege, mutationLimiter, pastorController.revokeModuleFromPastor);
 
-// Watua Dual-Auth Routes
-router.post('/technical/action', authenticate, authorize(['WATUA']), mutationLimiter, watuaController.initiateCriticalAction);
-router.post('/technical/action/:id/approve', authenticate, authorize(['WATUA', 'SUPER_ADMIN']), mutationLimiter, watuaController.approveCriticalAction);
-router.delete('/technical/action/:id', authenticate, authorize(['WATUA', 'SUPER_ADMIN']), mutationLimiter, watuaController.cancelCriticalAction);
+router.post('/technical/action', watuaOnly, mutationLimiter, watuaController.initiateCriticalAction);
+router.post('/technical/action/:id/approve', highPrivilege, mutationLimiter, watuaController.approveCriticalAction);
+router.delete('/technical/action/:id', highPrivilege, mutationLimiter, watuaController.cancelCriticalAction);
 
 export default router;

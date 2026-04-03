@@ -31,7 +31,7 @@ export default function AnnouncementBanner() {
                 alignItems: 'center',
                 gap: '4rem',
                 whiteSpace: 'nowrap',
-                animation: 'marquee 30s linear infinite',
+                animation: 'marquee 100s linear infinite',
                 paddingLeft: '100%'
             }}>
                 {globalAnnouncements.map((ann: any) => (

@@ -125,7 +125,17 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
             }
         }
 
-        mutation.mutate({ ...formData, attachmentUrl });
+        // Convert date to ISO datetime string for backend schema
+        const isoDate = new Date(`${formData.date}T${formData.time || '00:00'}:00`).toISOString();
+        
+        // Construct payload (status and date/time are now correctly handled by schema)
+        const cleanPayload = { 
+            ...formData, 
+            date: isoDate, 
+            attachmentUrl 
+        };
+
+        mutation.mutate(cleanPayload);
         setUploading(false);
         setSelectedFile(null);
     };

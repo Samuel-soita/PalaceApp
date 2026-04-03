@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Box, Typography, LinearProgress, Chip, IconButton, Modal, Backdrop, Fade } from '@mui/material';
-import { Briefcase, Clock, Building2, X, CheckCircle2, Pause, Play, AlertTriangle } from 'lucide-react';
+import { Briefcase, Clock, Building2, X, CheckCircle2, Pause, Play, AlertTriangle, Edit, Trash2 } from 'lucide-react';
+import { Button } from '@mui/material';
 
 interface Project {
     id: string;
@@ -16,6 +17,8 @@ interface Project {
 
 interface InitiativesTrackProps {
     projects: Project[];
+    onEdit?: (item: Project) => void;
+    onDelete?: (item: Project) => void;
 }
 
 const STATUS_CONFIG: Record<string, { color: string; bg: string; border: string; icon: React.ElementType }> = {
@@ -26,7 +29,7 @@ const STATUS_CONFIG: Record<string, { color: string; bg: string; border: string;
     CANCELLED:   { color: '#ef4444', bg: 'rgba(239,68,68,0.08)',  border: 'rgba(239,68,68,0.35)',  icon: AlertTriangle },
 };
 
-export const InitiativesTrack = ({ projects }: InitiativesTrackProps) => {
+export const InitiativesTrack = ({ projects, onEdit, onDelete }: InitiativesTrackProps) => {
     const [selected, setSelected] = useState<Project | null>(null);
     const trackRef = useRef<HTMLDivElement>(null);
 
@@ -235,6 +238,51 @@ export const InitiativesTrack = ({ projects }: InitiativesTrackProps) => {
                                                 </Typography>
                                             </Box>
                                         )}
+
+                                        {/* Actions */}
+                                        <Box sx={{ mt: 3, display: 'flex', gap: 1.5 }}>
+                                            <Button
+                                                fullWidth
+                                                variant="contained"
+                                                startIcon={<Edit size={14} />}
+                                                disabled={selected.approvalStatus === 'APPROVED'}
+                                                onClick={() => {
+                                                    onEdit?.(selected);
+                                                    handleClose();
+                                                }}
+                                                sx={{ 
+                                                    borderRadius: 2, 
+                                                    fontWeight: 900, 
+                                                    fontSize: '0.7rem',
+                                                    bgcolor: cfg.color,
+                                                    '&:hover': { bgcolor: cfg.color, filter: 'brightness(1.1)' }
+                                                }}
+                                            >
+                                                {selected.approvalStatus === 'APPROVED' ? 'LOCKED' : 'EDIT'}
+                                            </Button>
+                                            <Button
+                                                fullWidth
+                                                variant="outlined"
+                                                startIcon={<Trash2 size={14} />}
+                                                disabled={selected.approvalStatus === 'APPROVED'}
+                                                onClick={() => {
+                                                    if (window.confirm('Are you sure you want to decommission this initiative?')) {
+                                                        onDelete?.(selected);
+                                                        handleClose();
+                                                    }
+                                                }}
+                                                sx={{ 
+                                                    borderRadius: 2, 
+                                                    fontWeight: 900, 
+                                                    fontSize: '0.7rem',
+                                                    borderColor: 'rgba(255,255,255,0.1)',
+                                                    color: 'text.secondary',
+                                                    '&:hover': { borderColor: 'error.main', color: 'error.main', bgcolor: 'rgba(255,0,0,0.05)' }
+                                                }}
+                                            >
+                                                DELETE
+                                            </Button>
+                                        </Box>
                                     </Box>
                                 </Box>
                             );

@@ -84,7 +84,7 @@ export const getMyChildren = async (req: any, res: Response) => {
     try {
         const children = await prisma.child.findMany({
             where: { parentId: req.user.id },
-            include: { department: { select: { name: true } } }
+            include: { department: true }
         });
         res.json(children);
     } catch (error: any) {
@@ -121,9 +121,9 @@ export const getAllChildren = async (req: any, res: Response) => {
                 skip,
                 take,
                 include: { 
-                    parent: { select: { name: true, membershipNumber: true } },
-                    department: { select: { name: true } },
-                    assignedPastor: { select: { name: true } }
+                    parent: true,
+                    department: true,
+                    assignedPastor: { select: { id: true, name: true, role: true } }
                 },
                 orderBy: { createdAt: 'desc' }
             }),

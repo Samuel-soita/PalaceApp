@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../lib/db';
 import api from '../lib/api-client';
 import {
     Typography, Grid, Card, CardContent, Box, Button, TextField, Dialog, DialogTitle,
@@ -11,7 +12,7 @@ import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
 import { isUserManagingDepartment } from '../utils/auth-options';
 
-interface Project {
+interface ChurchProject {
     id: string;
     title: string;
     description: string;
@@ -25,9 +26,9 @@ interface Project {
 
 export default function Projects() {
     const { user } = useAuth();
-    const queryClient = useQueryClient();
+
     const [open, setOpen] = useState(false);
-    const [editProject, setEditProject] = useState<Project | null>(null);
+    const [editProject, setEditProject] = useState<ChurchProject | null>(null);
     const [formData, setFormData] = useState({
         title: '',
         description: '',
@@ -44,51 +45,53 @@ export default function Projects() {
     const [page, setPage] = useState(1);
     const limit = 12;
 
-    const { data: projectsData, isLoading } = useQuery(['projects', page], async () => {
-        const res = await api.get('/projects', { params: { page, limit } });
-        return res.data;
-    });
-
-    const projects = projectsData?.data || [];
-    const meta = projectsData?.meta || { total: 0, totalPages: 1 };
+    const projects = useLiveQuery(() => db.projects.orderBy('createdAt').reverse().toArray(), []) || [];
+    const meta = { total: projects.length, totalPages: Math.ceil((projects.length || 1) / limit) };
 
     const filteredProjects = projects.filter((p: any) => {
         if (isGlobalAdmin) return true;
         return p.approvalStatus === 'APPROVED' || isUserManagingDepartment(user, p.departmentId);
     });
 
-    const { data: departments } = useQuery(['departments'], async () => {
-        const res = await api.get('/departments');
-        return res.data;
-    });
-
+    const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
     const userDepartments = departments?.filter((d: any) => isUserManagingDepartment(user, d.id)) || [];
     const showDepartmentSelect = isGlobalAdmin || userDepartments.length > 1;
 
-    const { data: pastors } = useQuery(['pastors'], async () => {
-        const res = await api.get('/users?role=PASTOR');
-        // fallback filtering if API doesn't support query params natively
-        return Array.isArray(res.data) 
-            ? res.data.filter((u: any) => u.role === 'PASTOR') 
-            : [];
-    });
+    const pastors = useLiveQuery(() => db.users.where('role').equals('PASTOR').toArray(), []) || [];
 
-    const createMutation = useMutation(
-        (newProject: any) => api.post('/projects', newProject),
-        { onSuccess: () => { queryClient.invalidateQueries(['projects']); handleClose(); } }
-    );
+    const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
+        const actionId = id || crypto.randomUUID();
+        const timestamp = Date.now();
 
-    const updateMutation = useMutation(
-        (updatedProject: any) => api.patch(`/projects/${updatedProject.id}`, updatedProject),
-        { onSuccess: () => { queryClient.invalidateQueries(['projects']); handleClose(); } }
-    );
+        if (method !== 'DELETE') {
+            await db.projects.put({ 
+                ...payload, 
+                id: actionId, 
+                syncStatus: 'PENDING',
+                version: (payload.version || 0) + 1,
+                department: departments.find(d => d.id === payload.departmentId) || { name: 'Unknown' },
+                createdAt: new Date().toISOString()
+            });
+        } else {
+            if (id) await db.projects.delete(id);
+        }
 
-    const deleteMutation = useMutation(
-        (id: string) => api.delete(`/projects/${id}`),
-        { onSuccess: () => queryClient.invalidateQueries(['projects']) }
-    );
+        await db.syncQueue.put({
+            id: crypto.randomUUID(),
+            timestamp,
+            entity: 'PROJECT',
+            method,
+            url: method === 'POST' ? '/projects' : `/projects/${actionId}`,
+            payload: { ...payload, isOfflineSync: true, localVersion: payload.version },
+            status: 'PENDING',
+            retryCount: 0,
+            errorLog: []
+        });
 
-    const handleOpen = (project: Project | null = null) => {
+        handleClose();
+    };
+
+    const handleOpen = (project: ChurchProject | null = null) => {
         if (project) {
             setEditProject(project);
             setFormData({
@@ -126,24 +129,24 @@ export default function Projects() {
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!editProject && formData.pastorIds.length !== 2) {
-            alert("You must select exactly 2 Pastors to authorize this Project before deployment.");
+            alert("You must select exactly 2 Pastors to authorize this ChurchProject before deployment.");
             return;
         }
 
         if (editProject) {
-            updateMutation.mutate({ ...formData, id: editProject.id });
+            handleAction({ ...formData, id: editProject.id, version: (editProject as any).version || 0 }, 'PATCH', editProject.id);
         } else {
-            createMutation.mutate(formData);
+            handleAction(formData, 'POST');
         }
     };
 
     const handleDelete = (id: string) => {
         if (window.confirm('Terminate this project deployment? This action is irreversible.')) {
-            deleteMutation.mutate(id);
+            handleAction({ id, version: 0 }, 'DELETE', id);
         }
     };
 
-    if (isLoading) return (
+    if (projects === undefined) return (
         <DashboardLayout>
             <Box sx={{ height: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <LinearProgress sx={{ width: 200, borderRadius: 1 }} />
@@ -175,7 +178,7 @@ export default function Projects() {
             </Box>
 
             <Grid container spacing={4}>
-                {filteredProjects?.map((project: Project) => (
+                {filteredProjects?.map((project: any) => (
                     <Grid item xs={12} md={6} key={project.id}>
                         <Card className="holographic-card" sx={{ borderRadius: 4 }}>
                             <CardContent sx={{ p: 4 }}>
@@ -258,7 +261,7 @@ export default function Projects() {
                 </Box>
             )}
 
-            {/* Project CRUD Modal */}
+            {/* ChurchProject CRUD Modal */}
             <Dialog 
                 open={open} 
                 onClose={handleClose} 
@@ -273,7 +276,7 @@ export default function Projects() {
                     <DialogContent>
                         <Box display="flex" flexDirection="column" gap={3} mt={1}>
                             <TextField
-                                label="Project Title"
+                                label="ChurchProject Title"
                                 fullWidth
                                 required
                                 value={formData.title}
@@ -372,7 +375,7 @@ export default function Projects() {
                         <Button
                             type="submit"
                             variant="contained"
-                            disabled={createMutation.isLoading || updateMutation.isLoading}
+                            disabled={false}
                             sx={{ borderRadius: 2, px: 4, fontWeight: '900' }}
                         >
                             {editProject ? 'UPDATE REGISTRY' : 'EXECUTE LAUNCH'}

@@ -2,193 +2,199 @@ import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
 import { getOrSetCache } from '../../utils/redis.js';
 import redis from '../../utils/redis.js';
+import { catchAsync, AppError } from '../../utils/errors.js';
+import { logAudit } from '../../utils/audit.js';
 
-export const createMeeting = async (req: any, res: Response) => {
-    const user = (req as any).user;
-    const isExecutive = ['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'SECRETARY'].includes(user.role);
+export const createMeeting = catchAsync(async (req: any, res: Response) => {
+    const user = req.user;
     
-    if (!isExecutive && user.role !== 'DEPARTMENT_LEADER') {
-        return res.status(403).json({ error: 'Members cannot convene tactical meetings' });
+    // Zod already guarantees `date` is a valid ISO string.
+    const data = req.body;
+    
+    // Validate Meeting Organizer rules
+    if (user.role === 'DEPARTMENT_LEADER' && user.departmentId !== data.departmentId) {
+         throw new AppError('Department Leaders can only convene meetings for their own department', 403);
     }
 
-    const {
-        title, departmentId, date, time, venue, meetingType,
-        agenda, followUpPersonId, followUpDeadline, isPartnerOnly
-    } = req.body;
-
-    try {
-        const meeting = await prisma.meeting.create({
+    const meeting = await prisma.$transaction(async (tx) => {
+        const newMeeting = await tx.meeting.create({
             data: {
-                title,
-                departmentId,
-                date: new Date(date),
-                time,
-                venue,
-                meetingType,
-                agenda,
+                title: data.title,
+                departmentId: data.departmentId,
+                date: new Date(data.date),
+                time: data.time,
+                venue: data.venue,
+                meetingType: data.meetingType,
+                agenda: data.agenda,
                 organizerId: user.id,
-                followUpPersonId,
-                followUpDeadline: followUpDeadline ? new Date(followUpDeadline) : null,
-                isPartnerOnly: isPartnerOnly || false,
+                followUpPersonId: data.followUpPersonId,
+                followUpDeadline: data.followUpDeadline ? new Date(data.followUpDeadline) : null,
+                isPartnerOnly: data.isPartnerOnly || false,
+                meetingStatus: 'PENDING_APPROVAL'
             },
         });
 
-        // Fetch all Executives
-        const executives = await prisma.user.findMany({
-            where: {
-                role: { in: ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR'] }
-            }
-        });
-        
-        const notifications = executives.map((exec) => {
-            return {
-                userId: exec.id,
-                title: '📅 Meeting Awaiting Approval',
-                message: `A new meeting "${title}" was proposed by ${(req.user as any).name} and is awaiting approval.`
-            };
-        });
-
-        if (notifications.length > 0) {
-            await prisma.notification.createMany({ data: notifications });
+        // 👨‍⚖️ Initialize Approval Chain
+        const approvalData = [];
+        if (data.pastorIds && Array.isArray(data.pastorIds)) {
+            data.pastorIds.forEach((pid: string) => {
+                approvalData.push({
+                    meetingId: newMeeting.id,
+                    userId: pid,
+                    role: 'PASTOR'
+                });
+            });
         }
 
-        // Invalidate Cache
-        const keys = await redis.keys('meetings:*');
-        if (keys.length > 0) await redis.del(...keys);
-
-        res.status(201).json(meeting);
-    } catch (error: any) {
-        res.status(400).json({ error: error.message || 'Failed to create meeting' });
-    }
-};
-
-export const getMeetings = async (req: Request, res: Response) => {
-    try {
-        const { departmentId, page = '1', limit = '10' } = req.query;
-        const user = (req as any).user;
-        const skip = (Number(page) - 1) * Number(limit);
-        const take = Number(limit);
-
-        const where: any = {};
-        
-        if (user.role === 'WATUA') {
-        } else if (user.role === 'SUPER_ADMIN' || user.role === 'SYSTEM_ADMIN' || user.role === 'SECRETARY' || user.role === 'PASTOR') {
-            if (departmentId) where.departmentId = String(departmentId);
-        } else if (user.role === 'DEPARTMENT_LEADER') {
-            if (departmentId) {
-                where.departmentId = String(departmentId);
-            } else {
-                where.OR = [
-                    { departmentId: user.departmentId },
-                    { meetingStatus: 'APPROVED' }
-                ];
-            }
-        } else if (user.role === 'MEMBER') {
-            where.meetingStatus = 'SCHEDULED';
-            if (user.departmentId) {
-                where.departmentId = user.departmentId;
-            } else {
-                return res.json({ data: [], meta: { total: 0, page: 1, limit: 10, totalPages: 0 } });
-            }
+        // Add Bishop (SUPER_ADMIN)
+        const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
+        if (bishop) {
+            approvalData.push({
+                meetingId: newMeeting.id,
+                userId: bishop.id,
+                role: 'SUPER_ADMIN'
+            });
         }
 
-        const cacheKey = `meetings:${user.role}:${user.departmentId || 'none'}:${departmentId || 'all'}:${page}:${limit}`;
+        if (approvalData.length > 0) {
+            await tx.meetingApproval.createMany({ data: approvalData });
+            
+            // 🔔 Notify Authorizers
+            const authorizerIds = approvalData.map(a => a.userId);
+            const notifications = authorizerIds.map(id => ({
+                userId: id,
+                title: '📅 Strategic Briefing Authorization Required',
+                message: `Meeting "${data.title}" requires your executive clearance.`
+            }));
+            await tx.notification.createMany({ data: notifications });
+        }
 
-        const result = await getOrSetCache(cacheKey, async () => {
-            const [data, total] = await Promise.all([
-                prisma.meeting.findMany({
-                    where,
-                    include: {
-                        organizer: { select: { name: true } },
-                        followUpPerson: { select: { name: true } },
-                        department: { select: { name: true } }
-                    },
-                    orderBy: { date: 'asc' },
-                    skip,
-                    take,
-                }),
-                prisma.meeting.count({ where })
-            ]);
-            return { data, total };
-        }, 120);
+        return newMeeting;
+    });
+    
+    await logAudit(user.id, 'MEETING_CREATED', 'MEETING', meeting.id, { title: meeting.title });
 
-        res.json({
-            data: result.data,
-            meta: {
-                total: result.total,
-                page: Number(page),
-                limit: Number(limit),
-                totalPages: Math.ceil(result.total / Number(limit))
-            }
-        });
-    } catch (error: any) {
-        res.status(500).json({ error: error.message || 'Failed to fetch meetings' });
+    // Invalidate Cache
+    const keys = await redis.keys('meetings:*');
+    if (keys.length > 0) await redis.del(...keys);
+
+    res.status(201).json(meeting);
+});
+
+export const getMeetings = catchAsync(async (req: Request, res: Response) => {
+    const { departmentId, page = '1', limit = '10' } = req.query;
+    const user = (req as any).user;
+    const skip = (Number(page) - 1) * Number(limit);
+    const take = Number(limit);
+
+    const where: any = {};
+    
+    if (user.role === 'WATUA') {
+        // WATUA (System Engineer) has global oversight, no filters needed
+    } else if (user.role === 'SUPER_ADMIN' || user.role === 'SYSTEM_ADMIN' || user.role === 'SECRETARY' || user.role === 'PASTOR') {
+        if (departmentId) where.departmentId = String(departmentId);
+    } else if (user.role === 'DEPARTMENT_LEADER') {
+        if (departmentId) {
+            where.departmentId = String(departmentId);
+        } else {
+            where.OR = [
+                { departmentId: user.departmentId },
+                { meetingStatus: 'APPROVED' }
+            ];
+        }
+    } else if (user.role === 'MEMBER') {
+        where.meetingStatus = 'SCHEDULED';
+        if (user.departmentId) {
+            where.departmentId = user.departmentId;
+        } else {
+            return res.json({ data: [], meta: { total: 0, page: 1, limit: 10, totalPages: 0 } });
+        }
     }
-};
 
-export const updateMeeting = async (req: Request, res: Response) => {
+    const cacheKey = `meetings:${user.role}:${user.departmentId || 'none'}:${departmentId || 'all'}:${page}:${limit}`;
+
+    const result = await getOrSetCache(cacheKey, async () => {
+        const [data, total] = await Promise.all([
+            prisma.meeting.findMany({
+                where,
+                include: {
+                    organizer: { select: { name: true } },
+                    followUpPerson: { select: { name: true } },
+                    department: { select: { name: true } }
+                },
+                orderBy: { date: 'asc' },
+                skip,
+                take,
+            }),
+            prisma.meeting.count({ where })
+        ]);
+        return { data, total };
+    }, 120);
+
+    res.json({
+        data: result.data,
+        meta: {
+            total: result.total,
+            page: Number(page),
+            limit: Number(limit),
+            totalPages: Math.ceil(result.total / Number(limit))
+        }
+    });
+});
+
+export const updateMeeting = catchAsync(async (req: Request, res: Response) => {
     const { id } = req.params;
     const data = req.body;
 
-    if (data.date) data.date = new Date(data.date);
-    if (data.followUpDeadline) data.followUpDeadline = new Date(data.followUpDeadline);
-    try {
-        const user = (req as any).user;
-        const meeting = await prisma.meeting.findUnique({ where: { id } });
-        if (!meeting) return res.status(404).json({ error: 'Meeting not found' });
+    const user = (req as any).user;
+    const meeting = await prisma.meeting.findUnique({ where: { id } });
+    
+    if (!meeting) throw new AppError('Meeting not found', 404);
 
-        const isExecutive = ['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role);
-        const isManaging = user.managedDepartments?.some((d: any) => d.id === meeting.departmentId) || user.departmentId === meeting.departmentId;
-        
-        if (!isExecutive && !isManaging) {
-            return res.status(403).json({ error: 'Access denied: Executive or Sector permission required' });
-        }
-
-        // Filter data to only include valid fields
-        const updateData: any = {};
-        const validFields = ['title', 'date', 'time', 'venue', 'meetingType', 'agenda', 'followUpPersonId', 'followUpDeadline', 'minutes', 'attendance', 'meetingStatus', 'isPartnerOnly'];
-        
-        validFields.forEach(field => {
-            if (req.body[field] !== undefined) {
-                updateData[field] = req.body[field];
-            }
-        });
-
-        if (updateData.date) updateData.date = new Date(updateData.date);
-        if (updateData.followUpDeadline) updateData.followUpDeadline = new Date(updateData.followUpDeadline);
-
-        const updatedMeeting = await prisma.meeting.update({
-            where: { id },
-            data: updateData,
-        });
-
-        // Invalidate Cache
-        const keys = await redis.keys('meetings:*');
-        if (keys.length > 0) await redis.del(...keys);
-
-        res.json(updatedMeeting);
-    } catch (error) {
-        res.status(400).json({ error: 'Failed to update meeting' });
+    const isExecutive = ['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role);
+    const isManaging = user.managedDepartments?.some((d: any) => d.id === meeting.departmentId) || user.departmentId === meeting.departmentId;
+    
+    if (!isExecutive && !isManaging) {
+        throw new AppError('Access denied: Executive or Sector permission required', 403);
     }
-};
 
-export const approveMeeting = async (req: any, res: Response) => {
+    if (meeting.meetingStatus === 'SCHEDULED' && user.role !== 'SUPER_ADMIN') {
+        throw new AppError('Scheduled meetings are locked and cannot be modified.', 403);
+    }
+
+    const updateData: any = { ...data };
+    if (updateData.date) updateData.date = new Date(updateData.date);
+    if (updateData.followUpDeadline) updateData.followUpDeadline = new Date(updateData.followUpDeadline);
+
+    const updatedMeeting = await prisma.meeting.update({
+        where: { id },
+        data: updateData,
+    });
+    
+    await logAudit(user.id, 'MEETING_UPDATED', 'MEETING', id, { fields: Object.keys(updateData) });
+
+    // Invalidate Cache
+    const keys = await redis.keys('meetings:*');
+    if (keys.length > 0) await redis.del(...keys);
+
+    res.json(updatedMeeting);
+});
+
+export const approveMeeting = catchAsync(async (req: any, res: Response) => {
     const { id } = req.params;
     const userId = req.user.id;
     const userRole = req.user.role;
 
-    try {
-        const meeting = await prisma.meeting.findUnique({
-            where: { id },
-            // @ts-ignore
-            include: { approvals: true }
-        });
+    const meeting = await prisma.meeting.findUnique({
+        where: { id },
+        include: { approvals: true }
+    });
 
-        if (!meeting) return res.status(404).json({ error: 'Meeting not found' });
+    if (!meeting) throw new AppError('Meeting not found', 404);
 
+    await prisma.$transaction(async (tx) => {
         // Record the approval
-        // @ts-ignore
-        await prisma.meetingApproval.upsert({
+        await tx.meetingApproval.upsert({
             where: { meetingId_userId: { meetingId: id, userId } },
             update: { approved: true },
             create: {
@@ -199,7 +205,7 @@ export const approveMeeting = async (req: any, res: Response) => {
             }
         });
 
-        const currentApprovals = await prisma.meetingApproval.findMany({
+        const currentApprovals = await tx.meetingApproval.findMany({
             where: { meetingId: id, approved: true }
         });
 
@@ -207,7 +213,7 @@ export const approveMeeting = async (req: any, res: Response) => {
         const pastorCount = currentApprovals.filter((a: any) => a.role === 'PASTOR').length;
 
         if (userRole === 'WATUA' || (hasBishop && pastorCount >= 2)) {
-            await prisma.meeting.update({
+            await tx.meeting.update({
                 where: { id },
                 data: { meetingStatus: 'SCHEDULED' }
             });
@@ -216,36 +222,45 @@ export const approveMeeting = async (req: any, res: Response) => {
             const keys = await redis.keys('meetings:*');
             if (keys.length > 0) await redis.del(...keys);
         }
+    });
+    
+    await logAudit(userId, 'MEETING_APPROVED', 'MEETING', id);
 
-        res.json({ message: 'Meeting approved successfully' });
-    } catch (error: any) {
-        res.status(400).json({ error: error.message || 'Failed to approve meeting' });
+    res.json({ message: 'Meeting approved successfully' });
+});
+
+export const deleteMeeting = catchAsync(async (req: Request, res: Response) => {
+    const meeting = await prisma.meeting.findUnique({ where: { id: req.params.id } });
+    if (!meeting) throw new AppError('Meeting not found', 404);
+
+    const user = (req as any).user;
+    const isExecutive = ['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role);
+    const isManaging = user.managedDepartments?.some((d: any) => d.id === meeting.departmentId) || user.departmentId === meeting.departmentId;
+
+    if (!isExecutive && !isManaging) {
+        throw new AppError('Access denied: Executive or Sector priority required', 403);
     }
-};
 
-export const deleteMeeting = async (req: Request, res: Response) => {
-    try {
-        const meeting = await prisma.meeting.findUnique({ where: { id: req.params.id } });
-        if (!meeting) return res.status(404).json({ error: 'Meeting not found' });
-
-        const user = (req as any).user;
-        const isExecutive = ['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role);
-        const isManaging = user.managedDepartments?.some((d: any) => d.id === meeting.departmentId) || user.departmentId === meeting.departmentId;
-
-        if (!isExecutive && !isManaging) {
-            return res.status(403).json({ error: 'Access denied: Executive or Sector priority required' });
-        }
-
-        // @ts-ignore
-        await prisma.meetingApproval.deleteMany({ where: { meetingId: req.params.id } });
-        await prisma.meeting.delete({ where: { id: req.params.id } });
-
-        // Invalidate Cache
-        const keys = await redis.keys('meetings:*');
-        if (keys.length > 0) await redis.del(...keys);
-
-        res.json({ message: 'Meeting deleted successfully' });
-    } catch (error) {
-        res.status(400).json({ error: 'Failed to delete meeting' });
+    if (meeting.meetingStatus === 'SCHEDULED' && user.role !== 'SUPER_ADMIN') {
+        throw new AppError('Scheduled meetings are locked and cannot be deleted.', 403);
     }
-};
+
+    await prisma.$transaction(async (tx) => {
+        // Soft delete the meeting is handled globally, but we still trigger standard update
+        await tx.meeting.update({ 
+            where: { id: req.params.id },
+            data: { deletedAt: new Date() }
+        });
+        
+        // Hard-delete relational approval joins as they do not possess deletedAt
+        await tx.meetingApproval.deleteMany({ where: { meetingId: req.params.id } });
+    });
+    
+    await logAudit(user.id, 'MEETING_DELETED', 'MEETING', req.params.id);
+
+    // Invalidate Cache
+    const keys = await redis.keys('meetings:*');
+    if (keys.length > 0) await redis.del(...keys);
+
+    res.json({ message: 'Meeting deleted successfully' });
+});

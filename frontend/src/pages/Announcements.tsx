@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../lib/db';
 import api from '../lib/api-client';
 import {
     Typography, Grid, Card, CardContent, Box, Button, TextField, Dialog, DialogTitle,
@@ -12,7 +13,6 @@ import { isUserManagingDepartment } from '../utils/auth-options';
 
 export default function Announcements() {
     const { user } = useAuth();
-    const queryClient = useQueryClient();
     const [open, setOpen] = useState(false);
     const [editAnn, setEditAnn] = useState<any>(null);
     const [formData, setFormData] = useState({
@@ -28,38 +28,49 @@ export default function Announcements() {
     const [page, setPage] = useState(1);
     const limit = 12;
 
-    const { data: announcementsData, isLoading } = useQuery(['announcements', page], async () => {
-        const res = await api.get('/announcements', { params: { page, limit } });
-        return res.data;
-    });
-
-    const announcements = announcementsData?.data || [];
-    const meta = announcementsData?.meta || { total: 0, totalPages: 1 };
+    const announcements = useLiveQuery(() => db.announcements.orderBy('createdAt').reverse().toArray(), []) || [];
+    const meta = { total: announcements.length, totalPages: Math.ceil((announcements.length || 1) / limit) };
 
     const filteredAnnouncements = announcements.filter((ann: any) => {
         if (isGlobalAdmin) return true;
         return ann.isGlobal || ann.isMajor || (isUserManagingDepartment(user, ann.departmentId) && ann.status === 'PUBLISHED');
     });
 
-    const { data: departments } = useQuery(['departments'], async () => {
-        const res = await api.get('/departments');
-        return Array.isArray(res.data) ? res.data : (res.data?.data || []);
-    });
-
-    const userDepartments = (Array.isArray(departments) ? departments : []).filter((d: any) => isUserManagingDepartment(user, d.id)) || [];
+    const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
+    const userDepartments = departments.filter((d: any) => isUserManagingDepartment(user, d.id)) || [];
     const showDepartmentSelect = isGlobalAdmin || userDepartments.length > 1;
 
-    const createMutation = useMutation((data: any) => api.post('/announcements', data), {
-        onSuccess: () => { queryClient.invalidateQueries(['announcements']); handleClose(); }
-    });
+    const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
+        const actionId = id || crypto.randomUUID();
+        const timestamp = Date.now();
 
-    const updateMutation = useMutation((data: any) => api.put(`/announcements/${editAnn.id}`, data), {
-        onSuccess: () => { queryClient.invalidateQueries(['announcements']); handleClose(); }
-    });
+        if (method !== 'DELETE') {
+            await db.announcements.put({ 
+                ...payload, 
+                id: actionId, 
+                syncStatus: 'PENDING',
+                author: { name: user?.name || 'Local User' },
+                department: departments.find(d => d.id === payload.departmentId) || null,
+                createdAt: new Date().toISOString()
+            });
+        } else {
+            if (id) await db.announcements.delete(id);
+        }
 
-    const deleteMutation = useMutation((id: string) => api.delete(`/announcements/${id}`), {
-        onSuccess: () => queryClient.invalidateQueries(['announcements'])
-    });
+        await db.syncQueue.put({
+            id: crypto.randomUUID(),
+            timestamp,
+            entity: 'ANNOUNCEMENT',
+            method,
+            url: method === 'POST' ? '/announcements' : `/announcements/${actionId}`,
+            payload: { ...payload, isOfflineSync: true },
+            status: 'PENDING',
+            retryCount: 0,
+            errorLog: []
+        });
+
+        handleClose();
+    };
 
     const handleOpen = (ann: any = null) => {
         if (ann) {
@@ -91,12 +102,31 @@ export default function Announcements() {
     };
 
     const handleSubmit = () => {
-        if (editAnn) updateMutation.mutate(formData);
-        else createMutation.mutate(formData);
+        if (editAnn) handleAction({ ...formData, id: editAnn.id }, 'PATCH', editAnn.id);
+        else handleAction(formData, 'POST');
     };
+
+    const [syncError, setSyncError] = useState<string | null>(null);
+
+    useLiveQuery(() => {
+        const handleSyncError = (e: any) => {
+            if (e.detail.path.includes('announcements')) {
+                setSyncError(`Sync Interrupted: ${e.detail.status === 401 ? 'Authentication Required' : 'Server Error'}`);
+            }
+        };
+        window.addEventListener('pwa-sync-error', handleSyncError);
+        return () => window.removeEventListener('pwa-sync-error', handleSyncError);
+    }, []);
 
     return (
         <DashboardLayout>
+            {syncError && (
+                <Box sx={{ mb: 3, p: 2, borderRadius: 2, bgcolor: 'error.main', color: 'white', display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <ShieldAlert size={20} />
+                    <Typography variant="body2" fontWeight="950">{syncError.toUpperCase()}</Typography>
+                    <Button size="small" variant="contained" color="inherit" sx={{ ml: 'auto', color: 'error.main', fontWeight: 900 }} onClick={() => window.location.reload()}>RE-AUTH</Button>
+                </Box>
+            )}
             <Box sx={{ mb: 6, display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'start', md: 'end' }, gap: 3 }}>
                 <div>
                     <Typography variant="h3" fontWeight="950" className="glow-text" sx={{ letterSpacing: -2 }}>STRATEGIC <span className="text-primary/70">ALERTS</span></Typography>
@@ -109,7 +139,7 @@ export default function Announcements() {
                 )}
             </Box>
 
-            {isLoading && <LinearProgress sx={{ mb: 4, borderRadius: 1 }} />}
+    if (announcements === undefined) return <LinearProgress sx={{ mb: 4, borderRadius: 1 }} />;
 
             <Grid container spacing={3}>
                 {filteredAnnouncements?.map((ann: any) => (
@@ -124,7 +154,7 @@ export default function Announcements() {
                                         {(isGlobalAdmin || isUserManagingDepartment(user, ann.departmentId)) && (
                                             <>
                                                 <IconButton size="small" onClick={() => handleOpen(ann)} className="tactical-border" sx={{ mr: 1 }}><Edit size={14} /></IconButton>
-                                                <IconButton size="small" color="error" onClick={() => deleteMutation.mutate(ann.id)} className="tactical-border"><Trash2 size={14} /></IconButton>
+                                                <IconButton size="small" color="error" onClick={() => handleAction({ id: ann.id }, 'DELETE', ann.id)} className="tactical-border"><Trash2 size={14} /></IconButton>
                                             </>
                                         )}
                                     </Box>
@@ -230,7 +260,7 @@ export default function Announcements() {
                 </DialogContent>
                 <DialogActions sx={{ px: 4, pb: 4 }}>
                     <Button onClick={handleClose} sx={{ fontWeight: 'bold' }}>Abort</Button>
-                    <Button onClick={handleSubmit} variant="contained" disabled={createMutation.isLoading || updateMutation.isLoading} sx={{ borderRadius: 2, fontWeight: 'bold' }}>
+                    <Button onClick={handleSubmit} variant="contained" disabled={false} sx={{ borderRadius: 2, fontWeight: 'bold' }}>
                         {editAnn ? 'Update' : 'Broadcast'}
                     </Button>
                 </DialogActions>

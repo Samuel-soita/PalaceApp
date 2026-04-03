@@ -127,7 +127,7 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
                         <Box display="flex" alignItems="center" bgcolor="rgba(255,255,255,0.05)" p={2} borderRadius={2} border="1px dashed rgba(255,255,255,0.1)">
                             <Box flex={1}>
                                 <Typography variant="subtitle2" fontWeight="bold">CHURCH-WIDE STRATEGY</Typography>
-                                <Typography variant="caption" color="textSecondary">Mark this plan as a global objective for the "Prayer Palace" mission. Requires 3-sig authorization.</Typography>
+                                <Typography variant="caption" color="textSecondary">Mark this plan as a global objective for the &quot;Prayer Palace&quot; mission. Requires 3-sig authorization.</Typography>
                             </Box>
                             <Checkbox 
                                 checked={formData.isMajor} 

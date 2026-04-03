@@ -25,6 +25,8 @@ import settingsRoutes from './modules/settings/settings.routes.js';
 import partnershipsRoutes from './modules/partnerships/partnerships.routes.js';
 import permissionsRoutes from './modules/permissions/permissions.routes.js';
 import financeRoutes from './modules/finance/finance.routes.js';
+import reportRoutes from './modules/reports/reports.routes.js';
+import repairRoutes from './modules/repairs/repairs.routes.js';
 import { bootstrapSystem } from './utils/bootstrap.js';
 import recoveryRoutes from './modules/recovery/recovery.routes.js';
 import syncRoutes from './modules/sync/sync.routes.js';
@@ -132,6 +134,8 @@ if (useCluster && cluster.isPrimary) {
     app.use('/upload', uploadRoutes);
     app.use('/permissions', permissionsRoutes);
     app.use('/finance', financeRoutes);
+    app.use('/reports', reportRoutes);
+    app.use('/repairs', repairRoutes);
     app.use('/recovery', recoveryRoutes);
     app.use('/sync', syncRoutes);
     app.use('/system-health', healthRoutes);
@@ -141,23 +145,50 @@ if (useCluster && cluster.isPrimary) {
 
     initSocket(httpServer);
 
-    // Error Handling Middleware
+    // --- SOPHISTICATED GLOBAL ERROR HANDLER ---
     app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
         TelemetryEngine.incrementError();
-        console.error('[Error]', err.message || err);
-        res.status(500).json({ 
-            error: 'Internal Server Error',
-            message: 'Something went wrong on the mission server.'
-        });
-    });
+        
+        let statusCode = err.statusCode || 500;
+        let message = err.message || 'Mission Integrity Compromised: System Error Detected.';
+        let details = err.details || null;
 
-    // --- GLOBAL ERROR HANDLING ---
-    app.use((err: any, req: any, res: any, next: any) => {
-        console.error('[GLOBAL_ERROR]', err);
-        res.status(500).json({
-            error: 'Mission Integrity Compromised: System Error Detected.',
-            details: err.message || 'Unknown internal failure',
-            path: req.path
+        // 1. Handle Zod Validation Errors
+        if (err.name === 'ZodError') {
+            statusCode = 400;
+            message = 'Validation Failed';
+            details = err.errors.map((e: any) => ({
+                path: e.path.join('.'),
+                message: e.message
+            }));
+        }
+
+        // 2. Handle Prisma Known Errors
+        if (err.code === 'P2002') {
+            statusCode = 409;
+            message = `Conflict: A record with this unique identifier already exists (${err.meta?.target})`;
+        }
+
+        // 3. Handle JWT Errors
+        if (err.name === 'JsonWebTokenError') {
+            statusCode = 401;
+            message = 'Invalid authentication token';
+        }
+        if (err.name === 'TokenExpiredError') {
+            statusCode = 401;
+            message = 'Authentication token expired';
+        }
+
+        console.error(`[ERROR ${statusCode}] ${req.method} ${req.path}:`, err);
+
+        res.status(statusCode).json({
+            error: true,
+            status: 'error',
+            message,
+            details,
+            isOperational: err.isOperational || false,
+            path: req.path,
+            timestamp: new Date().toISOString()
         });
     });
 

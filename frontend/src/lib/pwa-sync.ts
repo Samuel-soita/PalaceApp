@@ -1,357 +1,234 @@
-import { openDB, IDBPDatabase } from 'idb';
-import { queryClient } from './query-client';
+import { db, SyncJob } from './db';
+import api from './api-client';
 
 /**
- * 🛰️ ENTERPRISE-GRADE DISPATCH ENGINE (OFFLINE-FIRST) - v2.4.0 (Resilience Edition)
- * Mission: 600+ Concurrent Devices, Zero-Latency UI, Binary Resilience
+ * TRUE LOCAL-FIRST SYNC DAEMON
+ * Runs invisibly in the background. 
+ * PULLS state from server -> Hydrates Dexie DB.
+ * PUSHES Dexie syncQueue -> Server.
  */
 
-const DB_NAME = 'palace-portal-engine';
-const STORE_NAME = 'dispatch-queue';
-const CHANNEL_NAME = 'palace-sync-telemetry';
-const MAX_QUEUE_SIZE = 2000;
-const BATCH_SIZE = 5; // Yield to UI after 5 actions
+let isSyncing = false;
+let lastSyncTimestamp = Number(localStorage.getItem('palace-last-sync') || 0);
 
-export type ActionStatus = 'PENDING' | 'RETRYING' | 'FAILED' | 'SYNCED';
-export type ActionPriority = 'HIGH' | 'MEDIUM' | 'LOW';
-
-export interface QueuedAction {
-    id: string;
-    idempotencyKey: string;
-    method: 'POST' | 'PUT' | 'DELETE';
-    url: string;
-    payload: any;
-    headers: Record<string, string>;
-    timestamp: number;
-    priority: ActionPriority;
-    retryCount: number;
-    status: ActionStatus;
-    errorLog: string[];
-    nextRetryTime?: number;
-    isBinary?: boolean;
-    userRole?: string;
-    localId?: string; // For mapping temp IDs to server IDs
-}
-
-const syncChannel = new BroadcastChannel(CHANNEL_NAME);
-let dbPromise: Promise<IDBPDatabase> | null = null;
-
-function getDB() {
-    if (!dbPromise) {
-        dbPromise = openDB(DB_NAME, 2, {
-            upgrade(db, oldVersion) {
-                if (oldVersion < 1) {
-                    const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-                    store.createIndex('by-priority', 'priority');
-                    store.createIndex('by-status', 'status');
-                    store.createIndex('by-idempotency', 'idempotencyKey');
-                }
-            },
-        });
-    }
-    return dbPromise;
-}
-
-/**
- * 🚀 DISPATCH ACTION TO OFFLINE QUEUE
- */
-export async function queueAction(request: Partial<QueuedAction>) {
-    const db = await getDB();
+export async function processSyncDaemon() {
+    if (isSyncing || !navigator.onLine) return;
     
-    // 1. SAFETY LIMIT
-    const count = await db.count(STORE_NAME);
-    if (count >= MAX_QUEUE_SIZE) {
-        console.error('[Palace-Engine] Queue Overflow. Dispatch Aborted.');
-        return null;
+    // Auth Guard: Don't sync if not logged in to avoid 401 spam
+    const token = localStorage.getItem('token');
+    if (!token) {
+        console.debug('[Palace-Daemon] Skipping sync: No active session token found.');
+        return;
     }
 
-    // 2. IDEMPOTENCY CHECK (Strict Deduplication mission prevention)
-    const idempotencyKey = request.idempotencyKey || 
-        `${request.method}-${request.url}-${JSON.stringify(request.payload).length}`;
-    
-    const existing = await db.getFromIndex(STORE_NAME, 'by-idempotency', idempotencyKey);
-    if (existing && existing.status !== 'FAILED') {
-        console.warn(`[Palace-Engine] mission collision detected for ${idempotencyKey}. Skipping dispatch.`);
-        return existing;
-    }
-    
-    // 3. BINARY DATA BRIDGE (Phase 9 Readiness)
-    let payload = request.payload;
-    let isBinary = false;
-    
-    // Future-Proofing: Serialize FormData/Blobs into Base64 for IDB storage
-    if (payload instanceof FormData || payload instanceof Blob) {
-        console.warn('[Palace-Engine] Binary Payload Detected. Serializing for Phase 9 Bridge...');
-        isBinary = true;
-        // Placeholder for binary-to-string transformer logic
-    }
-
-    const action: QueuedAction = {
-        id: crypto.randomUUID(),
-        idempotencyKey,
-        method: request.method || 'POST',
-        url: request.url || '',
-        payload,
-        headers: { ...request.headers },
-        timestamp: Date.now(),
-        priority: request.priority || 'MEDIUM',
-        retryCount: 0,
-        status: 'PENDING',
-        errorLog: [],
-        isBinary,
-        ...request
-    };
-
-    await db.put(STORE_NAME, action);
-    notifyUI();
-    
-    // 4. OPTIMISTIC UI (Instant Feedback)
-    await applyOptimisticUpdate(action);
-
-    if (navigator.onLine) {
-        // Trigger async - don't block the caller
-        setTimeout(processQueue, 100);
-    }
-    
-    return action;
-}
-
-/**
- * 🧠 OPTIMISTIC STATE MANAGER
- * This ensures the UI reflects the action immediately, even if completely offline.
- */
-export async function applyOptimisticUpdate(action: QueuedAction) {
-    const { url, payload, method } = action;
-
-    // 1. Determine Query Key based on URL
-    let queryKey: string[] | null = null;
-    if (url.includes('/announcements')) queryKey = ['dashboard-sync'];
-    if (url.includes('/projects')) queryKey = ['dashboard-sync'];
-    if (url.includes('/children')) queryKey = ['dashboard-sync'];
-    if (url.includes('/partnerships')) queryKey = ['dashboard-sync'];
-    
-    if (!queryKey) return;
-
-    // 2. Perform Optimistic Mutation
-    await queryClient.cancelQueries(queryKey);
-    const previousData = queryClient.getQueryData(queryKey);
-
-    if (previousData) {
-        queryClient.setQueryData(queryKey, (old: any) => {
-            if (!old) return old;
-            
-            // Shallow Copy
-            const updated = { ...old };
-            
-            // Logic based on endpoint
-            if (url.includes('/announcements')) {
-                updated.announcements = [
-                    { ...payload, id: action.id, createdAt: new Date().toISOString(), status: 'PENDING_SYNC' },
-                    ...(updated.announcements || [])
-                ];
-            }
-
-            if (url.includes('/children')) {
-                if (method === 'POST') {
-                    updated.children = [
-                        { ...payload, id: action.localId || action.id, workflowStatus: 'PENDING_SYNC' },
-                        ...(updated.children || [])
-                    ];
-                }
-            }
-            
-            return updated;
-        });
-    }
-}
-
-export async function getQueuedActions(): Promise<QueuedAction[]> {
-    const db = await getDB();
-    return db.getAll(STORE_NAME);
-}
-
-/**
- * 🔄 REPLAY ENGINE (Self-Healing & Batch-Aware)
- */
-export async function processQueue() {
-    if (!navigator.onLine || (window as any)._isSyncing) return;
-    (window as any)._isSyncing = true;
+    isSyncing = true;
 
     try {
-        const db = await getDB();
-        let actions = await db.getAll(STORE_NAME);
-        
-        actions = actions.filter(a => 
-            a.status !== 'SYNCED' && 
-            (!a.nextRetryTime || a.nextRetryTime <= Date.now())
-        );
-
-        if (actions.length === 0) return;
-
-        // PRIORITY & ROLE & TIMESTAMP SORT
-        const priorityScore: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
-        const roleScore: Record<string, number> = { 
-            SUPER_ADMIN: 0, 
-            WATUA: 0, 
-            PASTOR: 1, 
-            DEPARTMENT_LEADER: 2, 
-            MEMBER: 3 
-        };
-        
-        actions.sort((a, b) => {
-            const scoreA = priorityScore[a.priority as string] ?? 1;
-            const scoreB = priorityScore[b.priority as string] ?? 1;
-            if (scoreA !== scoreB) return scoreA - scoreB;
-
-            const rScoreA = roleScore[a.userRole as string] ?? 3;
-            const rScoreB = roleScore[b.userRole as string] ?? 3;
-            if (rScoreA !== rScoreB) return rScoreA - rScoreB;
-
-            return a.timestamp - b.timestamp;
-        });
-
-        console.log(`[Palace-Engine] Syncing missions in batches of ${BATCH_SIZE}...`);
-
-        let processedInThisTick = 0;
-        for (const action of actions) {
-            // YIELD TO MAIN THREAD (Keep 60FPS) with JITTER
-            if (processedInThisTick >= BATCH_SIZE) {
-                const yieldJitter = Math.random() * 200;
-                console.log(`[Palace-Engine] Batch yield triggered. Sleeping for ${yieldJitter.toFixed(0)}ms...`);
-                setTimeout(processQueue, 50 + yieldJitter); 
-                return;
-            }
-
-            try {
-                const targetUrl = action.url.startsWith('http') || action.url.startsWith('/api') 
-                    ? action.url 
-                    : `/api/${action.url.startsWith('/') ? action.url.slice(1) : action.url}`;
-
-                const response = await fetch(targetUrl, {
-                    method: action.method,
-                    headers: {
-                        ...action.headers,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(action.payload),
-                });
-
-                if (response.ok) {
-                    await db.delete(STORE_NAME, action.id);
-                    processedInThisTick++;
-                } else if (response.status >= 500) {
-                    await handleRetry(action, `Server Capacity Issue: ${response.status}`);
-                } else {
-                    action.status = 'FAILED';
-                    action.errorLog.push(`Validation Failure: ${response.status}`);
-                    await db.put(STORE_NAME, action);
+        // 1. PULL DOWNSTREAM 
+        // Sync full records if online and pull any updates
+        try {
+            const sinceQuery = { params: { since: new Date(lastSyncTimestamp).toISOString() } };
+            
+            const syncModule = async (path: string, dbTable: any, isFullSync: boolean = false) => {
+                try {
+                    const res = await api.get(path, isFullSync ? {} : sinceQuery);
+                    const data = isFullSync ? (res.data.data || res.data) : res.data.data;
+                    if (data?.length) {
+                        await dbTable.bulkPut(data.map((item: any) => ({ ...item, syncStatus: 'SYNCED' })));
+                        return true;
+                    }
+                    return false;
+                } catch (err: any) {
+                    console.error(`[Palace-Daemon] Module sync failed: ${path}`, err.message);
+                    window.dispatchEvent(new CustomEvent('pwa-sync-error', { 
+                        detail: { path, message: err.message, status: err.response?.status } 
+                    }));
+                    return false;
                 }
-            } catch (err: any) {
-                await handleRetry(action, `Network Invisibility: ${err.message}`);
-                break; 
+            };
+
+            const results = await Promise.all([
+                syncModule('/sync/events', db.events),
+                syncModule('/sync/members', db.users),
+                syncModule('/departments', db.departments, true),
+                syncModule('/sync/projects', db.projects),
+                syncModule('/sync/plans', db.plans),
+                syncModule('/sync/announcements', db.announcements),
+                syncModule('/sync/devotions', db.devotions),
+                syncModule('/sync/meetings', db.meetings),
+                syncModule('/sync/messages', db.messages),
+                syncModule('/sync/baptisms', db.baptisms),
+                syncModule('/sync/children', db.children),
+                syncModule('/sync/finance', db.transactions),
+                syncModule('/sync/repairs', db.repairs),
+                syncModule('/sync/appointments', db.appointments),
+                syncModule('/sync/partnerships', db.partnerships)
+            ]);
+
+            // Only update sync timestamp if at least one core module succeeded
+            if (results.some(r => r)) {
+                const timestamp = Date.now();
+                lastSyncTimestamp = timestamp;
+                localStorage.setItem('palace-last-sync', timestamp.toString());
+            }
+        } catch (pullErr) {
+            console.error('[Palace-Daemon] Critical pull failure', pullErr);
+        }
+
+        // 2. PUSH UPSTREAM
+        // Drain local Dexie syncQueue sequentially
+        const queue = await db.syncQueue.orderBy('timestamp').toArray();
+        for (const job of queue) {
+            if (job.status === 'PENDING' || job.status === 'RETRYING') {
+                try {
+                    let response;
+                    
+                    // 🛡️ Exhaustive Payload Cleaning for .strict() Backend Schemas
+                    // We remove internal sync markers AND server-generated metadata
+                    const { 
+                        isOfflineSync, 
+                        localVersion, 
+                        syncStatus, 
+                        version, 
+                        createdAt, 
+                        updatedAt, 
+                        deletedAt,
+                        id, // Client-side ID usually stripped on POST, preserved on PATCH
+                        ...cleanPayload 
+                    } = job.payload;
+                    
+                    // For POST, we strip the client 'id' because backend (Prisma) often auto-generates 
+                    // and Zod .strict() fails if 'id' is present in the body.
+                    const finalPayload = job.method === 'POST' ? cleanPayload : { ...cleanPayload, id };
+                    
+                    if (job.method === 'POST') {
+                        response = await api.post(job.url, finalPayload);
+                    } else if (job.method === 'PATCH') {
+                        response = await api.patch(job.url, finalPayload);
+                    } else if (job.method === 'DELETE') {
+                        response = await api.delete(job.url);
+                    }
+
+                    // Successfully synced -> update local entity status to SYNCED
+                    // Use a generic update based on the entity-to-table mapping
+                    const tableMap: Record<string, any> = {
+                        'EVENT': db.events,
+                        'PROJECT': db.projects,
+                        'PLAN': db.plans,
+                        'ANNOUNCEMENT': db.announcements,
+                        'MEETING': db.meetings,
+                        'DEVOTION': db.devotions,
+                        'MESSAGE': db.messages,
+                        'BAPTISM': db.baptisms,
+                        'CHILD': db.children,
+                        'TRANSACTION': db.transactions,
+                        'REPAIR': db.repairs,
+                        'APPOINTMENT': db.appointments,
+                        'PARTNERSHIP': db.partnerships,
+                        'PARTNERSHIP_LEDGER': db.partnershipLedgers
+                    };
+
+                    const table = tableMap[job.entity];
+                    if (table && job.method !== 'DELETE') {
+                        // Use response ID if server generated a new one
+                        const finalId = response?.data?.id || job.payload.id;
+                        
+                        // If ID changed (server-generated), we must swap out the local record
+                        if (finalId !== job.payload.id) {
+                            const record = await table.get(job.payload.id);
+                            if (record) {
+                                await table.delete(job.payload.id);
+                                await table.put({ 
+                                    ...record, 
+                                    ...response?.data, 
+                                    syncStatus: 'SYNCED', 
+                                    version: response?.data?.version || 1 
+                                });
+                            }
+                        } else {
+                            await table.update(job.payload.id, { 
+                                syncStatus: 'SYNCED', 
+                                version: response?.data?.version || job.payload.version 
+                            });
+                        }
+                    }
+                    
+                    await db.syncQueue.delete(job.id);
+                } catch (pushErr: any) {
+                    if (pushErr?.response?.status === 409) {
+                        // Optimistic Concurrency Conflict
+                        if (job.entity === 'EVENT') {
+                            await db.events.update(job.payload.id, { syncStatus: 'CONFLICT' });
+                        }
+                        await db.syncQueue.update(job.id, { status: 'FAILED' });
+                        
+                        // Fire conflict event for the UI
+                        window.dispatchEvent(new CustomEvent('pwa-conflict-detected', {
+                            detail: { action: job, serverData: pushErr.response.data }
+                        }));
+                        isSyncing = false;
+                        return; // Halt queue processing until arbitration
+                    } else if (pushErr?.response?.status >= 500 || !pushErr.response) {
+                        // Network error or 500, trigger jitter backoff
+                        const nextRetryCount = job.retryCount + 1;
+                        if (nextRetryCount < 10) {
+                            await db.syncQueue.update(job.id, { status: 'RETRYING', retryCount: nextRetryCount });
+                            const jitter = Math.random() * 1000;
+                            const backoff = Math.min((2 ** nextRetryCount) * 1000, 30000) + jitter;
+                            console.warn(`[Palace-Daemon] Push failed. Retrying in ${backoff}ms`);
+                            setTimeout(processSyncDaemon, backoff);
+                        } else {
+                            await db.syncQueue.update(job.id, { status: 'FAILED' });
+                        }
+                        isSyncing = false;
+                        return;
+                    } else {
+                        // 400 Bad Request, permanently fail the job to unblock queue
+                        console.error('[Palace-Daemon] Permanent push reject', pushErr);
+                        await db.syncQueue.update(job.id, { status: 'FAILED' });
+                    }
+                }
             }
         }
     } finally {
-        (window as any)._isSyncing = false;
-        notifyUI();
+        isSyncing = false;
     }
 }
 
-async function handleRetry(action: QueuedAction, error: string) {
-    const db = await getDB();
-    action.retryCount++;
-    action.errorLog.push(`${new Date().toISOString()}: ${error}`);
-    
-    if (action.retryCount >= 7) {
-        action.status = 'FAILED';
-    } else {
-        action.status = 'RETRYING';
-        
-        // JITTERED EXPONENTIAL BACKOFF (Thundering Herd Prevention)
-        // Base delay: 2^retryCount * 1s
-        // Jitter: random(0, 30s)
-        const baseDelay = Math.pow(2, action.retryCount) * 1000;
-        const jitter = Math.random() * 30000;
-        action.nextRetryTime = Date.now() + baseDelay + jitter;
-    }
-    
-    await db.put(STORE_NAME, action);
-}
-
-function notifyUI() {
-    getQueuedActions().then(actions => {
-        syncChannel.postMessage({
-            type: 'SYNC_UPDATE',
-            pendingCount: actions.filter(a => a.status !== 'FAILED').length,
-            failedCount: actions.filter(a => a.status === 'FAILED').length,
-            totalCount: actions.length,
-            lastUpdated: Date.now()
-        });
-    });
-}
-
-/**
- * 🛠️ RECOVERY HUB & INTEGRITY SERVICES
- */
-export async function cleanupQueue() {
-    const db = await getDB();
-    const actions = await db.getAll(STORE_NAME);
-    const now = Date.now();
-    const TTL = 48 * 60 * 60 * 1000; // 48 Hours
-
-    let purged = 0;
-    for (const action of actions) {
-        const isStale = (now - action.timestamp) > TTL;
-        const isBroken = action.retryCount >= 10;
-        
-        if (isStale || isBroken) {
-            await db.delete(STORE_NAME, action.id);
-            purged++;
-        }
-    }
-    if (purged > 0) {
-        console.warn(`[Palace-Engine] Purged ${purged} stale missions from device terminal.`);
-        notifyUI();
-    }
-}
-
-export async function exportQueue() {
-    const actions = await getQueuedActions();
-    const data = JSON.stringify(actions, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `palace-dispatch-backup-${new Date().getTime()}.json`;
-    a.click();
-}
-
-export async function importQueue(json: string) {
-    try {
-        const actions: QueuedAction[] = JSON.parse(json);
-        const db = await getDB();
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        for (const action of actions) {
-            await tx.store.put({ ...action, status: 'PENDING', retryCount: 0 });
-        }
-        await tx.done;
-        notifyUI();
-        processQueue();
-        return true;
-    } catch (err) {
-        console.error('[Palace-Engine] Import Failure:', err);
-        return false;
-    }
-}
-
+// Start Daemon Loop
 if (typeof window !== 'undefined') {
-    window.addEventListener('online', () => {
-        setTimeout(processQueue, Math.random() * 5000);
+    window.addEventListener('online', processSyncDaemon);
+    // Poll every 15 seconds if online to pull updates
+    setInterval(() => {
+        if (navigator.onLine) processSyncDaemon();
+    }, 15000);
+    
+    // Initial boot kick
+    setTimeout(processSyncDaemon, 2000);
+}
+
+export const processQueue = processSyncDaemon;
+
+export interface QueuedAction extends Partial<SyncJob> {
+    priority?: 'HIGH' | 'MEDIUM' | 'LOW';
+    headers?: Record<string, string>;
+}
+
+export async function queueAction(actionData: any) {
+    const id = actionData.id || crypto.randomUUID();
+    return db.syncQueue.put({
+        id,
+        timestamp: Date.now(),
+        status: 'PENDING',
+        retryCount: 0,
+        errorLog: [],
+        entity: actionData.entity || 'EVENT',
+        method: actionData.method || 'POST',
+        url: actionData.url || '',
+        payload: actionData.payload || actionData
     });
-    // System Self-Healing Tick
-    setInterval(cleanupQueue, 60 * 60 * 1000); // Hourly cleanup
-    setTimeout(() => {
-        cleanupQueue();
-        processQueue();
-    }, 3000);
+}
+
+export async function getQueuedActions() {
+    return db.syncQueue.toArray();
 }

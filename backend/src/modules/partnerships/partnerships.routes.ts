@@ -1,11 +1,28 @@
 import { Router } from 'express';
-import * as partnershipController from './partnerships.controller.js';
+import { 
+    getAllPartnerships, 
+    addLedgerTransaction, 
+    deletePartnership 
+} from './partnerships.controller.js';
 import { authenticate, authorize, moduleGuard } from '../../middleware/auth.middleware.js';
+import { validate } from '../../middleware/validate.middleware.js';
+import { z } from 'zod';
 
 const router = Router();
 
-router.get('/all', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA', 'PASTOR']), moduleGuard('PartnershipManagement'), partnershipController.getAllPartnerships);
-router.post('/:id/ledger', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY']), partnershipController.addLedgerTransaction);
-router.delete('/:id', authenticate, authorize(['SUPER_ADMIN', 'WATUA']), partnershipController.deletePartnership);
+router.use(authenticate);
+
+const LedgerTransactionSchema = z.object({
+    body: z.object({
+        amount: z.number().positive('Amount must be positive'),
+        paymentMethod: z.enum(['MPESA', 'BANK_TRANSFER', 'CASH', 'CHEQUE', 'SYSTEM']),
+        referenceCode: z.string().min(3, 'Reference code is mandatory'),
+        transactionType: z.enum(['CREDIT', 'DEBIT']).default('CREDIT')
+    })
+});
+
+router.get('/all', authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA', 'PASTOR']), moduleGuard('PartnershipManagement'), getAllPartnerships);
+router.post('/:id/ledger', authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY']), validate(LedgerTransactionSchema), addLedgerTransaction);
+router.delete('/:id', authorize(['SUPER_ADMIN', 'WATUA']), deletePartnership);
 
 export default router;

@@ -11,7 +11,7 @@ export const OfflineQueue = {
      * Dispatch a network request to the offline-supported kernel queue.
      * Guaranteed delivery mechanism.
      */
-    async dispatch(url: string, method: 'POST' | 'PUT' | 'DELETE', payload: any, priority: 'HIGH' | 'MEDIUM' | 'LOW' = 'MEDIUM') {
+    async dispatch(url: string, method: 'POST' | 'PATCH' | 'DELETE', payload: any, priority: 'HIGH' | 'MEDIUM' | 'LOW' = 'MEDIUM') {
         const action: Partial<QueuedAction> = {
             url,
             method,

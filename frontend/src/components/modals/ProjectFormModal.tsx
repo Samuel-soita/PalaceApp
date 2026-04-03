@@ -26,7 +26,9 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
         budget: 0,
         isMajor: false,
         departmentId: defaultDepartmentId || user?.departmentId || '',
-        pastorIds: [] as string[]
+        pastorIds: [] as string[],
+        category: 'GENERAL' as 'INFRASTRUCTURE' | 'OUTREACH' | 'TECH' | 'YOUTH' | 'GENERAL',
+        deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
     });
 
     useEffect(() => {
@@ -39,7 +41,9 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                 budget: project.budget,
                 isMajor: project.isMajor || false,
                 departmentId: project.departmentId,
-                pastorIds: []
+                pastorIds: [],
+                category: project.category || 'GENERAL',
+                deadline: project.deadline || new Date().toISOString()
             });
         } else {
             setFormData({
@@ -50,7 +54,9 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                 budget: 0,
                 isMajor: false,
                 departmentId: defaultDepartmentId || user?.departmentId || '',
-                pastorIds: []
+                pastorIds: [],
+                category: 'GENERAL',
+                deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
             });
         }
     }, [project, open, user, defaultDepartmentId]);
@@ -80,11 +86,15 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!project && formData.pastorIds.length !== 2) {
-            alert("You must select exactly 2 Pastors to authorize this Project.");
-            return;
+        if (project) {
+            // Clean payload for UPDATE
+            const { pastorIds, progress, ...cleanUpdate } = formData;
+            mutation.mutate({ ...cleanUpdate, id: project.id });
+        } else {
+            // Clean payload for CREATE
+            const { progress, ...cleanCreate } = formData;
+            mutation.mutate(cleanCreate);
         }
-        mutation.mutate(formData);
     };
 
     return (
@@ -134,6 +144,19 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                                 onChange={(e) => setFormData({ ...formData, budget: Number(e.target.value) })}
                             />
                             <TextField
+                                label="Strategic Category"
+                                select
+                                fullWidth
+                                value={formData.category}
+                                onChange={(e) => setFormData({ ...formData, category: e.target.value as any })}
+                            >
+                                <MenuItem value="INFRASTRUCTURE">Infrastructure</MenuItem>
+                                <MenuItem value="OUTREACH">Outreach</MenuItem>
+                                <MenuItem value="TECH">Technical</MenuItem>
+                                <MenuItem value="YOUTH">Youth Development</MenuItem>
+                                <MenuItem value="GENERAL">General Project</MenuItem>
+                            </TextField>
+                            <TextField
                                 label="Status"
                                 select
                                 fullWidth
@@ -144,6 +167,14 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                                 <MenuItem value="ACTIVE">Active</MenuItem>
                                 <MenuItem value="COMPLETED">Completed</MenuItem>
                             </TextField>
+                            <TextField
+                                label="Target Deadline"
+                                type="date"
+                                fullWidth
+                                InputLabelProps={{ shrink: true }}
+                                value={formData.deadline.split('T')[0]}
+                                onChange={(e) => setFormData({ ...formData, deadline: new Date(e.target.value).toISOString() })}
+                            />
                         </Box>
                         
                         <Box>

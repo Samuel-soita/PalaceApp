@@ -17,13 +17,7 @@ export const getAllPartnerships = async (req: any, res: Response) => {
         const partnerships = await prisma.partnership.findMany({
             where: whereClause,
             include: {
-                user: {
-                    select: {
-                        name: true,
-                        membershipNumber: true,
-                        department: { select: { name: true } }
-                    }
-                },
+                user: { include: { department: true } },
                 ledgers: { orderBy: { date: 'desc' } }
             },
             orderBy: { createdAt: 'desc' }

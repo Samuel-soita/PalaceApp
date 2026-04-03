@@ -74,6 +74,10 @@ model User {
   authenticatedUsers                             User[]                 @relation("UserAuthenticator")
   department                                     Department?            @relation("DeptLeader", fields: [departmentId], references: [id])
   managedDepartments                             Department[]           @relation("DeptManagers")
+  taggedInMessages                               Message[]              @relation("MessageTags")
+  submittedReports                               DepartmentReport[]     @relation("ReportSubmitter")
+  requestedRepairs                               TechnicalRepair[]      @relation("RepairRequester")
+  repairApprovals                                RepairApproval[]
 
   @@index([name])
   @@index([status])
@@ -133,6 +137,8 @@ model Devotion {
   themeOfYear  String
   date         DateTime              @unique @default(now())
   createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @default(now()) @updatedAt
+  deletedAt    DateTime?
   version      Int                   @default(0)
   affirmations Affirmation[]
   interactions DevotionInteraction[]
@@ -175,6 +181,8 @@ model Department {
   leaders       User[]         @relation("DeptLeader")
   volunteers    Volunteer[]
   managers      User[]         @relation("DeptManagers")
+  reports       DepartmentReport[]
+  repairs       TechnicalRepair[]
 
   @@index([deletedAt])
   @@index([updatedAt])
@@ -302,6 +310,7 @@ model Project {
   deadline          DateTime?
   departmentId      String
   status            String            @default("PLANNED")
+  category          String            @default("NEW_PROJECT") // HOST_PROJECT, NEW_PROJECT, INITIATIVE
   budget            Float             @default(0)
   progress          Int               @default(0)
   whatsappGroupLink String?
@@ -338,7 +347,7 @@ model ProjectUpdate {
 model Plan {
   id             String         @id @default(uuid())
   departmentId   String
-  type           String
+  type           String         // STRATEGIC, MONTHLY, QUARTERLY, BIANNUAL, YEARLY
   title          String
   description    String
   approvalStatus String         @default("PENDING_APPROVAL")
@@ -361,25 +370,27 @@ model Plan {
 }
 
 model Message {
-  id           String      @id @default(uuid())
-  content      String
-  senderId     String
-  receiverId   String?
-  departmentId String?
-  projectId    String?
-  eventId      String?
-  isEdited     Boolean     @default(false)
-  isDeleted    Boolean     @default(false)
-  isFlagged    Boolean     @default(false)
-  flagReason   String?
-  chatType     String      @default("DEPARTMENT")
-  createdAt    DateTime    @default(now())
-  version      Int         @default(0)
-  department   Department? @relation(fields: [departmentId], references: [id])
-  event        Event?      @relation(fields: [eventId], references: [id])
-  project      Project?    @relation(fields: [projectId], references: [id])
-  receiver     User?       @relation("MessageReceiver", fields: [receiverId], references: [id])
-  sender       User        @relation("MessageSender", fields: [senderId], references: [id])
+  id                  String      @id @default(uuid())
+  content             String
+  senderId            String
+  receiverId          String?
+  departmentId        String?
+  projectId           String?
+  eventId             String?
+  isEdited            Boolean     @default(false)
+  isDeleted           Boolean     @default(false)
+  isFlagged           Boolean     @default(false)
+  flagReason          String?
+  chatType            String      @default("DEPARTMENT")
+  createdAt           DateTime    @default(now())
+  version             Int         @default(0)
+  taggedDepartmentIds String[]    @default([])
+  department          Department? @relation(fields: [departmentId], references: [id])
+  event               Event?      @relation(fields: [eventId], references: [id])
+  project             Project?    @relation(fields: [projectId], references: [id])
+  receiver            User?       @relation("MessageReceiver", fields: [receiverId], references: [id])
+  sender              User        @relation("MessageSender", fields: [senderId], references: [id])
+  taggedUsers         User[]      @relation("MessageTags")
 }
 
 model Account {
@@ -797,4 +808,54 @@ model BudgetContributor {
 
   @@index([budgetId])
   @@index([userId])
+}
+
+model DepartmentReport {
+  id            String     @id @default(uuid())
+  departmentId  String
+  type          String     // MONTHLY, QUARTERLY, BIANNUAL, YEARLY
+  content       String?
+  fileUrl       String?
+  fileName      String?
+  submittedById String
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  downloadedAt   DateTime?
+  department     Department @relation(fields: [departmentId], references: [id])
+  submittedBy    User       @relation("ReportSubmitter", fields: [submittedById], references: [id])
+
+  @@index([departmentId])
+  @@index([type])
+}
+
+model TechnicalRepair {
+  id                 String   @id @default(uuid())
+  departmentId       String
+  instrumentName     String
+  problemDescription String
+  estimatedCost      Float
+  status             String   @default("PENDING_PASTOR_1") // PENDING_PASTOR_1, PENDING_PASTOR_2, PENDING_ADMIN, PENDING_BISHOP, APPROVED, REJECTED
+  requesterId        String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  
+  department         Department @relation(fields: [departmentId], references: [id])
+  requester          User       @relation("RepairRequester", fields: [requesterId], references: [id])
+  approvals          RepairApproval[]
+
+  @@index([departmentId])
+  @@index([status])
+}
+
+model RepairApproval {
+  id         String          @id @default(uuid())
+  repairId   String
+  userId     String
+  role       String          // PASTOR_1, PASTOR_2, ADMIN, BISHOP
+  approved   Boolean         @default(true)
+  createdAt  DateTime        @default(now())
+  repair     TechnicalRepair @relation(fields: [repairId], references: [id])
+  user       User            @relation(fields: [userId], references: [id])
+
+  @@unique([repairId, userId])
 }

@@ -5,6 +5,8 @@ import { Box, CircularProgress, Typography } from '@mui/material';
 import { GlobalSkeleton } from './components/layout/GlobalSkeleton';
 import ProfileModal from './components/modals/ProfileModal';
 import { OfflineStatus } from './components/common/OfflineStatus';
+import NetworkStatusBanner from './components/NetworkStatusBanner';
+import ConflictResolutionModal from './components/ConflictResolutionModal';
 
 // Lazy load components
 const Login = lazy(() => import('./pages/Login'));
@@ -113,10 +115,18 @@ function WatuaGuard({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace />;
 }
 
+function LeaderGuard({ children }: { children: React.ReactNode }) {
+    const { user } = useAuth();
+    if (!user || user.role === 'MEMBER') return <Navigate to="/" replace />;
+    return <>{children}</>;
+}
+
 function App() {
     return (
         <Suspense fallback={<LoadingFallback />}>
             <OfflineStatus />
+            <NetworkStatusBanner />
+            <ConflictResolutionModal />
             <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
@@ -145,7 +155,7 @@ function App() {
                 <Route path="/meetings" element={<PrivateRoute><Meetings /></PrivateRoute>} />
                 
                 {/* ALL AUTHENTICATED */}
-                <Route path="/messages" element={<PrivateRoute><Messages /></PrivateRoute>} />
+                <Route path="/messages" element={<PrivateRoute><LeaderGuard><Messages /></LeaderGuard></PrivateRoute>} />
                 <Route path="/register-child" element={<PrivateRoute><ChildRegistration /></PrivateRoute>} />
                 <Route path="/profile" element={<PrivateRoute><ProfileModal open={true} onClose={() => window.history.back()} /></PrivateRoute>} />
                 

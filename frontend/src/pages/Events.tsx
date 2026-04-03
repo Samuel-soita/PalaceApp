@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../lib/db';
 import api from '../lib/api-client';
 import {
     Typography, Grid, Card, CardContent, Box, Button, TextField, Dialog, DialogTitle,
@@ -14,26 +15,25 @@ import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
 import { isUserManagingDepartment } from '../utils/auth-options';
 
-interface Event {
+interface ChurchEvent {
     id: string;
     title: string;
-    date: string;
+    date: string | Date;
     time: string;
     location: string;
     description: string;
     departmentId: string;
-    department: { name: string };
-    budgetNeeded: number;
-    volunteersNeeded: number;
+    department?: { name: string };
+    budgetNeeded?: number;
+    volunteersNeeded?: number;
     status: string;
-    eventType: 'SERVICE' | 'CONFERENCE' | 'DEPARTMENT_EVENT' | 'MEETING';
+    eventType: string;
 }
 
 export default function Events() {
     const { user } = useAuth();
-    const queryClient = useQueryClient();
     const [open, setOpen] = useState(false);
-    const [editEvent, setEditEvent] = useState<Event | null>(null);
+    const [editEvent, setEditEvent] = useState<ChurchEvent | null>(null);
     const [formData, setFormData] = useState({
         title: '',
         date: '',
@@ -54,50 +54,52 @@ export default function Events() {
     const [page, setPage] = useState(1);
     const limit = 12;
 
-    const { data: eventsData, isLoading } = useQuery(['events', page], async () => {
-        const res = await api.get('/events', { params: { page, limit } });
-        return res.data;
-    });
-
-    const events = eventsData?.data || [];
-    const meta = eventsData?.meta || { total: 0, totalPages: 1 };
+    const events = useLiveQuery(() => db.events.orderBy('date').toArray(), []) || [];
+    const meta = { total: events.length, totalPages: Math.ceil((events.length || 1) / limit) };
 
     const filteredEvents = events.filter((e: any) => {
         if (isGlobalAdmin) return true;
         return e.approvalStatus === 'APPROVED' || isUserManagingDepartment(user, e.departmentId);
     });
 
-    const { data: departments } = useQuery(['departments'], async () => {
-        const res = await api.get('/departments');
-        return Array.isArray(res.data) ? res.data : [];
-    });
-
+    const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
     const userDepartments = departments?.filter((d: any) => isUserManagingDepartment(user, d.id)) || [];
     const showDepartmentSelect = isGlobalAdmin || userDepartments.length > 1;
 
-    const { data: pastors } = useQuery(['pastors'], async () => {
-        const res = await api.get('/users?role=PASTOR');
-        return Array.isArray(res.data) 
-            ? res.data.filter((u: any) => u.role === 'PASTOR') 
-            : [];
-    });
+    const pastors = useLiveQuery(() => db.users.where('role').equals('PASTOR').toArray(), []) || [];
 
-    const createMutation = useMutation(
-        (newEvent: any) => api.post('/events', newEvent),
-        { onSuccess: () => { queryClient.invalidateQueries(['events']); handleClose(); } }
-    );
+    const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
+        const actionId = id || crypto.randomUUID();
+        const timestamp = Date.now();
 
-    const updateMutation = useMutation(
-        (updatedEvent: any) => api.patch(`/events/${updatedEvent.id}`, updatedEvent),
-        { onSuccess: () => { queryClient.invalidateQueries(['events']); handleClose(); } }
-    );
+        if (method !== 'DELETE') {
+            await db.events.put({ 
+                ...payload, 
+                id: actionId, 
+                syncStatus: 'PENDING',
+                version: (payload.version || 0) + 1,
+                department: departments.find(d => d.id === payload.departmentId) || { name: 'Unknown' } // local join
+            });
+        } else {
+            if (id) await db.events.delete(id);
+        }
 
-    const deleteMutation = useMutation(
-        (id: string) => api.delete(`/events/${id}`),
-        { onSuccess: () => queryClient.invalidateQueries(['events']) }
-    );
+        await db.syncQueue.put({
+            id: crypto.randomUUID(),
+            timestamp,
+            entity: 'EVENT',
+            method,
+            url: method === 'POST' ? '/events' : `/events/${actionId}`,
+            payload: { ...payload, isOfflineSync: true, localVersion: payload.version },
+            status: 'PENDING',
+            retryCount: 0,
+            errorLog: []
+        });
 
-    const handleOpen = (event: Event | null = null) => {
+        handleClose();
+    };
+
+    const handleOpen = (event: any = null) => {
         if (event) {
             setEditEvent(event);
             setFormData({
@@ -149,15 +151,15 @@ export default function Events() {
         }
 
         if (editEvent) {
-            updateMutation.mutate({ ...formData, id: editEvent.id });
+            handleAction({ ...formData, id: editEvent.id, version: (editEvent as any).version || 0 }, 'PATCH', editEvent.id);
         } else {
-            createMutation.mutate(formData);
+            handleAction(formData, 'POST');
         }
     };
 
     const handleDelete = (id: string) => {
         if (window.confirm('Are you sure you want to delete this event? This action cannot be undone.')) {
-            deleteMutation.mutate(id);
+            handleAction({ id, version: 0 }, 'DELETE', id);
         }
     };
 
@@ -170,7 +172,8 @@ export default function Events() {
         }
     };
 
-    if (isLoading) return (
+    // Removed isLoading as Dexie resolves instantly or returns undefined on first tick
+    if (events === undefined) return (
         <DashboardLayout>
             <Box sx={{ height: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <LinearProgress sx={{ width: 200, borderRadius: 1 }} />
@@ -202,7 +205,7 @@ export default function Events() {
             </Box>
 
             <Grid container spacing={3}>
-                {filteredEvents?.map((event: Event) => (
+                {filteredEvents?.map((event: ChurchEvent) => (
                     <Grid item xs={12} md={6} lg={4} key={event.id}>
                         <Card className="holographic-card" sx={{ borderRadius: 4, height: '100%' }}>
                             <CardContent sx={{ p: 4 }}>
@@ -227,7 +230,7 @@ export default function Events() {
 
                                 <Typography variant="h5" fontWeight="900" sx={{ mb: 1, letterSpacing: -0.5 }}>{event.title}</Typography>
                                 <Typography variant="caption" fontWeight="900" sx={{ color: 'text.secondary', opacity: 0.6, textTransform: 'uppercase', mb: 2, display: 'block' }}>
-                                    {event.department.name} Department
+                                    {event.department?.name} Department
                                 </Typography>
 
                                 <div className="space-y-3 pt-2">
@@ -250,9 +253,9 @@ export default function Events() {
                                         variant="outlined"
                                         sx={{ fontWeight: '800', fontSize: '0.65rem' }}
                                     />
-                                    {event.budgetNeeded > 0 && (
+                                    {(event.budgetNeeded || 0) > 0 && (
                                         <Typography variant="caption" fontWeight="900" color="success.main">
-                                            ${event.budgetNeeded.toLocaleString()} Requested
+                                            ${event.budgetNeeded?.toLocaleString()} Requested
                                         </Typography>
                                     )}
                                 </Box>
@@ -426,7 +429,7 @@ export default function Events() {
                         <Button
                             type="submit"
                             variant="contained"
-                            disabled={createMutation.isLoading || updateMutation.isLoading}
+                            disabled={false}
                             sx={{ borderRadius: 2, px: 4, fontWeight: '900' }}
                         >
                             {editEvent ? 'UPDATE' : 'INITIATE'} EVENT

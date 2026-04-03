@@ -28,14 +28,23 @@ export async function getOrSetCache<T>(key: string, fetchFn: () => Promise<T>, t
             return pendingPromises.get(key);
         }
 
-        // Otherwise, start a new fetch and track it
+        // Otherwise, start a new fetch with a timeout and track it
         const fetchPromise = (async () => {
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error(`Fetch timed out for key: ${key}`)), 10000)
+            );
+
             try {
-                const freshData = await fetchFn();
+                // Race the fetch against a 10s timeout
+                const freshData = await Promise.race([
+                    fetchFn(),
+                    timeoutPromise
+                ]) as T;
+
                 await redis.setex(key, ttlSeconds, JSON.stringify(freshData));
                 return freshData;
             } finally {
-                // Ensure we always clean up the tracking map
+                // Ensure we always clean up the tracking map so subsequent requests can try again
                 pendingPromises.delete(key);
             }
         })();
@@ -44,7 +53,8 @@ export async function getOrSetCache<T>(key: string, fetchFn: () => Promise<T>, t
         return fetchPromise;
     } catch (error) {
         console.warn(`[Cache Miss/Error] ${key}:`, error);
-        return fetchFn(); // Fallback to fresh data if Redis fails
+        // If it's a timeout or Redis error, try one last fresh fetch without caching
+        return fetchFn();
     }
 }
 

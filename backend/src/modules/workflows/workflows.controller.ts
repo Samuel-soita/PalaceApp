@@ -141,7 +141,7 @@ export const getBaptisms = async (req: any, res: Response) => {
         
         const baptisms = await prisma.baptism.findMany({
             where: whereClause,
-            include: { user: { select: { name: true, gender: true, phoneNumber: true, department: { select: { name: true } } } } },
+            include: { user: { include: { department: true } } },
             orderBy: { createdAt: 'desc' }
         });
         

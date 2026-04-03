@@ -40,5 +40,7 @@ export const logAction = async (params: LogActionParams): Promise<void> => {
       console.error('[AUDIT LOG FAILURE] Failed to write to audit log:', err);
     });
   } catch (error) {
+    // Audit failure should not crash the primary transaction
+    console.error('[CRIT] Audit subsystem failure:', error);
   }
 };

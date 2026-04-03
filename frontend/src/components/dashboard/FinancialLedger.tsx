@@ -204,7 +204,13 @@ export default function FinancialLedger({ account, transactions, departmentId }:
                                                     <Button 
                                                         size="small" 
                                                         variant="contained" 
-                                                        onClick={() => approveMutation.mutate(tx.id)}
+                                                        onClick={() => {
+                                                            if (!navigator.onLine) {
+                                                                alert("NETWORK CRITICAL: Approvals cannot be cached locally. Please reconnect to sign missions.");
+                                                                return;
+                                                            }
+                                                            approveMutation.mutate(tx.id);
+                                                        }}
                                                         sx={{ bgcolor: 'var(--cyan)', color: '#000', fontWeight: 950, borderRadius: 0, fontSize: '0.6rem' }}
                                                     > SIGN MISSION </Button>
                                                 ) : (
@@ -233,7 +239,13 @@ export default function FinancialLedger({ account, transactions, departmentId }:
                     <Button onClick={() => setIncomeOpen(false)} sx={{ color: 'rgba(255,255,255,0.4)', fontWeight: 800 }}>CANCEL</Button>
                     <Button 
                         variant="contained" 
-                        onClick={() => incomeMutation.mutate({ amount, description, departmentId: departmentId || user?.departmentId })}
+                        onClick={() => {
+                            if (!navigator.onLine) {
+                                alert("NETWORK CRITICAL: Financial mutations cannot be cached locally. Please reconnect to record income.");
+                                return;
+                            }
+                            incomeMutation.mutate({ amount, description, departmentId: departmentId || user?.departmentId });
+                        }}
                         sx={{ bgcolor: 'var(--cyan)', color: '#000', fontWeight: 950, borderRadius: 0 }}
                     > COMMUNE INCOME </Button>
                 </DialogActions>
@@ -255,7 +267,13 @@ export default function FinancialLedger({ account, transactions, departmentId }:
                     <Button onClick={() => setWithdrawOpen(false)} sx={{ color: 'rgba(255,255,255,0.4)', fontWeight: 800 }}>CANCEL</Button>
                     <Button 
                         variant="contained" 
-                        onClick={() => withdrawMutation.mutate({ amount, description, departmentId: departmentId || user?.departmentId })}
+                        onClick={() => {
+                            if (!navigator.onLine) {
+                                alert("NETWORK CRITICAL: Fund withdrawals cannot be cached locally. Please reconnect to request funds.");
+                                return;
+                            }
+                            withdrawMutation.mutate({ amount, description, departmentId: departmentId || user?.departmentId });
+                        }}
                         sx={{ bgcolor: '#ff4f4f', color: '#fff', fontWeight: 950, borderRadius: 0 }}
                     > SUBMIT REQUEST </Button>
                 </DialogActions>

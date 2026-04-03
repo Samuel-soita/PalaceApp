@@ -174,7 +174,7 @@ export const WelcomeSplash = ({ onComplete }: { onComplete: () => void }) => {
                             fontSize: { xs: '1rem', md: '1.25rem' }
                         }}
                     >
-                        "BUT UPON MOUNT ZION THERE SHALL BE DELIVERANCE AND HOLINESS, AND THE CHILDREN OF JACOB SHALL POSSESS THEIR POSSESSIONS"
+                        &quot;BUT UPON MOUNT ZION THERE SHALL BE DELIVERANCE AND HOLINESS, AND THE CHILDREN OF JACOB SHALL POSSESS THEIR POSSESSIONS&quot;
                     </Typography>
                 </Box>
             </Container>

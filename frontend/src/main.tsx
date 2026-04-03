@@ -13,6 +13,10 @@ import PWAInstallBanner from './components/PWAInstallBanner'
 import { registerSW } from 'virtual:pwa-register'
 import { setUpdateSWCallback } from './hooks/usePWA'
 
+if (import.meta.env.DEV || (window as any).Cypress) {
+    import('./scripts/simulate-stress');
+}
+
 // Register service worker and wire up update/offline-ready notifications
 let updateSW: any = () => {};
 

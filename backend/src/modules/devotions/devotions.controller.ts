@@ -7,7 +7,7 @@ export const getDailyDevotion = async (req: Request, res: Response) => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        let devotion = await prisma.devotion.findUnique({
+        const devotion = await prisma.devotion.findUnique({
             where: { date: today },
             include: {
                 interactions: {
@@ -15,25 +15,6 @@ export const getDailyDevotion = async (req: Request, res: Response) => {
                 }
             }
         });
-
-        if (!devotion) {
-            // Fetch Global Themes from settings
-            const settings = await prisma.ministrySettings.findUnique({
-                where: { id: 'GLOBAL' }
-            });
-
-            // Seed a placeholder with current themes if none exists for today
-            devotion = await prisma.devotion.create({
-                data: {
-                    title: 'Walking in Divine Purpose',
-                    content: 'Today, remember that you are called for a greater purpose. The challenges you face are but stepping stones to your destiny.',
-                    themeOfMonth: settings?.themeOfMonth || 'MONTH OF NEW BEGINNINGS',
-                    themeOfYear: settings?.themeOfYear || 'YEAR OF DIVINE ESTABLISHMENT',
-                    date: today
-                },
-                include: { interactions: true }
-            }) as any;
-        }
 
         res.json(devotion);
     } catch (error) {
@@ -85,6 +66,12 @@ export const createDevotion = async (req: Request, res: Response) => {
     try {
         const { title, content, themeOfMonth, themeOfYear, date } = req.body;
         const actor = (req as any).user;
+
+        // 🛡️ Authorization Check: Only Pastors and Global Executives can publish Daily Devotions
+        const isAuthorized = ['PASTOR', 'ASSOCIATE_PASTOR', 'SUPER_ADMIN', 'WATUA', 'SYSTEM_ADMIN'].includes(actor.role);
+        if (!isAuthorized) {
+            return res.status(403).json({ error: 'Directive Denied: Daily Devotions must be authored by ordained leadership.' });
+        }
 
         const devotion = await prisma.devotion.create({
             data: {

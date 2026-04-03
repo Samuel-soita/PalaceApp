@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { Box, Typography, Chip, IconButton, Modal, Backdrop, Fade } from '@mui/material';
-import { AlertCircle, AlertTriangle, Info, Bell, X, Globe, Building2 } from 'lucide-react';
+import { Box, Typography, Chip, IconButton, Modal, Backdrop, Fade, Button } from '@mui/material';
+import { AlertCircle, AlertTriangle, Info, Bell, X, Globe, Building2, Edit, Trash2 } from 'lucide-react';
 
 interface Announcement {
     id: string;
@@ -17,6 +17,8 @@ interface Announcement {
 
 interface BroadcastTrackProps {
     announcements: Announcement[];
+    onEdit?: (item: Announcement) => void;
+    onDelete?: (item: Announcement) => void;
 }
 
 const PRIORITY_CONFIG: Record<string, { color: string; bg: string; border: string; icon: React.ElementType; label: string }> = {
@@ -50,7 +52,7 @@ const PRIORITY_CONFIG: Record<string, { color: string; bg: string; border: strin
     },
 };
 
-export const BroadcastTrack = React.memo(({ announcements }: BroadcastTrackProps) => {
+export const BroadcastTrack = React.memo(({ announcements, onEdit, onDelete }: BroadcastTrackProps) => {
     const [selected, setSelected] = useState<Announcement | null>(null);
     const trackRef = useRef<HTMLDivElement>(null);
 
@@ -212,6 +214,51 @@ export const BroadcastTrack = React.memo(({ announcements }: BroadcastTrackProps
                                                 {selected.content}
                                             </Typography>
                                         </Box>
+
+                                        {/* Actions */}
+                                        <Box sx={{ mt: 3, display: 'flex', gap: 1.5 }}>
+                                            <Button
+                                                fullWidth
+                                                variant="contained"
+                                                startIcon={<Edit size={14} />}
+                                                disabled={selected.status === 'PUBLISHED'}
+                                                onClick={() => {
+                                                    onEdit?.(selected);
+                                                    handleClose();
+                                                }}
+                                                sx={{ 
+                                                    borderRadius: 2, 
+                                                    fontWeight: 900, 
+                                                    fontSize: '0.7rem',
+                                                    bgcolor: cfg.color,
+                                                    '&:hover': { bgcolor: cfg.color, filter: 'brightness(1.1)' }
+                                                }}
+                                            >
+                                                {selected.status === 'PUBLISHED' ? 'LOCKED' : 'EDIT'}
+                                            </Button>
+                                            <Button
+                                                fullWidth
+                                                variant="outlined"
+                                                startIcon={<Trash2 size={14} />}
+                                                disabled={selected.status === 'PUBLISHED'}
+                                                onClick={() => {
+                                                    if (window.confirm('Are you sure you want to retract this broadcast?')) {
+                                                        onDelete?.(selected);
+                                                        handleClose();
+                                                    }
+                                                }}
+                                                sx={{ 
+                                                    borderRadius: 2, 
+                                                    fontWeight: 900, 
+                                                    fontSize: '0.7rem',
+                                                    borderColor: 'rgba(255,255,255,0.1)',
+                                                    color: 'text.secondary',
+                                                    '&:hover': { borderColor: 'error.main', color: 'error.main', bgcolor: 'rgba(255,0,0,0.05)' }
+                                                }}
+                                            >
+                                                DELETE
+                                            </Button>
+                                        </Box>
                                     </Box>
                                 </Box>
                             );
@@ -222,3 +269,5 @@ export const BroadcastTrack = React.memo(({ announcements }: BroadcastTrackProps
         </Box>
     );
 });
+
+BroadcastTrack.displayName = 'BroadcastTrack';

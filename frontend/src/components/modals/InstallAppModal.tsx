@@ -123,7 +123,7 @@ export default function InstallAppModal({ open, onClose }: InstallAppModalProps)
                                         </Box>
                                         <Box>
                                             <Typography variant="body2" fontWeight={700}>2. Add to Home Screen</Typography>
-                                            <Typography variant="caption" color="text.secondary">Scroll down the menu and select "Add to Home Screen".</Typography>
+                                            <Typography variant="caption" color="text.secondary">Scroll down the menu and select &quot;Add to Home Screen&quot;.</Typography>
                                         </Box>
                                     </Box>
                                 </>
@@ -144,8 +144,8 @@ export default function InstallAppModal({ open, onClose }: InstallAppModalProps)
                                             <Smartphone size={18} color="#4f8bff" />
                                         </Box>
                                         <Box>
-                                            <Typography variant="body2" fontWeight={700}>Select 'Install' or 'Add'</Typography>
-                                            <Typography variant="caption" color="text.secondary">Choose 'Install app' or 'Add to home screen'.</Typography>
+                                            <Typography variant="body2" fontWeight={700}>Select &apos;Install&apos; or &apos;Add&apos;</Typography>
+                                            <Typography variant="caption" color="text.secondary">Choose &apos;Install app&apos; or &apos;Add to home screen&apos;.</Typography>
                                         </Box>
                                     </Box>
                                 </>

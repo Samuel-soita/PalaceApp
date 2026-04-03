@@ -2,7 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import prisma from '../utils/prisma.js';
 import { getOrSetCache } from '../utils/redis.js';
-export type Role = 'SUPER_ADMIN' | 'SYSTEM_ADMIN' | 'SECRETARY' | 'DEPARTMENT_LEADER' | 'MEMBER' | 'PASTOR' | 'WATUA';
+import { AppError } from '../utils/errors.js';
+export type Role = 'SUPER_ADMIN' | 'SYSTEM_ADMIN' | 'SECRETARY' | 'DEPARTMENT_LEADER' | 'MEMBER' | 'PASTOR' | 'ASSOCIATE_PASTOR' | 'WATUA';
 
 export interface AuthRequest extends Request {
     user?: {
@@ -21,6 +22,7 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
     const token = req.headers.authorization?.split(' ')[1];
 
     if (!token) {
+        console.warn(`[AUTH_FAILURE] Missing Token for request to ${req.path}`);
         return res.status(401).json({ error: 'Authentication required' });
     }
 
@@ -30,7 +32,7 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
         // --- SECURITY UPGRADE: STRICT ROUTE LOCKDOWN ---
         // 1. Session Binding & Validation via Redis 
         const sessionKey = `auth:session:${decoded.id}`;
-        let user = await getOrSetCache(sessionKey, async () => {
+        const user = await getOrSetCache(sessionKey, async () => {
              return await prisma.user.findUnique({ 
                 where: { id: decoded.id },
                 include: { managedDepartments: { select: { id: true } } } 
@@ -38,6 +40,7 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
         }, 15); // Drop cache to 15 SECONDS to force near real-time re-checks!
 
         if (!user) {
+            console.warn(`[AUTH_FAILURE] Session invalidated or user missing for ID ${decoded.id} on path ${req.path}`);
             return res.status(401).json({ error: 'Session invalidated. User profile missing.' });
         }
 
@@ -45,10 +48,12 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
         // If a Bishop demoted a user 10 seconds ago, their JWT still says 'DEPARTMENT_LEADER'.
         // We MUST re-check the live DB role to prevent escalation attacks.
         if (user.role !== decoded.role) {
+            console.error('Role mismatch 403', { userRole: user.role, decodedRole: decoded.role });
             return res.status(403).json({ error: 'SECURITY ALERT: Role mismatch detected. Your permissions have changed. Please log in again.' });
         }
 
         if (user.isSuspended || user.status === 'SUSPENDED') {
+            console.error('Suspended 403', { isSuspended: user.isSuspended, status: user.status });
             return res.status(403).json({ error: 'Account suspended. Contact Bishop.' });
         }
 
@@ -69,15 +74,21 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
             pastorModules
         };
         next();
-    } catch (error) {
+    } catch (error: any) {
+        console.warn(`[AUTH_FAILURE] Invalid or expired token for path ${req.path}. Error: ${error.message}`);
         res.status(401).json({ error: 'Invalid or expired token' });
     }
 };
 
 export const authorize = (roles: Role[]) => {
     return (req: AuthRequest, res: Response, next: NextFunction) => {
-        if (!req.user || !roles.includes(req.user.role)) {
-            return res.status(403).json({ error: 'Access denied' });
+        if (!req.user) {
+            throw new AppError('Authentication required', 401);
+        }
+        
+        if (!roles.includes(req.user.role)) {
+            console.error(`[RBAC_VIOLATION] User ${req.user.id} (${req.user.role}) attempted restricted access to ${req.path}`);
+            throw new AppError(`Access denied: Required roles [${roles.join(', ')}]`, 403);
         }
         next();
     };
@@ -86,7 +97,7 @@ export const authorize = (roles: Role[]) => {
 export const departmentGuard = (req: AuthRequest, res: Response, next: NextFunction) => {
     const { departmentId } = req.params;
 
-    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    if (!req.user) throw new AppError('Authentication required', 401);
 
     // Global access roles
     if (['SUPER_ADMIN', 'WATUA', 'SYSTEM_ADMIN', 'SECRETARY'].includes(req.user.role)) {
@@ -96,13 +107,12 @@ export const departmentGuard = (req: AuthRequest, res: Response, next: NextFunct
     // Leaders and Pastors check managed departments mapped to them
     if (['DEPARTMENT_LEADER', 'PASTOR'].includes(req.user.role)) {
         const isManaging = req.user.managedDepartments?.some(d => d.id === departmentId);
-        // Fallback for primary departmentId just in case
         if (isManaging || req.user.departmentId === departmentId) {
             return next();
         }
     }
 
-    res.status(403).json({ error: 'Access denied to this department' });
+    throw new AppError('Access denied: You do not manage this department.', 403);
 };
 
 /**
@@ -111,7 +121,7 @@ export const departmentGuard = (req: AuthRequest, res: Response, next: NextFunct
  */
 export const moduleGuard = (moduleKey: string) => {
     return (req: AuthRequest, res: Response, next: NextFunction) => {
-        if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+        if (!req.user) throw new AppError('Authentication required', 401);
 
         // Bypassing Roles (Full Authority)
         if (['SUPER_ADMIN', 'WATUA', 'SYSTEM_ADMIN', 'SECRETARY'].includes(req.user.role)) {
@@ -123,9 +133,7 @@ export const moduleGuard = (moduleKey: string) => {
             if (req.user.pastorModules?.includes(moduleKey)) {
                 return next();
             }
-            return res.status(403).json({ 
-                error: `SECURITY ALERT: You do not have the '${moduleKey}' module assigned to your profile. Contact Bishop.` 
-            });
+            throw new AppError(`SECURITY ALERT: You do not have the '${moduleKey}' module assigned. Contact Bishop.`, 403);
         }
 
         // Non-Pastors (Members/Leaders) - Fallback to role-based access

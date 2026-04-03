@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react';
 import {
-    Box, Typography, Chip, IconButton, Modal, Backdrop, Fade, Grid
+    Box, Typography, Chip, IconButton, Modal, Backdrop, Fade, Grid, Button
 } from '@mui/material';
-import { Calendar, MapPin, Clock, X, Briefcase, MessageSquare, Target } from 'lucide-react';
+import { Calendar, MapPin, Clock, X, Briefcase, MessageSquare, Target, Edit, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 type ItemType = 'PROJECT' | 'EVENT' | 'PLAN' | 'MEETING';
@@ -27,6 +27,8 @@ interface OperationalItem {
 
 interface OperationalTimelineProps {
     items: OperationalItem[];
+    onEdit?: (item: OperationalItem) => void;
+    onDelete?: (item: OperationalItem) => void;
 }
 
 // ── Color palette per entity type ─────────────────────────────────────────────
@@ -77,7 +79,7 @@ const TYPE_CONFIG: Record<ItemType, {
     },
 };
 
-export const OperationalTimeline = ({ items }: OperationalTimelineProps) => {
+export const OperationalTimeline = ({ items, onEdit, onDelete }: OperationalTimelineProps) => {
     const [selectedItem, setSelectedItem] = useState<OperationalItem | null>(null);
     const trackRef = useRef<HTMLDivElement>(null);
 
@@ -128,7 +130,7 @@ export const OperationalTimeline = ({ items }: OperationalTimelineProps) => {
                     display: flex;
                     gap: 20px;
                     width: max-content;
-                    animation: marqueeSlide ${Math.max(30, items.length * 6)}s linear infinite;
+                    animation: marqueeSlide ${Math.max(100, items.length * 15)}s linear infinite;
                     will-change: transform;
                 }
                 .marquee-card {
@@ -330,6 +332,51 @@ export const OperationalTimeline = ({ items }: OperationalTimelineProps) => {
                                                 </Typography>
                                             </Box>
                                         )}
+
+                                        {/* Actions */}
+                                        <Box sx={{ mt: 3, display: 'flex', gap: 1.5 }}>
+                                            <Button
+                                                fullWidth
+                                                variant="contained"
+                                                startIcon={<Edit size={14} />}
+                                                disabled={selectedItem.approvalStatus === 'APPROVED' || selectedItem.meetingStatus === 'SCHEDULED' || selectedItem.status === 'PUBLISHED'}
+                                                onClick={() => {
+                                                    onEdit?.(selectedItem);
+                                                    handleClose();
+                                                }}
+                                                sx={{ 
+                                                    borderRadius: 2, 
+                                                    fontWeight: 900, 
+                                                    fontSize: '0.7rem',
+                                                    bgcolor: cfg.color,
+                                                    '&:hover': { bgcolor: cfg.color, filter: 'brightness(1.1)' }
+                                                }}
+                                            >
+                                                {selectedItem.approvalStatus === 'APPROVED' ? 'LOCKED' : 'EDIT'}
+                                            </Button>
+                                            <Button
+                                                fullWidth
+                                                variant="outlined"
+                                                startIcon={<Trash2 size={14} />}
+                                                disabled={selectedItem.approvalStatus === 'APPROVED' || selectedItem.meetingStatus === 'SCHEDULED' || selectedItem.status === 'PUBLISHED'}
+                                                onClick={() => {
+                                                    if (window.confirm(`Are you sure you want to decommission this ${selectedItem.type}?`)) {
+                                                        onDelete?.(selectedItem);
+                                                        handleClose();
+                                                    }
+                                                }}
+                                                sx={{ 
+                                                    borderRadius: 2, 
+                                                    fontWeight: 900, 
+                                                    fontSize: '0.7rem',
+                                                    borderColor: 'rgba(255,255,255,0.1)',
+                                                    color: 'text.secondary',
+                                                    '&:hover': { borderColor: 'error.main', color: 'error.main', bgcolor: 'rgba(255,0,0,0.05)' }
+                                                }}
+                                            >
+                                                DELETE
+                                            </Button>
+                                        </Box>
                                     </Box>
                                 </Box>
                             );

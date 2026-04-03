@@ -22,22 +22,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }, [user]);
 
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', bgcolor: 'background.default' }}>
-            {showSplash ? (
-                <WelcomeSplash onComplete={() => setShowSplash(false)} />
-            ) : (
-                <>
-                    <AnnouncementBanner />
-                    <TopNavbar />
-                    
-                    <Box component="main" sx={{ flexGrow: 1, overflowY: 'auto', p: { xs: 2, md: 4 } }}>
-                        <Container maxWidth="xl" sx={{ height: '100%' }}>
-                            {children}
-                        </Container>
-                        {user?.role !== 'MEMBER' && <CommunicationHub />}
-                    </Box>
-                </>
+        <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', bgcolor: 'background.default', position: 'relative' }}>
+            {showSplash && (
+                <Box sx={{ position: 'fixed', inset: 0, zIndex: 9999 }}>
+                    <WelcomeSplash onComplete={() => setShowSplash(false)} />
+                </Box>
             )}
+            
+            <AnnouncementBanner />
+            <TopNavbar />
+            
+            <Box component="main" sx={{ flexGrow: 1, overflowY: 'auto', p: { xs: 2, md: 4 } }}>
+                <Container maxWidth="xl" sx={{ height: '100%' }}>
+                    {children}
+                </Container>
+                {user?.role !== 'MEMBER' && <CommunicationHub />}
+            </Box>
         </Box>
     );
 }

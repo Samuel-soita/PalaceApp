@@ -1,6 +1,8 @@
 import cron from 'node-cron';
 import prisma from './prisma.js';
 import { logAction } from './audit.service.js';
+import path from 'path';
+import fs from 'fs';
 
 export class BackgroundJobWorker {
     private static isRunning = false;
@@ -12,6 +14,11 @@ export class BackgroundJobWorker {
     static ignite() {
         console.log('[System Kernel] Igniting Background Job Worker...');
         
+        // Run report purge every hour
+        cron.schedule('0 * * * *', async () => {
+            await this.purgeExpiredReports();
+        });
+
         // Run every minute
         cron.schedule('* * * * *', async () => {
             if (this.isRunning) return; // Prevent race conditions
@@ -27,7 +34,47 @@ export class BackgroundJobWorker {
         });
     }
 
+    private static async purgeExpiredReports() {
+        try {
+            const tenDaysAgo = new Date();
+            tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+
+            const expiredReports = await (prisma as any).departmentReport.findMany({
+                where: {
+                    downloadedAt: {
+                        lt: tenDaysAgo,
+                        not: null
+                    }
+                }
+            });
+
+            if (expiredReports.length === 0) return;
+
+            console.log(`[Purge Job] Found ${expiredReports.length} expired reports. Initiating deletion...`);
+
+            for (const report of expiredReports) {
+                // Delete physical file
+                if (report.fileUrl) {
+                    const filePath = path.join(process.cwd(), report.fileUrl.replace(/^\//, ''));
+                    if (fs.existsSync(filePath)) {
+                        fs.unlinkSync(filePath);
+                        console.log(`[Purge Job] Deleted file: ${filePath}`);
+                    }
+                }
+
+                // Delete database record
+                await (prisma as any).departmentReport.delete({
+                    where: { id: report.id }
+                });
+                console.log(`[Purge Job] Deleted report record: ${report.id}`);
+            }
+        } catch (error) {
+            console.error('[Purge Job Error]', error);
+        }
+    }
+
     private static async processQueue() {
+        // ... REST OF THE FILE ...
         // Grab up to 50 pending jobs to avoid overwhelming worker thread
         const jobs = await prisma.jobQueue.findMany({
             where: {

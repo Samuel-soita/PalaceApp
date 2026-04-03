@@ -7,7 +7,7 @@ import {
 import { 
     Bell, Calendar, UserPlus, Baby, Heart, BookOpen, Quote, Star, 
     ArrowRight, Droplet, CheckCircle2, Clock, Sparkles, Megaphone, 
-    ThumbsUp, Smile, Send, Shield, ChevronRight, TrendingUp, Zap
+    ThumbsUp, Smile, Send, Shield, ChevronRight, TrendingUp, Zap, Wrench, FileText
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -23,6 +23,11 @@ import EventFormModal from '../components/modals/EventFormModal';
 import ProjectFormModal from '../components/modals/ProjectFormModal';
 import PlanFormModal from '../components/modals/PlanFormModal';
 import AnnouncementFormModal from '../components/modals/AnnouncementFormModal';
+import RepairApprovalManager from '../components/dashboard/RepairApprovalManager';
+import MissionReportsViewer from '../components/dashboard/MissionReportsViewer';
+import DepartmentReportModal from '../components/modals/DepartmentReportModal';
+import { OperationalTimeline } from '../components/dashboard/OperationalTimeline';
+import { BroadcastTrack } from '../components/dashboard/BroadcastTrack';
 
 export default function PastorsDashboard() {
     const { user, updateUser } = useAuth();
@@ -53,10 +58,17 @@ export default function PastorsDashboard() {
     });
 
     // Operational Commands
-    const [eventModalOpen, setEventModalOpen] = useState(false);
     const [projectModalOpen, setProjectModalOpen] = useState(false);
+    const [eventModalOpen, setEventModalOpen] = useState(false);
     const [planModalOpen, setPlanModalOpen] = useState(false);
     const [announcementModalOpen, setAnnouncementModalOpen] = useState(false);
+    const [reportModalOpen, setReportModalOpen] = useState(false);
+    
+    // ─── Edit States ────────────────────────────────────────────────────────
+    const [editingProject, setEditingProject] = useState<any>(null);
+    const [editingEvent, setEditingEvent] = useState<any>(null);
+    const [editingPlan, setEditingPlan] = useState<any>(null);
+    const [editingAnnouncement, setEditingAnnouncement] = useState<any>(null);
 
     // --- Data Streams ---
     const { data: syncData, isLoading: isSyncLoading } = useQuery(['dashboard-sync'], async () => {
@@ -108,6 +120,46 @@ export default function PastorsDashboard() {
             }
         }
     );
+
+    // ─── Delete Mutation ─────────────────────────────────────────────────────
+    const deleteMutation = useMutation(
+        async ({ id, type }: { id: string; type: string }) => {
+            const endpoint = {
+                PROJECT: `/projects/${id}`,
+                EVENT: `/events/${id}`,
+                PLAN: `/plans/${id}`,
+                MEETING: `/meetings/${id}`,
+                ANNOUNCEMENT: `/announcements/${id}`
+            }[type];
+            return api.delete(endpoint!);
+        },
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries(['dashboard-sync']);
+                setToast({ open: true, message: 'Record decommissioned successfully.', severity: 'success' });
+            },
+            onError: (err: any) => {
+                setToast({ 
+                    open: true, 
+                    message: err.response?.data?.error || 'Failed to delete record.', 
+                    severity: 'error' 
+                });
+            }
+        }
+    );
+
+    const handleEdit = (item: any) => {
+        const type = item.type || (item.priority ? 'ANNOUNCEMENT' : 'PROJECT');
+        if (type === 'PROJECT') { setEditingProject(item); setProjectModalOpen(true); }
+        if (type === 'EVENT') { setEditingEvent(item); setEventModalOpen(true); }
+        if (type === 'PLAN') { setEditingPlan(item); setPlanModalOpen(true); }
+        if (type === 'ANNOUNCEMENT' || type === 'INTEL') { setEditingAnnouncement(item); setAnnouncementModalOpen(true); }
+    };
+
+    const handleDelete = (item: any) => {
+        const type = item.type || (item.priority ? 'ANNOUNCEMENT' : 'PROJECT');
+        deleteMutation.mutate({ id: item.id, type });
+    };
 
     return (
         <DashboardLayout>
@@ -210,7 +262,7 @@ export default function PastorsDashboard() {
                                     <>
                                         <Typography variant="h4" fontWeight="950" sx={{ mb: 2, color: 'primary.main', opacity: 0.9 }}>{devotion?.title}</Typography>
                                         <Typography variant="body1" sx={{ mb: 4, lineHeight: 1.8, fontSize: '1.1rem', opacity: 0.8, fontStyle: 'italic' }}>
-                                            "{devotion?.content}"
+                                            &quot;{devotion?.content}&quot;
                                         </Typography>
                                         <Divider sx={{ mb: 3, opacity: 0.1 }} />
                                         <Box display="flex" justifyContent="space-between" alignItems="center">
@@ -326,7 +378,7 @@ export default function PastorsDashboard() {
                                                 </Grid>
 
                                                 <Typography variant="caption" sx={{ opacity: 0.6, fontStyle: 'italic', fontWeight: 700 }}>
-                                                    "Partnering with Prayer Palace Apostolic Ministry for Global impact by making sure the church Budget is met"
+                                                    &quot;Partnering with Prayer Palace Apostolic Ministry for Global impact by making sure the church Budget is met&quot;
                                                 </Typography>
                                             </CardContent>
                                         ) : (
@@ -401,7 +453,7 @@ export default function PastorsDashboard() {
                         <Card className="holographic-card divine-mandate-card" sx={{ p: 4, mb: 4, border: '1px solid var(--primary-glow) !important' }}>
                             <Typography variant="h6" fontWeight="950" mb={1} sx={{ color: 'var(--cyan)', letterSpacing: 2 }}>DIVINE MANDATE</Typography>
                             <Typography variant="h5" className="divine-text" sx={{ opacity: 0.9, lineHeight: 1.4, fontStyle: 'italic' }}>
-                                "{syncData?.affirmation?.content || "I walk in divine health and supernatural protection."}"
+                                &quot;{syncData?.affirmation?.content || "I walk in divine health and supernatural protection."}&quot;
                             </Typography>
                         </Card>
                     </Grid>
@@ -464,6 +516,16 @@ export default function PastorsDashboard() {
                             </Card>
 
                             {/* ⚔️ STRATEGIC COMMAND CENTER for Pastors */}
+                            <Card sx={{ bgcolor: 'rgba(255,165,0,0.02)', border: '1px solid orange', borderRadius: 0, mb: 4 }}>
+                                <CardContent sx={{ p: 3 }}>
+                                    <Box display="flex" alignItems="center" gap={1.5} mb={3}>
+                                        <Wrench size={20} color="orange" />
+                                        <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 2 }}>TECH REPAIR AUTHORIZATIONS</Typography>
+                                    </Box>
+                                    <RepairApprovalManager />
+                                </CardContent>
+                            </Card>
+
                             <Card sx={{ bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid var(--primary)', borderRadius: 4 }}>
                                 <CardContent sx={{ p: 3 }}>
                                     <Box display="flex" alignItems="center" gap={1.5} mb={3}>
@@ -499,9 +561,28 @@ export default function PastorsDashboard() {
                                                 </Button>
                                             </Grid>
                                         )}
+                                        <Grid item xs={6}>
+                                            <Button fullWidth onClick={() => setReportModalOpen(true)} sx={{ height: 60, display: 'flex', flexDirection: 'column', gap: 0.5, bgcolor: 'rgba(0, 255, 255, 0.05)', border: '1px solid var(--cyan)', borderRadius: 2 }}>
+                                                <FileText size={18} color="var(--cyan)" />
+                                                <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem', color: 'var(--cyan)' }}>SUBMIT REPORT</Typography>
+                                            </Button>
+                                        </Grid>
                                     </Grid>
                                 </CardContent>
                             </Card>
+
+                            {/* MISSION REPORTS OVERWATCH - Bishop/System Admin Only */}
+                            {['SUPER_ADMIN', 'SYSTEM_ADMIN', 'WATUA'].includes(user?.role || '') && (
+                                <Card className="holographic-card" sx={{ borderRadius: 0, mb: 4, border: '1px solid rgba(0, 255, 255, 0.2)' }}>
+                                    <CardContent sx={{ p: 3 }}>
+                                        <Box display="flex" alignItems="center" gap={1.5} mb={3}>
+                                            <FileText size={20} color="var(--cyan)" />
+                                            <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 2 }}>MISSION COMMAND REPORTS (PDF)</Typography>
+                                        </Box>
+                                        <MissionReportsViewer limit={5} />
+                                    </CardContent>
+                                </Card>
+                            )}
 
                             <Card className="holographic-card" sx={{ p: 0, borderRadius: 0, mb: 4 }}>
                                 <CardContent sx={{ p: 3 }}>
@@ -509,32 +590,22 @@ export default function PastorsDashboard() {
                                         <Calendar size={20} color="var(--primary)" />
                                         <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 2 }}>CHURCH MISSION TIMELINE</Typography>
                                     </Box>
-                                    <Stack spacing={2} sx={{ maxHeight: 600, overflowY: 'auto', pr: 1, '&::-webkit-scrollbar': { width: 4 }, '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(255,255,255,0.1)' } }}>
-                                        {(() => {
-                                            const timeline = [
-                                                ...(syncData?.events || []).map((e: any) => ({ ...e, type: 'EVENT', icon: Calendar, color: 'primary' })),
-                                                ...(syncData?.projects || []).map((p: any) => ({ ...p, type: 'PROJECT', icon: Star, color: 'cyan' })),
-                                                ...(syncData?.plans || []).map((p: any) => ({ ...p, type: 'PLAN', icon: BookOpen, color: 'orange' })),
-                                            ].sort((a: any, b: any) => new Date(a.date || a.createdAt).getTime() - new Date(b.date || b.createdAt).getTime());
+                                    {(() => {
+                                        const timelineItems = [
+                                            ...(syncData?.events || []).map((e: any) => ({ ...e, type: 'EVENT' })),
+                                            ...(syncData?.projects || []).map((p: any) => ({ ...p, type: 'PROJECT', date: p.deadline || p.createdAt })),
+                                            ...(syncData?.plans || []).map((p: any) => ({ ...p, type: 'PLAN', date: p.createdAt })),
+                                            ...(syncData?.meetings || []).map((m: any) => ({ ...m, type: 'MEETING' })),
+                                        ].sort((a: any, b: any) => new Date(a.date || a.createdAt).getTime() - new Date(b.date || b.createdAt).getTime());
 
-                                            if (timeline.length === 0) return <Typography variant="caption" sx={{ opacity: 0.3, textAlign: 'center', py: 2 }}>NO UPCOMING MISSIONS</Typography>;
-
-                                            return timeline.map((item: any, idx: number) => (
-                                                <Box key={idx} sx={{ display: 'flex', gap: 2, p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderLeft: `3px solid var(--${item.color})` }}>
-                                                    <Box sx={{ minWidth: 45, textAlign: 'center' }}>
-                                                        <Typography variant="h6" fontWeight="950" sx={{ lineHeight: 1 }}>
-                                                            {item.date || item.createdAt ? (new Date(item.date || item.createdAt).getDate() || '--') : '--'}
-                                                        </Typography>
-                                                        <Typography variant="caption" sx={{ fontSize: '0.6rem', opacity: 0.6 }}>{item.date || item.createdAt ? new Date(item.date || item.createdAt).toLocaleString('default', { month: 'short' }).toUpperCase() : 'N/A'}</Typography>
-                                                    </Box>
-                                                    <Box sx={{ flexGrow: 1 }}>
-                                                        <Typography variant="subtitle2" fontWeight="950" sx={{ lineHeight: 1.2 }}>{item.title?.toUpperCase()}</Typography>
-                                                        <Typography variant="caption" sx={{ opacity: 0.5, display: 'block' }}>{item.type} | {item.location || 'GLOBAL'}</Typography>
-                                                    </Box>
-                                                </Box>
-                                            ));
-                                        })()}
-                                    </Stack>
+                                        return (
+                                            <OperationalTimeline 
+                                                items={timelineItems} 
+                                                onEdit={handleEdit}
+                                                onDelete={handleDelete}
+                                            />
+                                        );
+                                    })()}
                                 </CardContent>
                             </Card>
                         </Stack>
@@ -573,7 +644,7 @@ export default function PastorsDashboard() {
                         </Box>
 
                         <Typography variant="body2" sx={{ mb: 4, opacity: 0.7, lineHeight: 1.6 }}>
-                            "Honor the Lord with your wealth and with the firstfruits of all your produce." <br/>
+                            &quot;Honor the Lord with your wealth and with the firstfruits of all your produce.&quot; <br/>
                             Enroll with a minimum monthly seed of <b>700 KES</b> to fuel the global mission.
                         </Typography>
 
@@ -757,15 +828,21 @@ export default function PastorsDashboard() {
             <RequestBaptismModal open={baptismModalOpen} onClose={() => setBaptismModalOpen(false)} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
 
             {/* Operational Modals */}
-            <EventFormModal open={eventModalOpen} onClose={() => setEventModalOpen(false)} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
-            <ProjectFormModal open={projectModalOpen} onClose={() => setProjectModalOpen(false)} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
-            <PlanFormModal open={planModalOpen} onClose={() => setPlanModalOpen(false)} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
-            <AnnouncementFormModal open={announcementModalOpen} onClose={() => setAnnouncementModalOpen(false)} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+            <EventFormModal open={eventModalOpen} onClose={() => { setEventModalOpen(false); setEditingEvent(null); }} event={editingEvent} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+            <ProjectFormModal open={projectModalOpen} onClose={() => { setProjectModalOpen(false); setEditingProject(null); }} project={editingProject} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+            <PlanFormModal open={planModalOpen} onClose={() => { setPlanModalOpen(false); setEditingPlan(null); }} plan={editingPlan} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+            <AnnouncementFormModal open={announcementModalOpen} onClose={() => { setAnnouncementModalOpen(false); setEditingAnnouncement(null); }} announcement={editingAnnouncement} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
 
 
             <Snackbar open={toast.open} autoHideDuration={6000} onClose={() => setToast({ ...toast, open: false })}>
                 <Alert severity={toast.severity} sx={{ width: '100%', fontWeight: 800 }}>{toast.message}</Alert>
             </Snackbar>
+            <DepartmentReportModal 
+                open={reportModalOpen} 
+                onClose={() => setReportModalOpen(false)} 
+                departmentId={user?.departmentId || undefined} 
+                onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])}
+            />
         </DashboardLayout>
     );
 }

@@ -117,7 +117,7 @@ export default function MemberPortal() {
                     .mission-marquee-container {
                         display: flex;
                         gap: 16px;
-                        animation: marquee 800s linear infinite;
+                        animation: marquee 100s linear infinite;
                         width: max-content;
                     }
                     .mission-marquee-container:hover {
@@ -200,6 +200,7 @@ export default function MemberPortal() {
                         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                         const isExpired = diffDays <= 0;
                         const isGracePeriod = diffDays > -14 && diffDays <= 0;
+                        const canRenew = diffDays <= 21;
 
                         if (isExpired) {
                             return (
@@ -216,7 +217,9 @@ export default function MemberPortal() {
                                         '& .MuiAlert-icon': { color: '#fff' }
                                     }}
                                     action={
-                                        !user?.isCardReplacementRequested && (
+                                        user?.isCardReplacementRequested ? (
+                                            <Chip label="RENEWAL PENDING" size="small" sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#fff', fontWeight: 900, borderRadius: 0 }} />
+                                        ) : (
                                             <Button 
                                                 color="inherit" 
                                                 size="small" 
@@ -233,11 +236,51 @@ export default function MemberPortal() {
                                         ? `DANGER: YOUR MEMBERSHIP CARD EXPIRED ON ${expiry.toLocaleDateString()}. GRACE PERIOD ENDS IN ${14 + diffDays} DAYS.`
                                         : `CRITICAL: MEMBERSHIP CARD EXPIRED. PLEASE REQUEST A NEW CARD IMMEDIATELY TO RETAIN ACCESS.`
                                     }
-                                    {user?.isCardReplacementRequested && " (REQUEST PENDING)"}
                                 </Alert>
                             );
                         }
-                        return null;
+
+                        if (canRenew) {
+                            return (
+                                <Alert 
+                                    severity="warning" 
+                                    variant="outlined"
+                                    sx={{ 
+                                        mb: 4, 
+                                        border: '1px solid orange', 
+                                        color: 'orange', 
+                                        fontWeight: 900,
+                                        borderRadius: 0,
+                                        '& .MuiAlert-icon': { color: 'orange' }
+                                    }}
+                                    action={
+                                        user?.isCardReplacementRequested ? (
+                                            <Chip label="REQUESTED" size="small" sx={{ bgcolor: 'rgba(255, 165, 0, 0.2)', color: 'orange', fontWeight: 900, borderRadius: 0 }} />
+                                        ) : (
+                                            <Button 
+                                                color="warning" 
+                                                size="small" 
+                                                variant="contained" 
+                                                onClick={() => requestRenewalMutation.mutate()}
+                                                sx={{ fontWeight: 950, borderRadius: 0, bgcolor: 'orange', color: '#000' }}
+                                            >
+                                                RENEW CARD NOW
+                                            </Button>
+                                        )
+                                    }
+                                >
+                                    YOUR CARD EXPIRES IN {diffDays} DAYS. RENEWAL IS NOW OPEN.
+                                </Alert>
+                            );
+                        }
+
+                        return (
+                            <Box sx={{ mb: 4, p: 2, bgcolor: 'rgba(255,255,255,0.03)', border: '1px dashed rgba(255,255,255,0.1)', textAlign: 'center' }}>
+                                <Typography variant="caption" fontWeight="900" sx={{ opacity: 0.6 }}>
+                                    MEMBERSHIP ACTIVE UNTIL {expiry.toLocaleDateString()} | RENEWAL OPENS {new Date(expiry.getTime() - 21 * 24 * 60 * 60 * 1000).toLocaleDateString()}
+                                </Typography>
+                            </Box>
+                        );
                     })()}
 
                     <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
@@ -272,13 +315,20 @@ export default function MemberPortal() {
                                     />
                                 </Box>
 
-                                {isDevotionLoading ? <LinearProgress /> : (
+                                {isDevotionLoading ? <LinearProgress /> : 
+                                    !devotion ? (
+                                        <Box sx={{ p: 4, textAlign: 'center', border: '1px dashed rgba(0,255,255,0.3)', bgcolor: 'rgba(0,255,255,0.02)', borderRadius: 2 }}>
+                                            <Sparkles size={24} color="var(--cyan)" style={{ marginBottom: 8, opacity: 0.5 }} />
+                                            <Typography variant="subtitle2" fontWeight="950" sx={{ color: 'var(--cyan)', opacity: 0.7 }}>AWAITING TODAY&apos;S MINISTERIAL DEVOTION</Typography>
+                                            <Typography variant="caption" sx={{ display: 'block', mt: 1, opacity: 0.5 }}>The leadership has not yet published the devotion for today.</Typography>
+                                        </Box>
+                                    ) : (
                                     <>
                                         <Typography variant="h4" fontWeight="950" sx={{ mb: 2, color: 'primary.main', opacity: 0.9 }}>
                                             {devotion?.title}
                                         </Typography>
                                         <Typography variant="body1" sx={{ mb: 4, lineHeight: 1.8, fontSize: '1.1rem', opacity: 0.8, fontStyle: 'italic' }}>
-                                            "{devotion?.content}"
+                                            &quot;{devotion?.content}&quot;
                                         </Typography>
 
                                         <Divider sx={{ mb: 3, opacity: 0.1 }} />
@@ -397,7 +447,7 @@ export default function MemberPortal() {
                                         .mission-marquee-container {
                                             display: flex;
                                             gap: 16px;
-                                            animation: marquee 300s linear infinite;
+                                            animation: marquee 100s linear infinite;
                                             width: max-content;
                                         }
                                         .mission-marquee-container:hover {
@@ -622,7 +672,7 @@ export default function MemberPortal() {
                                                     </Grid>
 
                                                     <Typography variant="caption" sx={{ opacity: 0.6, fontStyle: 'italic', fontWeight: 700 }}>
-                                                        "Partnering with Prayer Palace Apostolic Ministry for Global impact by making sure the church Budget is met"
+                                                    &quot;Partnering with Prayer Palace Apostolic Ministry for Global impact by making sure the church Budget is met&quot;
                                                     </Typography>
                                                 </CardContent>
                                             ) : (
@@ -695,9 +745,15 @@ export default function MemberPortal() {
 
                             <Card className="holographic-card divine-mandate-card" sx={{ p: 4, border: '1px solid var(--primary-glow) !important' }}>
                                 <Typography variant="h6" fontWeight="950" mb={1} sx={{ color: 'var(--cyan)', letterSpacing: 2 }}>DIVINE MANDATE</Typography>
-                                <Typography variant="h5" className="divine-text" sx={{ opacity: 0.9, lineHeight: 1.4, fontStyle: 'italic' }}>
-                                    "{syncData?.affirmation?.content || "I walk in divine health and supernatural protection."}"
-                                </Typography>
+                                {!syncData?.affirmation ? (
+                                    <Typography variant="h5" sx={{ opacity: 0.5, lineHeight: 1.4, fontStyle: 'italic' }}>
+                                        Awaiting today&apos;s mandate...
+                                    </Typography>
+                                ) : (
+                                    <Typography variant="h5" className="divine-text" sx={{ opacity: 0.9, lineHeight: 1.4, fontStyle: 'italic' }}>
+                                        &quot;{syncData.affirmation.content}&quot;
+                                    </Typography>
+                                )}
                             </Card>
                         </Stack>
                     </Grid>
@@ -768,7 +824,7 @@ export default function MemberPortal() {
                         </Box>
 
                         <Typography variant="body2" sx={{ mb: 4, opacity: 0.7, lineHeight: 1.6 }}>
-                            "Honor the Lord with your wealth and with the firstfruits of all your produce." <br/>
+                            &quot;Honor the Lord with your wealth and with the firstfruits of all your produce.&quot; <br/>
                             Enroll with a minimum monthly seed of <b>700 KES</b> to fuel the global mission.
                         </Typography>
 

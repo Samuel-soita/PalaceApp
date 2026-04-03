@@ -11,7 +11,7 @@ import {
 import {
     Calendar, TrendingUp, AlertCircle, Briefcase,
     MessageSquare, Coins, UserCheck, XCircle, CheckCircle, Trash2,
-    Eye, Shield, Target, Bell, Filter, ChevronRight, Users, Droplet, Baby, Star, RefreshCw
+    Eye, Shield, Target, Bell, Filter, ChevronRight, Users, Droplet, Baby, Star, RefreshCw, Wrench, FileText
 } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { BroadcastTrack } from '../components/dashboard/BroadcastTrack';
@@ -23,6 +23,12 @@ import DedicationManager from '../components/dashboard/DedicationManager';
 import PartnershipManager from '../components/dashboard/PartnershipManager';
 import { usePermission } from '../hooks/usePermission';
 import { PERMISSIONS } from '../utils/permissions';
+import RepairApprovalManager from '../components/dashboard/RepairApprovalManager';
+import EventFormModal from '../components/modals/EventFormModal';
+import ProjectFormModal from '../components/modals/ProjectFormModal';
+import PlanFormModal from '../components/modals/PlanFormModal';
+import AnnouncementFormModal from '../components/modals/AnnouncementFormModal';
+import DepartmentReportModal from '../components/modals/DepartmentReportModal';
 
 
 // ─── Component ─────────────────────────────────────────────────────────────
@@ -46,6 +52,18 @@ export default function AdminDashboard() {
     const [appointmentManagerOpen, setAppointmentManagerOpen] = useState(false);
     const [partnershipManagerOpen, setPartnershipManagerOpen] = useState(false);
     const [deptFilter, setDeptFilter] = useState<string>('ALL');
+    const [eventModalOpen, setEventModalOpen] = useState(false);
+    const [projectModalOpen, setProjectModalOpen] = useState(false);
+    const [planModalOpen, setPlanModalOpen] = useState(false);
+    const [announcementModalOpen, setAnnouncementModalOpen] = useState(false);
+    const [reportModalOpen, setReportModalOpen] = useState(false);
+    
+    // ─── Edit States ────────────────────────────────────────────────────────
+    const [editingProject, setEditingProject] = useState<any>(null);
+    const [editingEvent, setEditingEvent] = useState<any>(null);
+    const [editingPlan, setEditingPlan] = useState<any>(null);
+    const [editingAnnouncement, setEditingAnnouncement] = useState<any>(null);
+
     const navigate = useNavigate();
 
     const isRestrictedRole = role === 'PASTOR' || role === 'ASSOCIATE_PASTOR' || role === 'DEPARTMENT_LEADER';
@@ -152,6 +170,44 @@ export default function AdminDashboard() {
         }
     );
 
+    // ─── Delete Mutation ─────────────────────────────────────────────────────
+    const deleteMutation = useMutation(
+        async ({ id, type }: { id: string; type: string }) => {
+            const endpoint = {
+                PROJECT: `/projects/${id}`,
+                EVENT: `/events/${id}`,
+                PLAN: `/plans/${id}`,
+                MEETING: `/meetings/${id}`,
+                ANNOUNCEMENT: `/announcements/${id}`
+            }[type];
+            return api.delete(endpoint!);
+        },
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries(['dashboard-sync']);
+                setToast({ open: true, message: 'Record decommissioned successfully.', severity: 'success' });
+            },
+            onError: (err: any) => {
+                setToast({ 
+                    open: true, 
+                    message: err.response?.data?.error || 'Failed to delete record.', 
+                    severity: 'error' 
+                });
+            }
+        }
+    );
+
+    const handleEdit = (item: any) => {
+        if (item.type === 'PROJECT') { setEditingProject(item); setProjectModalOpen(true); }
+        if (item.type === 'EVENT') { setEditingEvent(item); setEventModalOpen(true); }
+        if (item.type === 'PLAN') { setEditingPlan(item); setPlanModalOpen(true); }
+        if (item.type === 'ANNOUNCEMENT') { setEditingAnnouncement(item); setAnnouncementModalOpen(true); }
+    };
+
+    const handleDelete = (item: any) => {
+        deleteMutation.mutate({ id: item.id, type: item.type || (item.priority ? 'ANNOUNCEMENT' : 'PROJECT') });
+    };
+
     // ─── Stats ───────────────────────────────────────────────────────────────
 
     const isOperationsExec = role === 'SUPER_ADMIN' || role === 'SYSTEM_ADMIN' || isRestrictedRole;
@@ -228,10 +284,11 @@ export default function AdminDashboard() {
                         {[
                             ...(canManageUsers ? [{ label: 'Verify Members', icon: UserCheck, color: 'green', onClick: () => setVerificationModalOpen(true), badge: pendingUsers.length }] : []),
                             ...(isOperationsExec ? [
-                                { label: 'Broadcast', icon: AlertCircle, color: 'orange', href: '/announcements' },
-                                { label: 'Initiative', icon: Briefcase, color: 'purple', href: '/projects' },
-                                { label: 'Plans', icon: Target, color: 'pink', href: '/plans' },
-                                { label: 'Briefings', icon: MessageSquare, color: 'cyan', href: '/meetings' },
+                                { label: 'Broadcast', icon: AlertCircle, color: 'orange', onClick: () => setAnnouncementModalOpen(true) },
+                                { label: 'New Project', icon: Briefcase, color: 'purple', onClick: () => setProjectModalOpen(true) },
+                                { label: 'New Plan', icon: Target, color: 'pink', onClick: () => setPlanModalOpen(true) },
+                                { label: 'New Event', icon: Calendar, color: 'blue', onClick: () => setEventModalOpen(true) },
+                                { label: 'Submit Report', icon: FileText, color: 'green', onClick: () => setReportModalOpen(true) },
                                 { label: 'Schedule', icon: Calendar, color: 'blue', href: '/calendar' },
                             ] : []),
                             { label: 'Baptism', icon: Droplet, color: 'cyan', onClick: () => setBaptismsOpen(true), badge: pendingBaptisms },
@@ -354,7 +411,11 @@ export default function AdminDashboard() {
                             </Box>
                             <Calendar size={18} className="text-secondary opacity-50" />
                         </Box>
-                        <OperationalTimeline items={timelineItems} />
+                        <OperationalTimeline 
+                            items={timelineItems} 
+                            onEdit={handleEdit}
+                            onDelete={handleDelete}
+                        />
                     </CardContent>
                 </Card>
             )}
@@ -375,7 +436,26 @@ export default function AdminDashboard() {
                                 </Button>
                             )}
                         </Box>
-                        <BroadcastTrack announcements={announcements} />
+                        <BroadcastTrack 
+                            announcements={announcements} 
+                            onEdit={(a) => { setEditingAnnouncement(a); setAnnouncementModalOpen(true); }}
+                            onDelete={(a) => handleDelete({...a, type: 'ANNOUNCEMENT'})}
+                        />
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* ── Technical Repair Authorizations ── */}
+            {canViewStats && (
+                <Card className="holographic-card" sx={{ mb: 4, borderLeft: '4px solid #ff4d4d' }}>
+                    <CardContent sx={{ p: { xs: 2, md: 3 } }}>
+                        <Box display="flex" alignItems="center" gap={1.5} mb={3}>
+                            <Wrench size={20} color="#ff4d4d" />
+                            <Typography variant="h6" fontWeight="1000" sx={{ letterSpacing: 1.5 }}>
+                                TECHNICAL REPAIR AUTHORIZATIONS
+                            </Typography>
+                        </Box>
+                        <RepairApprovalManager />
                     </CardContent>
                 </Card>
             )}
@@ -396,7 +476,11 @@ export default function AdminDashboard() {
                                 </Button>
                             )}
                         </Box>
-                        <InitiativesTrack projects={filterByDept(projects)} />
+                        <InitiativesTrack 
+                            projects={filterByDept(projects)} 
+                            onEdit={(p) => { setEditingProject(p); setProjectModalOpen(true); }}
+                            onDelete={(p) => handleDelete({...p, type: 'PROJECT'})}
+                        />
                     </CardContent>
                 </Card>
             )}
@@ -572,6 +656,12 @@ export default function AdminDashboard() {
             <DedicationManager open={dedicationManagerOpen} onClose={() => setDedicationManagerOpen(false)} />
             <AppointmentManager open={appointmentManagerOpen} onClose={() => setAppointmentManagerOpen(false)} />
             <PartnershipManager open={partnershipManagerOpen} onClose={() => setPartnershipManagerOpen(false)} />
+
+            <EventFormModal open={eventModalOpen} onClose={() => { setEventModalOpen(false); setEditingEvent(null); }} event={editingEvent} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+            <ProjectFormModal open={projectModalOpen} onClose={() => { setProjectModalOpen(false); setEditingProject(null); }} project={editingProject} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+            <PlanFormModal open={planModalOpen} onClose={() => { setPlanModalOpen(false); setEditingPlan(null); }} plan={editingPlan} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+            <AnnouncementFormModal open={announcementModalOpen} onClose={() => { setAnnouncementModalOpen(false); setEditingAnnouncement(null); }} announcement={editingAnnouncement} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+            <DepartmentReportModal open={reportModalOpen} onClose={() => setReportModalOpen(false)} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
         </DashboardLayout>
     );
 }

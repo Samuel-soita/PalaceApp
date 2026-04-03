@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../lib/db';
 import {
     Box, Typography, Grid, Card, CardContent, Button, Chip,
     Dialog, DialogTitle, DialogContent, DialogActions, TextField,
@@ -12,21 +13,21 @@ import api from '../lib/api-client';
 import { useAuth } from '../contexts/AuthContext';
 import { isUserManagingDepartment } from '../utils/auth-options';
 
-interface Plan {
+interface ChurchPlan {
     id: string;
     title: string;
-    type: 'MONTHLY' | 'YEARLY';
+    type: string;
     description: string;
     departmentId: string;
-    department: { name: string };
+    department?: { name: string };
     createdAt: string;
 }
 
 export default function Plans() {
     const { user } = useAuth();
-    const queryClient = useQueryClient();
+
     const [modalOpen, setModalOpen] = useState(false);
-    const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
+    const [editingPlan, setEditingPlan] = useState<ChurchPlan | null>(null);
     const [formData, setFormData] = useState({
         title: '',
         type: 'MONTHLY',
@@ -41,56 +42,62 @@ export default function Plans() {
     const [page, setPage] = useState(1);
     const limit = 12;
 
-    const { data: plansData, isLoading } = useQuery(['plans', page], async () => {
-        const res = await api.get('/plans', { params: { page, limit } });
-        return res.data;
-    });
-
-    const plans = plansData?.data || [];
-    const meta = plansData?.meta || { total: 0, totalPages: 1 };
+    const plans = useLiveQuery(() => db.plans.orderBy('createdAt').reverse().toArray(), []) || [];
+    const meta = { total: plans.length, totalPages: Math.ceil((plans.length || 1) / limit) };
 
     const filteredPlans = plans.filter((p: any) => {
         if (isGlobalAdmin) return true;
         return p.approvalStatus === 'APPROVED' || isUserManagingDepartment(user, p.departmentId);
     });
 
-    const { data: pastors } = useQuery(['pastors'], async () => {
-        const res = await api.get('/users?role=PASTOR');
-        return Array.isArray(res.data) 
-            ? res.data.filter((u: any) => u.role === 'PASTOR') 
-            : [];
-    });
-
-    const { data: departments } = useQuery(['departments'], async () => {
-        const res = await api.get('/departments');
-        return Array.isArray(res.data) ? res.data : [];
-    });
-
+    const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
     const userDepartments = departments?.filter((d: any) => isUserManagingDepartment(user, d.id)) || [];
     const showDepartmentSelect = isGlobalAdmin || userDepartments.length > 1;
 
-    const createMutation = useMutation(
-        (data: any) => api.post('/plans', data),
-        { onSuccess: () => {
-            queryClient.invalidateQueries(['plans']);
-            handleClose();
-        }}
-    );
+    const pastors = useLiveQuery(() => db.users.where('role').equals('PASTOR').toArray(), []) || [];
 
-    const updateMutation = useMutation(
-        (data: any) => api.patch(`/plans/${data.id}`, data),
-        { onSuccess: () => {
-            queryClient.invalidateQueries(['plans']);
-            handleClose();
-        }}
-    );
+    const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
+        const actionId = id || crypto.randomUUID();
+        const timestamp = Date.now();
 
-    const deleteMutation = useMutation(
-        (id: string) => api.delete(`/plans/${id}`),
-        { onSuccess: () => queryClient.invalidateQueries(['plans']) }
-    );
+        if (method !== 'DELETE') {
+            await db.plans.put({ 
+                ...payload, 
+                id: actionId, 
+                syncStatus: 'PENDING',
+                version: (payload.version || 0) + 1,
+                department: departments.find(d => d.id === payload.departmentId) || { name: 'Unknown' },
+                createdAt: new Date().toISOString()
+            });
+        } else {
+            if (id) await db.plans.delete(id);
+        }
 
-    const handleOpen = (plan?: Plan) => {
+        // Clean payload for backend strictness
+        const { id: _, department, ...restPayload } = payload;
+        const finalPayload = method === 'PATCH' ? { ...restPayload } : { ...restPayload };
+        
+        // Remove pastorIds from PATCH since it's only for initial creation
+        if (method === 'PATCH' && (finalPayload as any).pastorIds) {
+            delete (finalPayload as any).pastorIds;
+        }
+
+        await db.syncQueue.put({
+            id: crypto.randomUUID(),
+            timestamp,
+            entity: 'PLAN',
+            method,
+            url: method === 'POST' ? '/plans' : `/plans/${actionId}`,
+            payload: { ...finalPayload, isOfflineSync: true, localVersion: payload.version },
+            status: 'PENDING',
+            retryCount: 0,
+            errorLog: []
+        });
+
+        handleClose();
+    };
+
+    const handleOpen = (plan?: ChurchPlan) => {
         if (plan) {
             setEditingPlan(plan);
             setFormData({
@@ -98,7 +105,7 @@ export default function Plans() {
                 type: plan.type,
                 description: plan.description,
                 departmentId: plan.departmentId,
-                pastorIds: []
+                pastorIds: (plan as any).pastorIds || [] 
             });
         } else {
             setEditingPlan(null);
@@ -124,24 +131,24 @@ export default function Plans() {
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!editingPlan && formData.pastorIds.length !== 2) {
-            alert("You must select exactly 2 Pastors to authorize this Plan before it takes effect.");
+            alert("You must select exactly 2 Pastors to authorize this ChurchPlan before it takes effect.");
             return;
         }
 
         if (editingPlan) {
-            updateMutation.mutate({ ...formData, id: editingPlan.id });
+            handleAction({ ...formData, id: editingPlan.id, version: (editingPlan as any).version || 0 }, 'PATCH', editingPlan.id);
         } else {
-            createMutation.mutate(formData);
+            handleAction(formData, 'POST');
         }
     };
 
     const handleDelete = (id: string) => {
         if (window.confirm('Are you sure you want to delete this plan? This action cannot be undone.')) {
-            deleteMutation.mutate(id);
+            handleAction({ id, version: 0 }, 'DELETE', id);
         }
     };
 
-    if (isLoading) return <Box display="flex" justifyContent="center" mt={10}><CircularProgress /></Box>;
+    if (plans === undefined) return <Box display="flex" justifyContent="center" mt={10}><CircularProgress /></Box>;
 
     return (
         <DashboardLayout>
@@ -163,7 +170,7 @@ export default function Plans() {
             </Box>
 
             <Grid container spacing={3}>
-                {filteredPlans?.map((plan: Plan) => (
+                {filteredPlans?.map((plan: any) => (
                     <Grid item xs={12} md={6} key={plan.id}>
                         <Card className="holographic-card" sx={{ height: '100%' }}>
                             <CardContent sx={{ p: 4 }}>
@@ -198,9 +205,9 @@ export default function Plans() {
                                 <Box display="flex" justifyContent="space-between" alignItems="center" mt="auto">
                                     <Box display="flex" alignItems="center" gap={1}>
                                         <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">
-                                            {plan.department.name.charAt(0)}
+                                            {plan.department?.name?.charAt(0) || '?'}
                                         </div>
-                                        <Typography variant="caption" fontWeight="bold">{plan.department.name}</Typography>
+                                        <Typography variant="caption" fontWeight="bold">{plan.department?.name || 'Unknown'}</Typography>
                                     </Box>
                                     <Typography variant="caption" sx={{ opacity: 0.5 }}>
                                         Added {new Date(plan.createdAt).toLocaleDateString()}
@@ -252,7 +259,7 @@ export default function Plans() {
                         <Box display="flex" flexDirection="column" gap={3} mt={1}>
                             <TextField
                                 fullWidth
-                                label="Plan Title"
+                                label="ChurchPlan Title"
                                 required
                                 value={formData.title}
                                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
@@ -260,18 +267,18 @@ export default function Plans() {
                             <TextField
                                 fullWidth
                                 select
-                                label="Plan Type"
+                                label="ChurchPlan Type"
                                 value={formData.type}
                                 onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
                             >
-                                <MenuItem value="MONTHLY">Monthly Plan</MenuItem>
-                                <MenuItem value="YEARLY">Yearly Plan</MenuItem>
+                                <MenuItem value="MONTHLY">Monthly ChurchPlan</MenuItem>
+                                <MenuItem value="YEARLY">Yearly ChurchPlan</MenuItem>
                             </TextField>
                             <TextField
                                 fullWidth
                                 multiline
                                 rows={4}
-                                label="Plan Description"
+                                label="ChurchPlan Description"
                                 placeholder="Detail the objectives, events, and targets for this period..."
                                 required
                                 value={formData.description}
@@ -323,12 +330,12 @@ export default function Plans() {
                     </DialogContent>
                     <DialogActions sx={{ p: 4 }}>
                         <Button onClick={handleClose} sx={{ fontWeight: '800' }}>CANCEL</Button>
-                        <Button
-                            type="submit"
-                            variant="contained"
-                            disabled={createMutation.isLoading || updateMutation.isLoading}
-                            sx={{ borderRadius: 2, fontWeight: '900', px: 4 }}
-                        >
+                            <Button
+                                type="submit"
+                                variant="contained"
+                                disabled={false}
+                                sx={{ borderRadius: 2, fontWeight: '900', px: 4 }}
+                            >
                             {editingPlan ? 'UPDATE' : 'SAVE'} PLAN
                         </Button>
                     </DialogActions>

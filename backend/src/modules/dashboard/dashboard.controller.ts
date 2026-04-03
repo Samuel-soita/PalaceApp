@@ -62,19 +62,16 @@ export const getDashboardSync = async (req: any, res: Response) => {
                     where: getWhere(), 
                     take: 50, 
                     orderBy: { createdAt: 'desc' },
-                    select: { id: true, title: true, status: true, progress: true, deadline: true, departmentId: true, isMajor: true }
                 }),
                 prisma.event.findMany({ 
                     where: getWhere(), 
                     take: 50, 
                     orderBy: { date: 'asc' },
-                    select: { id: true, title: true, date: true, time: true, status: true, departmentId: true, isMajor: true }
                 }),
                 prisma.plan.findMany({ 
                     where: getWhere(), 
                     take: 50, 
                     orderBy: { createdAt: 'desc' },
-                    select: { id: true, title: true, approvalStatus: true, type: true, departmentId: true, isMajor: true }
                 }),
                 prisma.meeting.findMany({ 
                     where: isAdmin 
@@ -87,39 +84,35 @@ export const getDashboardSync = async (req: any, res: Response) => {
                         }, 
                     take: 50, 
                     orderBy: { date: 'asc' },
-                    select: { id: true, title: true, date: true, time: true, venue: true, meetingStatus: true, departmentId: true, isPartnerOnly: true } as any
                 }),
                 prisma.announcement.findMany({ 
                     where: getWhere('isGlobal'), 
                     take: 50, 
                     orderBy: { createdAt: 'desc' },
-                    select: { id: true, title: true, priority: true, status: true, createdAt: true, isGlobal: true, content: true }
                 }),
                 prisma.department.findMany({ select: { id: true, name: true } }),
                 isAdmin ? prisma.user.findMany({ 
                     where: { OR: [{ status: 'PENDING' }, { isCardReplacementRequested: true }, { deletionRequested: true }] },
                     take: 100,
                     orderBy: { createdAt: 'desc' },
-                    select: { id: true, name: true, membershipNumber: true, role: true, departmentId: true, deletionRequested: true, isPartner: true, isCardPaid: true, status: true, isCardReplacementRequested: true, membershipExpiry: true }
                 }) : Promise.resolve([]),
                 (isAdmin || isLeader) 
                     ? prisma.baptism.findMany({ 
-                        select: { id: true, status: true, createdAt: true, user: { select: { name: true } } } 
+                        include: { user: { select: { name: true } } } 
                     })
                     : prisma.baptism.findMany({ 
                         where: { userId },
-                        select: { id: true, status: true, createdAt: true }
                     }),
                 (isAdmin || isLeader)
                     ? prisma.child.findMany({ 
                         take: 50,
-                        select: { id: true, name: true, dob: true, dedicationNumber: true, workflowStatus: true, departmentId: true, department: { select: { name: true } } }
+                        include: { department: { select: { name: true } } }
                     })
                     : prisma.child.findMany({ 
                         where: { parentId: userId },
-                        select: { id: true, name: true, dob: true, dedicationNumber: true, workflowStatus: true, department: { select: { name: true } } }
+                        include: { department: { select: { name: true } } }
                     }),
-                (prisma as any).ministrySettings ? (prisma as any).ministrySettings.findUnique({ where: { id: 'GLOBAL' }, select: { themeOfYear: true, themeOfMonth: true, churchBudget: true } }) : Promise.resolve(null),
+                (prisma as any).ministrySettings ? (prisma as any).ministrySettings.findUnique({ where: { id: 'GLOBAL' } }) : Promise.resolve(null),
                 (prisma as any).affirmation ? (prisma as any).affirmation.findFirst({ where: { date: new Date(new Date().setHours(0,0,0,0)) } }) : Promise.resolve(null),
                 prisma.partnership.findFirst({ where: { userId, status: 'ACTIVE' } }),
                 (isAdmin || isLeader) 
@@ -193,34 +186,8 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 }
             }
 
-            // --- AUTO AFFIRMATION GENERATION ---
-            let dailyAffirmation = foundAffirmation;
-            if (!dailyAffirmation) {
-                const affirmationsPool = [
-                    "I am a child of God, called and chosen for greatness.",
-                    "The favor of God surrounds me as a shield today.",
-                    "I have the mind of Christ and divine wisdom for every decision.",
-                    "God's grace is sufficient for me, and His strength is perfect in my weakness.",
-                    "No weapon formed against me shall prosper.",
-                    "I am more than a conqueror through Him who loved me.",
-                    "My presence in the sanctuary is not a coincidence, it is an assignment.",
-                    "I am blessed to be a blessing to others today.",
-                    "The Lord is my shepherd; I shall not want.",
-                    "I walk in divine health and supernatural protection."
-                ];
-                const randomAffirmation = affirmationsPool[Math.floor(Math.random() * affirmationsPool.length)];
-                
-                // Use upsert to handle race conditions gracefully
-                const todayDate = new Date(new Date().setHours(0,0,0,0));
-                dailyAffirmation = await (prisma as any).affirmation.upsert({
-                    where: { date: todayDate },
-                    update: {},
-                    create: {
-                        content: randomAffirmation,
-                        date: todayDate
-                    }
-                });
-            }
+            // --- REAL AFFIRMATION ONLY ---
+            const dailyAffirmation = foundAffirmation;
 
             return {
                 projects,

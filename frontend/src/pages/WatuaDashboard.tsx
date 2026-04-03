@@ -30,7 +30,8 @@ import {
     FormControl,
     InputLabel,
     Avatar,
-    Switch
+    Switch,
+    Snackbar
 } from '@mui/material';
 import {
     Activity,
@@ -63,6 +64,8 @@ import {
     UserCheck,
     ShieldCheck,
     Briefcase,
+    FileText,
+    Target,
     PenTool,
     Key,
     ToggleLeft,
@@ -73,9 +76,13 @@ import {
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import api from '../lib/api-client';
-import { exportQueue, importQueue } from '../lib/pwa-sync';
 import PermissionEnginePanel from '../components/watua/PermissionEnginePanel.js';
 import DashboardLayout from '../components/layout/DashboardLayout';
+import EventFormModal from '../components/modals/EventFormModal';
+import ProjectFormModal from '../components/modals/ProjectFormModal';
+import PlanFormModal from '../components/modals/PlanFormModal';
+import AnnouncementFormModal from '../components/modals/AnnouncementFormModal';
+import DepartmentReportModal from '../components/modals/DepartmentReportModal';
 
 interface User {
     id: string;
@@ -177,6 +184,55 @@ export default function WatuaDashboard() {
 
     const [broadcastDialog, setBroadcastDialog] = useState(false);
     const [broadcastText, setBroadcastText] = useState('');
+
+    // Pastor Module Management
+    const [moduleDialog, setModuleDialog] = useState<{ open: boolean; userId: string; name: string }>({
+        open: false, userId: '', name: ''
+    });
+    const [pastorModules, setPastorModules] = useState<any[]>([]);
+    const [moduleLoading, setModuleLoading] = useState(false);
+    
+    // Mission Control States
+    const [projectModalOpen, setProjectModalOpen] = useState(false);
+    const [eventModalOpen, setEventModalOpen] = useState(false);
+    const [planModalOpen, setPlanModalOpen] = useState(false);
+    const [announcementModalOpen, setAnnouncementModalOpen] = useState(false);
+    const [reportModalOpen, setReportModalOpen] = useState(false);
+
+    // ─── Edit States ────────────────────────────────────────────────────────
+    const [editingProject, setEditingProject] = useState<any>(null);
+    const [editingEvent, setEditingEvent] = useState<any>(null);
+    const [editingPlan, setEditingPlan] = useState<any>(null);
+    const [editingAnnouncement, setEditingAnnouncement] = useState<any>(null);
+
+    const fetchPastorModules = async (userId: string) => {
+        setModuleLoading(true);
+        try {
+            const res = await api.get(`/users/pastor/assigned-modules?userId=${userId}`);
+            setPastorModules(res.data.data);
+        } catch (err) {
+            console.error('Failed to fetch pastor modules:', err);
+        } finally {
+            setModuleLoading(false);
+        }
+    };
+
+    const handleToggleModule = async (userId: string, moduleKey: string, active: boolean) => {
+        try {
+            if (active) {
+                await api.post('/users/pastor/modules/assign', { pastorId: userId, moduleKey, permissions: {} });
+            } else {
+                const existing = pastorModules.find(m => m.moduleKey === moduleKey);
+                if (existing) {
+                    await api.delete(`/users/pastor/modules/revoke/${existing.id}`);
+                }
+            }
+            fetchPastorModules(userId);
+            setMessage({ type: 'success', text: `Module ${moduleKey} updated.` });
+        } catch (err) {
+            setMessage({ type: 'error', text: 'Failed to update module.' });
+        }
+    };
 
     const fetchOmniData = async () => {
         try {
@@ -436,6 +492,7 @@ export default function WatuaDashboard() {
                     <Tab label="Recovery Hub" icon={<Trash2 size={18} />} iconPosition="start" />
                     <Tab label="Feature Flags" icon={<ToggleLeft size={18} />} iconPosition="start" />
                     <Tab label="Mission Analytics" icon={<TrendingUp size={18} />} iconPosition="start" />
+                    <Tab label="Mission Control" icon={<Zap size={18} />} iconPosition="start" />
                 </Tabs>
             </Box>
 
@@ -543,6 +600,18 @@ export default function WatuaDashboard() {
                                                     <IconButton sx={{ color: '#0ea5e9' }} onClick={() => handleAction(user.id, 'MAKE_ASSOCIATE_PASTOR')} title="Appoint Associate Pastor">
                                                         <UserCheckIcon size={18} />
                                                     </IconButton>
+                                                    {(user.role === 'PASTOR' || user.role === 'ASSOCIATE_PASTOR') && (
+                                                        <IconButton 
+                                                           sx={{ color: 'var(--cyan)' }} 
+                                                           onClick={() => {
+                                                               setModuleDialog({ open: true, userId: user.id, name: user.name });
+                                                               fetchPastorModules(user.id);
+                                                           }} 
+                                                           title="Manage Pastor Modules"
+                                                        >
+                                                            <Zap size={18} />
+                                                        </IconButton>
+                                                    )}
                                                     <IconButton sx={{ color: '#ffcc00' }} onClick={() => {
                                                         setSelectedUser(user);
                                                         setRepairData({
@@ -593,6 +662,18 @@ export default function WatuaDashboard() {
                                                     <IconButton size="small" color="success" onClick={() => handleAction(user.id, 'ACTIVATE')}><CheckCircle size={16} /></IconButton>
                                                 )}
                                                 <IconButton size="small" sx={{ color: '#c175ff' }} onClick={() => handleAction(user.id, 'MAKE_SUPER_ADMIN')}><ShieldCheck size={16} /></IconButton>
+                                                {(user.role === 'PASTOR' || user.role === 'ASSOCIATE_PASTOR') && (
+                                                    <IconButton 
+                                                       size="small" 
+                                                       sx={{ color: 'var(--cyan)' }} 
+                                                       onClick={() => {
+                                                           setModuleDialog({ open: true, userId: user.id, name: user.name });
+                                                           fetchPastorModules(user.id);
+                                                       }}
+                                                    >
+                                                        <Zap size={16} />
+                                                    </IconButton>
+                                                )}
                                             </Box>
                                         </Box>
                                     </CardContent>
@@ -661,6 +742,15 @@ export default function WatuaDashboard() {
                                             </TableCell>
                                             <TableCell>
                                                 <Box display="flex" gap={1}>
+                                                    <IconButton color="primary" size="small" onClick={() => {
+                                                        const type = resourceType;
+                                                        if (type === 'PROJECT') { setEditingProject(item); setProjectModalOpen(true); }
+                                                        if (type === 'EVENT') { setEditingEvent(item); setEventModalOpen(true); }
+                                                        if (type === 'PLAN') { setEditingPlan(item); setPlanModalOpen(true); }
+                                                        if (type === 'ANNOUNCEMENT') { setEditingAnnouncement(item); setAnnouncementModalOpen(true); }
+                                                    }} title="TECHNICAL OVERRIDE EDIT">
+                                                        <PenTool size={16} />
+                                                    </IconButton>
                                                     {(item.approvalStatus === 'PENDING_APPROVAL' || item.status === 'PENDING' || item.meetingStatus === 'PENDING_APPROVAL') && (
                                                         <IconButton color="success" size="small" onClick={() => handleForceApproval(resourceType as any, item.id)} title="FORCE AUTHORIZE">
                                                             <CheckCircle size={16} />
@@ -830,61 +920,7 @@ export default function WatuaDashboard() {
                                 </Box>
                             </Box>
                             
-                            <Grid container spacing={3}>
-                                <Grid item xs={12} md={6}>
-                                    <Box p={3} sx={{ bgcolor: 'rgba(0,212,255,0.03)', border: '1px dashed rgba(0,212,255,0.2)', borderRadius: 2 }}>
-                                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>Export Mission Queue</Typography>
-                                        <Typography variant="caption" display="block" sx={{ mb: 2, opacity: 0.7 }}>
-                                            Download all currently queued offline actions as a JSON backup for manual recovery.
-                                        </Typography>
-                                        <Button 
-                                            variant="outlined" 
-                                            startIcon={<DownloadCloud size={16} />}
-                                            onClick={exportQueue}
-                                            sx={{ color: '#00d4ff', borderColor: '#00d4ff' }}
-                                        >
-                                            Export JSON Backup
-                                        </Button>
-                                    </Box>
-                                </Grid>
-                                
-                                <Grid item xs={12} md={6}>
-                                    <Box p={3} sx={{ bgcolor: 'rgba(193,117,255,0.03)', border: '1px dashed rgba(193,117,255,0.2)', borderRadius: 2 }}>
-                                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>Import & Restore Hub</Typography>
-                                        <Typography variant="caption" display="block" sx={{ mb: 2, opacity: 0.7 }}>
-                                            Restore a mission queue from a JSON file. Warning: This will overwrite local pending actions.
-                                        </Typography>
-                                        <Button 
-                                            variant="outlined" 
-                                            component="label"
-                                            startIcon={<UploadCloud size={16} />}
-                                            sx={{ color: '#c175ff', borderColor: '#c175ff' }}
-                                        >
-                                            Upload & Restore
-                                            <input
-                                                type="file"
-                                                hidden
-                                                accept=".json"
-                                                onChange={async (e) => {
-                                                    const file = e.target.files?.[0];
-                                                    if (file) {
-                                                        const reader = new FileReader();
-                                                        reader.onload = async (event) => {
-                                                            const success = await importQueue(event.target?.result as string);
-                                                            if (success) {
-                                                                alert('Mission queue restored successfully. Dispatching pending actions...');
-                                                            } else {
-                                                                alert('Failed to import recovery file. Ensure the format is a valid Palace Dispatch JSON.');
-                                                            }
-                                                        };
-                                                        reader.readAsText(file);
-                                                    }
-                                                }}
-                                            />
-                                        </Button>
-                                    </Box>
-                                </Grid>
-                            </Grid>
+                            {/* Legacy Import/Export Queue feature removed during Local-First Blitz */}
                         </CardContent>
                     </Card>
                 </Box>
@@ -1195,7 +1231,112 @@ export default function WatuaDashboard() {
                     </Button>
                 </DialogActions>
             </Dialog>
-            </Box>
+                {/* Pastor Module Management Dialog */}
+            <Dialog open={moduleDialog.open} onClose={() => setModuleDialog({ ...moduleDialog, open: false })} maxWidth="xs" fullWidth>
+                <DialogTitle sx={{ bgcolor: '#161925', color: '#f8fafc', fontWeight: 900 }}>
+                    <Box display="flex" alignItems="center" gap={1}>
+                        <Zap size={20} color="var(--cyan)" />
+                        PASTORAL MODULES: {moduleDialog.name.toUpperCase()}
+                    </Box>
+                </DialogTitle>
+                <DialogContent sx={{ bgcolor: '#161925', color: '#f8fafc', pt: 2 }}>
+                    <Typography variant="caption" sx={{ opacity: 0.6, mb: 2, display: 'block' }}>
+                        ENABLE OR DISABLE DYNAMIC CAPABILITIES FOR THIS ENTITY.
+                    </Typography>
+                    {moduleLoading ? <CircularProgress size={24} sx={{ m: 'auto', display: 'block' }} /> : (
+                        <Stack spacing={2}>
+                            {[
+                                'Devotion Publishing',
+                                'Event Oversight',
+                                'Intelligence Publishing',
+                                'Partnership Management',
+                                'Child Dedication Registry'
+                            ].map((moduleKey) => {
+                                const isActive = pastorModules.some(m => m.moduleKey === moduleKey);
+                                return (
+                                    <Box key={moduleKey} display="flex" justifyContent="space-between" alignItems="center" p={1.5} sx={{ bgcolor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                        <Typography variant="body2" fontWeight="700">{moduleKey}</Typography>
+                                        <Switch 
+                                            size="small" 
+                                            checked={isActive} 
+                                            onChange={(e) => handleToggleModule(moduleDialog.userId, moduleKey, e.target.checked)} 
+                                        />
+                                    </Box>
+                                );
+                            })}
+                        </Stack>
+                    )}
+                </DialogContent>
+                <DialogActions sx={{ bgcolor: '#161925', p: 2 }}>
+                    <Button onClick={() => setModuleDialog({ ...moduleDialog, open: false })} variant="outlined" color="secondary" fullWidth sx={{ borderRadius: 0 }}>
+                        DISMISS
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            <Snackbar open={message.text !== ''} autoHideDuration={6000} onClose={() => setMessage({ ...message, text: '' })}>
+                <Alert severity={message.type as any} sx={{ width: '100%', fontWeight: 800 }}>{message.text}</Alert>
+            </Snackbar>
+
+            {tab === 8 && (
+                <Card sx={{ mt: 2, bgcolor: '#161925', border: '1px solid rgba(193, 117, 255, 0.2)', borderRadius: 0 }}>
+                    <CardContent>
+                        <Box sx={{ mb: 4 }}>
+                            <Typography variant="h5" fontWeight="900" sx={{ color: '#f8fafc', letterSpacing: '-0.02em', mb: 1 }}>
+                                MISSION CONTROL TERMINAL
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600 }}>
+                                EXECUTE KERNEL-LEVEL OPERATIONAL COMMANDS
+                            </Typography>
+                        </Box>
+
+                        <Grid container spacing={3}>
+                            {[
+                                { label: 'NEW PROJECT', icon: Briefcase, color: '#00d4ff', onClick: () => setProjectModalOpen(true) },
+                                { label: 'HOST EVENT', icon: Calendar, color: '#c175ff', onClick: () => setEventModalOpen(true) },
+                                { label: 'STRATEGIC PLAN', icon: Target, color: '#ffcc00', onClick: () => setPlanModalOpen(true) },
+                                { label: 'SUBMIT REPORT', icon: FileText, color: '#22c55e', onClick: () => setReportModalOpen(true) },
+                                { label: 'SYSTEM ALERT', icon: AlertTriangle, color: '#ff4d4d', onClick: () => setAnnouncementModalOpen(true) },
+                            ].map((action, i) => (
+                                <Grid item xs={12} sm={6} md={4} key={i}>
+                                    <Button
+                                        fullWidth
+                                        variant="outlined"
+                                        onClick={action.onClick}
+                                        sx={{
+                                            py: 4, display: 'flex', flexDirection: 'column', gap: 2,
+                                            border: `1px solid ${action.color}44`,
+                                            bgcolor: 'rgba(255,255,255,0.01)',
+                                            borderRadius: 0,
+                                            color: '#f8fafc',
+                                            '&:hover': {
+                                                bgcolor: `${action.color}11`,
+                                                borderColor: action.color,
+                                                transform: 'translateY(-4px)',
+                                                boxShadow: `0 8px 16px -4px ${action.color}33`
+                                            }
+                                        }}
+                                    >
+                                        <action.icon size={28} color={action.color} />
+                                        <Typography variant="subtitle2" fontWeight="900" sx={{ letterSpacing: 1 }}>{action.label}</Typography>
+                                    </Button>
+                                </Grid>
+                            ))}
+                        </Grid>
+                    </CardContent>
+                </Card>
+            )}
+
+            <EventFormModal open={eventModalOpen} onClose={() => { setEventModalOpen(false); setEditingEvent(null); }} event={editingEvent} onSuccess={fetchData} />
+            <ProjectFormModal open={projectModalOpen} onClose={() => { setProjectModalOpen(false); setEditingProject(null); }} project={editingProject} onSuccess={fetchData} />
+            <PlanFormModal open={planModalOpen} onClose={() => { setPlanModalOpen(false); setEditingPlan(null); }} plan={editingPlan} onSuccess={fetchData} />
+            <AnnouncementFormModal open={announcementModalOpen} onClose={() => { setAnnouncementModalOpen(false); setEditingAnnouncement(null); }} announcement={editingAnnouncement} onSuccess={fetchData} />
+            <DepartmentReportModal open={reportModalOpen} onClose={() => setReportModalOpen(false)} onSuccess={fetchData} />
+        </Box>
     );
 }
+
+const Stack = ({ children, spacing }: { children: React.ReactNode, spacing: number }) => (
+    <Box display="flex" flexDirection="column" gap={spacing}>{children}</Box>
+);
 

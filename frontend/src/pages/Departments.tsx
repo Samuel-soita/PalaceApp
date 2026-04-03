@@ -1,4 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../lib/db';
 import api from '../lib/api-client';
 import {
     Card, CardContent, Typography, Grid, Button,
@@ -9,11 +11,7 @@ import { Plus, Users } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 
 export default function Departments() {
-    const { data: departments, isLoading } = useQuery(['departments'], async () => {
-        const res = await api.get('/departments');
-        // Handle both raw arrays and paginated objects
-        return Array.isArray(res.data) ? res.data : (res.data?.data || []);
-    });
+    const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
 
     return (
         <DashboardLayout>
@@ -27,7 +25,7 @@ export default function Departments() {
                 </Button>
             </Box>
 
-            {isLoading && <LinearProgress sx={{ mb: 4, borderRadius: 1 }} />}
+            {departments === undefined && <LinearProgress sx={{ mb: 4, borderRadius: 1 }} />}
 
             <Grid container spacing={3}>
                 {departments?.map((dept: any) => (

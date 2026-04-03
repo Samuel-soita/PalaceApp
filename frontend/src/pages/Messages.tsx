@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../lib/db';
 import { io, Socket } from 'socket.io-client';
 import {
     Box, Typography, Card, CardContent, TextField, IconButton, Avatar,
@@ -10,6 +11,7 @@ import { Send, Hash, Users, MessageSquare, MoreVertical, Edit2, Trash2, AtSign, 
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../lib/api-client';
+import { encryptMessage, decryptMessage } from '../lib/encryption';
 
 interface Message {
     id: string;
@@ -23,7 +25,6 @@ interface Message {
 
 export default function Messages() {
     const { user } = useAuth();
-    const queryClient = useQueryClient();
     const theme = useTheme();
     const [newMessage, setNewMessage] = useState('');
     const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
@@ -33,6 +34,9 @@ export default function Messages() {
     // Mentions state
     const [tagAnchorEl, setTagAnchorEl] = useState<null | HTMLElement>(null);
     const [taggedDepts, setTaggedDepts] = useState<any[]>([]);
+    const [taggedUsers, setTaggedUsers] = useState<any[]>([]);
+    const [userSearch, setUserSearch] = useState('');
+    const [searchResults, setSearchResults] = useState<any[]>([]);
 
     // Context Menu state
     const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
@@ -40,90 +44,72 @@ export default function Messages() {
 
     const effectiveDeptId = user?.departmentId;
 
-    // Fetch Messages
-    const { data: messages, isLoading } = useQuery(['messages', effectiveDeptId], async () => {
-        const url = effectiveDeptId ? `/messages?departmentId=${effectiveDeptId}` : '/messages';
-        const res = await api.get(url);
-        // Handle both raw arrays and paginated objects
-        return Array.isArray(res.data) ? res.data : (res.data?.data || []);
-    }, { enabled: !!user });
+    const messages = useLiveQuery(
+        () => effectiveDeptId 
+            ? db.messages.where('departmentId').equals(effectiveDeptId).sortBy('createdAt')
+            : db.messages.orderBy('createdAt').toArray(), 
+        [effectiveDeptId]
+    ) || [];
 
-    // Fetch Department Info
-    const { data: department } = useQuery(['department', effectiveDeptId], async () => {
-        if (!effectiveDeptId) return null;
-        const res = await api.get(`/departments/${effectiveDeptId}`);
-        return res.data;
-    }, { enabled: !!effectiveDeptId });
-
-    // Fetch All Departments for Mentions
-    const { data: allDepartments } = useQuery(['all-departments'], async () => {
-        const res = await api.get('/departments');
-        return Array.isArray(res.data) ? res.data : (res.data?.data || []);
-    });
-
-    const createMessageMutation = useMutation(
-        (data: any) => api.post('/messages', data),
-        {
-            onSuccess: (data) => {
-                queryClient.setQueryData(['messages', effectiveDeptId], (old: any) => [...(old || []), data]);
-                socket?.emit('send_message', data);
-                setTaggedDepts([]);
-            }
-        }
+    const department = useLiveQuery(
+        () => effectiveDeptId ? db.departments.get(effectiveDeptId) : undefined,
+        [effectiveDeptId]
     );
 
-    const updateMessageMutation = useMutation(
-        (data: { id: string, content: string }) => api.patch(`/messages/${data.id}`, { content: data.content }),
-        {
-            onSuccess: (updated) => {
-                queryClient.setQueryData(['messages', effectiveDeptId], (old: any) => 
-                    old?.map((m: any) => m.id === updated.data.id ? updated.data : m)
-                );
-                setEditingMsgId(null);
-                setNewMessage('');
-            }
-        }
-    );
+    const allDepartments = useLiveQuery(() => db.departments.toArray(), []) || [];
 
-    const deleteMessageMutation = useMutation(
-        (id: string) => api.delete(`/messages/${id}`),
-        {
-            onSuccess: (_, id) => {
-                queryClient.setQueryData(['messages', effectiveDeptId], (old: any) => 
-                    old?.map((m: any) => m.id === id ? { ...m, isDeleted: true, content: 'This message was deleted' } : m)
-                );
-            }
+    const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
+        const actionId = id || crypto.randomUUID();
+        const timestamp = Date.now();
+
+        if (method !== 'DELETE') {
+            await db.messages.put({ 
+                ...payload, 
+                id: actionId, 
+                syncStatus: 'PENDING',
+                createdAt: new Date().toISOString(),
+                sender: { name: user?.name, role: user?.role }
+            });
+        } else {
+            if (id) await db.messages.update(id, { isDeleted: true, content: 'This message was deleted' });
         }
-    );
+
+        await db.syncQueue.put({
+            id: crypto.randomUUID(),
+            timestamp,
+            entity: 'MESSAGE',
+            method,
+            url: method === 'POST' ? '/messages' : `/messages/${actionId}`,
+            payload: { ...payload, isOfflineSync: true },
+            status: 'PENDING',
+            retryCount: 0,
+            errorLog: []
+        });
+
+        if (method === 'POST') socket?.emit('send_message', { ...payload, id: actionId });
+        setEditingMsgId(null);
+        setNewMessage('');
+    };
 
     useEffect(() => {
         if (!user) return;
-        // @ts-ignore
         const newSocket = io(import.meta.env.VITE_API_URL || 'http://localhost:4000');
         setSocket(newSocket);
 
         newSocket.on('receive_message', (message: Message) => {
-            queryClient.setQueryData(['messages', effectiveDeptId], (old: any) => {
-                const isDuplicate = old?.some((m: Message) => m.id === message.id);
-                if (isDuplicate) return old;
-                return [...(old || []), message];
-            });
+            db.messages.put({ ...message, syncStatus: 'SYNCED', version: 1 } as any);
         });
 
         newSocket.on('message_edited', (updatedMsg: Message) => {
-            queryClient.setQueryData(['messages', effectiveDeptId], (old: any) => 
-                old?.map((m: any) => m.id === updatedMsg.id ? updatedMsg : m)
-            );
+            db.messages.put({ ...updatedMsg, syncStatus: 'SYNCED', version: 1 } as any);
         });
 
         newSocket.on('message_deleted', ({ id }: { id: string }) => {
-            queryClient.setQueryData(['messages', effectiveDeptId], (old: any) => 
-                old?.map((m: any) => m.id === id ? { ...m, isDeleted: true, content: 'This message was deleted' } : m)
-            );
+            db.messages.update(id, { isDeleted: true, content: 'This message was deleted' });
         });
 
         return () => { newSocket.close(); };
-    }, [user, effectiveDeptId, queryClient]);
+    }, [user]);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -134,16 +120,19 @@ export default function Messages() {
         if (!newMessage.trim() || !user) return;
         if (!effectiveDeptId && user?.role !== 'SUPER_ADMIN') return;
         
+        const roomId = effectiveDeptId ? `dept-${effectiveDeptId}` : 'church-wide';
         if (editingMsgId) {
-            updateMessageMutation.mutate({ id: editingMsgId, content: newMessage });
+            handleAction({ id: editingMsgId, content: encryptMessage(newMessage, roomId) }, 'PATCH', editingMsgId);
         } else {
-            createMessageMutation.mutate({
-                content: newMessage,
+            handleAction({
+                content: encryptMessage(newMessage, roomId),
                 senderId: user.id,
                 departmentId: effectiveDeptId || null,
-                taggedDepartmentIds: taggedDepts.map(d => d.id)
-            });
-            setNewMessage('');
+                taggedDepartmentIds: taggedDepts.map(d => d.id),
+                taggedUserIds: taggedUsers.map(u => u.id)
+            }, 'POST');
+            setTaggedDepts([]);
+            setTaggedUsers([]);
         }
     };
 
@@ -158,16 +147,17 @@ export default function Messages() {
     };
 
     const startEdit = () => {
+        const roomId = effectiveDeptId ? `dept-${effectiveDeptId}` : 'church-wide';
         if (selectedMsg) {
             setEditingMsgId(selectedMsg.id);
-            setNewMessage(selectedMsg.content);
+            setNewMessage(decryptMessage(selectedMsg.content, roomId));
         }
         handleCloseMenu();
     };
 
     const handleDelete = () => {
         if (selectedMsg) {
-            deleteMessageMutation.mutate(selectedMsg.id);
+            handleAction({ id: selectedMsg.id }, 'DELETE', selectedMsg.id);
         }
         handleCloseMenu();
     };
@@ -180,7 +170,31 @@ export default function Messages() {
         }
     };
 
-    if (isLoading) return <DashboardLayout><Box display="flex" justifyContent="center" mt={10}><CircularProgress /></Box></DashboardLayout>;
+    const toggleUserTag = (tagUser: any) => {
+        if (taggedUsers.find(u => u.id === tagUser.id)) {
+            setTaggedUsers(taggedUsers.filter(u => u.id !== tagUser.id));
+        } else {
+            setTaggedUsers([...taggedUsers, tagUser]);
+        }
+    };
+
+    useEffect(() => {
+        if (!userSearch || userSearch.length < 2) {
+            setSearchResults([]);
+            return;
+        }
+        const delay = setTimeout(async () => {
+            try {
+                const res = await api.get(`/users/search-members?query=${userSearch}`);
+                setSearchResults(res.data);
+            } catch (err) {
+                console.error('Search failed:', err);
+            }
+        }, 300);
+        return () => clearTimeout(delay);
+    }, [userSearch]);
+
+    if (messages === undefined) return <DashboardLayout><Box display="flex" justifyContent="center" mt={10}><CircularProgress /></Box></DashboardLayout>;
 
     return (
         <DashboardLayout>
@@ -207,7 +221,7 @@ export default function Messages() {
                             <Typography>No communications yet. Start the transmission.</Typography>
                         </Box>
                     ) : (
-                        (Array.isArray(messages) ? messages : []).map((msg: Message, i: number) => {
+                        (Array.isArray(messages) ? messages : []).map((msg: any, i: number) => {
                             const isMe = msg.senderId === user?.id;
                             const showHeader = i === 0 || messages[i - 1].senderId !== msg.senderId;
                             
@@ -259,7 +273,7 @@ export default function Messages() {
                                             fontStyle: msg.isDeleted ? 'italic' : 'normal'
                                         }}>
                                             <Typography variant="body1" sx={{ lineHeight: 1.5 }}>
-                                                {msg.content}
+                                                {msg.isDeleted ? msg.content : decryptMessage(msg.content, effectiveDeptId ? `dept-${effectiveDeptId}` : 'church-wide')}
                                                 {msg.isEdited && !msg.isDeleted && (
                                                     <Typography variant="caption" sx={{ ml: 1, opacity: 0.5, fontSize: '0.6rem' }}>(edited)</Typography>
                                                 )}
@@ -304,6 +318,15 @@ export default function Messages() {
                             sx={{ bgcolor: 'primary.dark', color: 'white', borderRadius: 1 }}
                         />
                     ))}
+                    {taggedUsers.map(tagUser => (
+                        <Chip 
+                            key={tagUser.id}
+                            label={`@${tagUser.name}`}
+                            onDelete={() => toggleUserTag(tagUser)}
+                            size="small"
+                            sx={{ bgcolor: 'secondary.dark', color: 'white', borderRadius: 1 }}
+                        />
+                    ))}
                 </Box>
 
                 <Box component="form" onSubmit={handleSend} sx={{ p: 3, bgcolor: 'hsla(0,0%,0%,0.2)' }}>
@@ -334,7 +357,7 @@ export default function Messages() {
                         />
                         <IconButton 
                             type="submit" 
-                            disabled={!newMessage.trim() || createMessageMutation.isLoading || updateMessageMutation.isLoading}
+                            disabled={!newMessage.trim()}
                             sx={{ 
                                 bgcolor: editingMsgId ? 'success.main' : 'primary.main', 
                                 color: 'white',
@@ -367,8 +390,38 @@ export default function Messages() {
             </Menu>
 
             {/* Mentions Menu */}
-            <Menu anchorEl={tagAnchorEl} open={Boolean(tagAnchorEl)} onClose={() => setTagAnchorEl(null)}>
-                <Typography sx={{ p: 1, px: 2, fontSize: '0.7rem', opacity: 0.5, fontWeight: 700 }}>MENTION SECTOR</Typography>
+            <Menu 
+                anchorEl={tagAnchorEl} 
+                open={Boolean(tagAnchorEl)} 
+                onClose={() => setTagAnchorEl(null)}
+                PaperProps={{ sx: { width: 280, maxHeight: 400, bgcolor: 'hsla(230,25%,15%,0.95)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)' } }}
+            >
+                <Box p={2} pb={1}>
+                    <TextField 
+                        fullWidth 
+                        size="small" 
+                        placeholder="Search member name..." 
+                        value={userSearch}
+                        onChange={(e) => setUserSearch(e.target.value)}
+                        autoFocus
+                    />
+                </Box>
+
+                {searchResults.length > 0 && (
+                    <>
+                        <Typography sx={{ p: 1, px: 2, fontSize: '0.7rem', opacity: 0.5, fontWeight: 700 }}>MEMBERS</Typography>
+                        {searchResults.map((u: any) => (
+                            <MenuItem key={u.id} onClick={() => { toggleUserTag(u); setTagAnchorEl(null); setUserSearch(''); }}>
+                                <Avatar src={u.avatarUrl} sx={{ width: 20, height: 20, mr: 1, fontSize: '0.6rem' }}>{u.name[0]}</Avatar>
+                                <Typography variant="body2">{u.name}</Typography>
+                                {taggedUsers.find(tu => tu.id === u.id) && <Check size={14} className="ml-auto" />}
+                            </MenuItem>
+                        ))}
+                        <Divider sx={{ my: 1, opacity: 0.1 }} />
+                    </>
+                )}
+
+                <Typography sx={{ p: 1, px: 2, fontSize: '0.7rem', opacity: 0.5, fontWeight: 700 }}>SECTORS</Typography>
                 {allDepartments?.map((dept: any) => (
                     <MenuItem key={dept.id} onClick={() => { toggleDeptTag(dept); setTagAnchorEl(null); }}>
                         {taggedDepts.find(d => d.id === dept.id) ? <Check size={14} className="mr-2" /> : <Hash size={14} className="mr-2" />}

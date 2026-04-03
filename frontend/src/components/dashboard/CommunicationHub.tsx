@@ -5,12 +5,13 @@ import { socket, connectSocket } from '../../utils/socket';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../lib/api-client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { encryptMessage, decryptMessage } from '../../lib/encryption';
 
 interface Message {
     id: string;
     content: string;
     senderId: string;
-    sender: { name: string; role: string };
+    sender: { name: string; role: string; avatarUrl?: string };
     createdAt: string;
 }
 
@@ -27,7 +28,6 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
     // RULE: Communication is ONLY between leaders.
-    if (!user || user.role === 'MEMBER') return null;
     
     const roomId = activeTab === 'ROOM' 
         ? (departmentId ? `dept-${departmentId}` : projectId ? `proj-${projectId}` : eventId ? `event-${eventId}` : 'church-wide')
@@ -82,7 +82,11 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
             socket.emit('join-room', roomId);
 
             const handleNewMessage = (newMessage: Message) => {
-                queryClient.setQueryData(['messages', roomId], (old: any) => [...(old || []), newMessage]);
+                queryClient.setQueryData(['messages', roomId], (old: any) => {
+                    const existing = old || [];
+                    if (existing.some((m: any) => m.id === newMessage.id)) return existing;
+                    return [...existing, newMessage];
+                });
             };
 
             socket.on('new-message', handleNewMessage);
@@ -98,17 +102,18 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
         }
     }, [messages]);
 
+    if (!user || user.role === 'MEMBER') return null;
+
     const sendMessage = async () => {
         if (!message.trim() || !user) return;
         if (activeTab === 'PRIVATE' && !selectedUser) return;
 
         try {
             const payload = activeTab === 'ROOM' 
-                ? { content: message, senderId: user.id, departmentId, projectId, eventId, chatType: departmentId ? 'DEPARTMENT' : projectId ? 'PROJECT' : eventId ? 'EVENT' : 'GLOBAL' }
-                : { content: message, senderId: user.id, receiverId: selectedUser.id, chatType: 'PRIVATE' };
+                ? { content: encryptMessage(message, roomId), senderId: user.id, departmentId, projectId, eventId, chatType: departmentId ? 'DEPARTMENT' : projectId ? 'PROJECT' : eventId ? 'EVENT' : 'GLOBAL' }
+                : { content: encryptMessage(message, roomId), senderId: user.id, receiverId: selectedUser.id, chatType: 'PRIVATE' };
 
             const res = await api.post('/messages', payload);
-            socket.emit('send-message', { roomId, message: res.data });
             setMessage('');
         } catch (error: any) {
             console.error('Failed to send message', error);
@@ -250,7 +255,7 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
                                         <Typography variant="caption" color="error" sx={{ display: 'block', mb: 0.5, fontWeight: '950', fontSize: '0.6rem' }}>⚠️ FLAGGED</Typography>
                                     )}
                                 <Box display="flex" alignItems="center" gap={1} mb={0.5} flexDirection={msg.senderId === user?.id ? 'row-reverse' : 'row'}>
-                                    <Avatar sx={{ width: 20, height: 20, fontSize: '0.45rem', fontWeight: 950, bgcolor: 'primary.main' }}>{msg.sender.name.charAt(0)}</Avatar>
+                                    <Avatar src={msg.sender.avatarUrl || undefined} sx={{ width: 20, height: 20, fontSize: '0.45rem', fontWeight: 950, bgcolor: 'primary.main' }}>{!msg.sender.avatarUrl && msg.sender.name.charAt(0)}</Avatar>
                                     <Typography variant="caption" sx={{ fontWeight: 900, opacity: 0.6, fontSize: '0.7rem' }}>{msg.sender.name}</Typography>
                                 </Box>
                                 <Paper sx={{ 
@@ -260,7 +265,7 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
                                     border: '1px solid var(--glass-border)',
                                     boxShadow: msg.senderId === user?.id ? '0 4px 12px rgba(var(--primary-rgb), 0.2)' : 'none'
                                 }}>
-                                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', color: msg.senderId === user?.id ? 'white' : 'inherit', lineHeight: 1.4 }}>{msg.content}</Typography>
+                                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', color: msg.senderId === user?.id ? 'white' : 'inherit', lineHeight: 1.4 }}>{decryptMessage(msg.content, roomId)}</Typography>
                                 </Paper>
                                 <Typography variant="caption" sx={{ display: 'block', mt: 0.5, opacity: 0.4, textAlign: msg.senderId === user?.id ? 'right' : 'left', fontSize: '0.55rem' }}>
                                     {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

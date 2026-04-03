@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../lib/db';
 import api from '../lib/api-client';
 import {
     Card, CardContent, Typography, Grid, Button, Box, Chip,
     Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem,
-    IconButton, Tooltip, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow
+    IconButton, Tooltip, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
+    FormControl, InputLabel, Select, Checkbox, ListItemText
 } from '@mui/material';
 import { Plus, Calendar, Clock, MapPin, Edit, Trash2, Users, FileText, ChevronRight } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
@@ -12,7 +14,6 @@ import { useAuth } from '../contexts/AuthContext';
 
 export default function Meetings() {
     const { user } = useAuth();
-    const queryClient = useQueryClient();
     const [open, setOpen] = useState(false);
     const [editMeeting, setEditMeeting] = useState<any>(null);
     const [formData, setFormData] = useState({
@@ -23,7 +24,8 @@ export default function Meetings() {
         meetingType: 'REVIEW',
         agenda: '',
         departmentId: '',
-        meetingStatus: 'SCHEDULED'
+        meetingStatus: 'PENDING_APPROVAL',
+        pastorIds: [] as string[]
     });
 
     const isSuperAdmin = user?.role === 'SUPER_ADMIN';
@@ -31,37 +33,42 @@ export default function Meetings() {
     const [page, setPage] = useState(1);
     const limit = 10;
 
-    const { data: meetingsData, isLoading } = useQuery(['meetings', page], async () => {
-        const url = isSuperAdmin ? '/meetings' : `/meetings?departmentId=${user?.departmentId}`;
-        const res = await api.get(url, { params: { page, limit } });
-        return res.data;
-    });
+    const meetings = useLiveQuery(() => db.meetings.orderBy('createdAt').reverse().toArray(), []) || [];
+    const meta = { total: meetings.length, totalPages: Math.ceil((meetings.length || 1) / limit) };
 
-    const meetings = meetingsData?.data || [];
-    const meta = meetingsData?.meta || { total: 0, totalPages: 1 };
+    const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
+    const pastors = useLiveQuery(() => db.users.where('role').equals('PASTOR').toArray(), []) || [];
 
-    const { data: departments } = useQuery(['departments'], async () => {
-        const res = await api.get('/departments');
-        return Array.isArray(res.data) ? res.data : (res.data?.data || []);
-    }, { enabled: isSuperAdmin });
+    const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
+        const actionId = id || crypto.randomUUID();
+        const timestamp = Date.now();
 
-    const createMutation = useMutation((data: any) => api.post('/meetings', data), {
-        onSuccess: () => {
-            queryClient.invalidateQueries(['meetings']);
-            handleClose();
+        if (method !== 'DELETE') {
+            await db.meetings.put({ 
+                ...payload, 
+                id: actionId, 
+                syncStatus: 'PENDING',
+                department: departments.find(d => d.id === payload.departmentId) || null,
+                createdAt: new Date().toISOString()
+            });
+        } else {
+            if (id) await db.meetings.delete(id);
         }
-    });
 
-    const updateMutation = useMutation((data: any) => api.put(`/meetings/${editMeeting.id}`, data), {
-        onSuccess: () => {
-            queryClient.invalidateQueries(['meetings']);
-            handleClose();
-        }
-    });
+        await db.syncQueue.put({
+            id: crypto.randomUUID(),
+            timestamp,
+            entity: 'MEETING',
+            method,
+            url: method === 'POST' ? '/meetings' : `/meetings/${actionId}`,
+            payload: { ...payload, isOfflineSync: true },
+            status: 'PENDING',
+            retryCount: 0,
+            errorLog: []
+        });
 
-    const deleteMutation = useMutation((id: string) => api.delete(`/meetings/${id}`), {
-        onSuccess: () => queryClient.invalidateQueries(['meetings'])
-    });
+        handleClose();
+    };
 
     const handleOpen = (meeting: any = null) => {
         if (meeting) {
@@ -74,7 +81,8 @@ export default function Meetings() {
                 meetingType: meeting.meetingType,
                 agenda: meeting.agenda,
                 departmentId: meeting.departmentId,
-                meetingStatus: meeting.meetingStatus
+                meetingStatus: meeting.meetingStatus,
+                pastorIds: []
             });
         } else {
             setEditMeeting(null);
@@ -86,7 +94,8 @@ export default function Meetings() {
                 meetingType: 'REVIEW',
                 agenda: '',
                 departmentId: isSuperAdmin ? '' : user?.departmentId || '',
-                meetingStatus: 'SCHEDULED'
+                meetingStatus: 'PENDING_APPROVAL',
+                pastorIds: []
             });
         }
         setOpen(true);
@@ -100,9 +109,13 @@ export default function Meetings() {
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (editMeeting) {
-            updateMutation.mutate(formData);
+            handleAction({ ...formData, id: editMeeting.id }, 'PATCH', editMeeting.id);
         } else {
-            createMutation.mutate(formData);
+            if (formData.pastorIds.length !== 2) {
+                alert("Exactly 2 Pastors must authorize this Strategic Briefing.");
+                return;
+            }
+            handleAction(formData, 'POST');
         }
     };
 
@@ -138,7 +151,7 @@ export default function Meetings() {
             </Box>
 
             <Grid container spacing={3} mb={6}>
-                {isLoading ? <Typography p={3}>Scanning timeline...</Typography> : meetings?.slice(0, 3).map((meeting: any) => (
+                {meetings === undefined ? <Typography p={3}>Scanning timeline...</Typography> : meetings?.slice(0, 3).map((meeting: any) => (
                     <Grid item xs={12} md={4} key={meeting.id}>
                         <Card sx={{ borderRadius: 4, height: '100%', border: '1px solid', borderColor: 'divider', position: 'relative' }}>
                             <CardContent sx={{ p: 3 }}>
@@ -201,7 +214,7 @@ export default function Meetings() {
                                 </TableCell>
                                 <TableCell align="right">
                                     <IconButton onClick={() => handleOpen(meeting)} size="small" color="primary"><Edit size={18} /></IconButton>
-                                    <IconButton onClick={() => deleteMutation.mutate(meeting.id)} size="small" color="error"><Trash2 size={18} /></IconButton>
+                                    <IconButton onClick={() => handleAction({ id: meeting.id }, 'DELETE', meeting.id)} size="small" color="error"><Trash2 size={18} /></IconButton>
                                 </TableCell>
                             </TableRow>
                         ))}
@@ -218,7 +231,7 @@ export default function Meetings() {
                                 <Chip label={meeting.meetingStatus} color={getStatusColor(meeting.meetingStatus) as any} size="small" />
                                 <Box>
                                     <IconButton onClick={() => handleOpen(meeting)} size="small" color="primary"><Edit size={18} /></IconButton>
-                                    <IconButton onClick={() => deleteMutation.mutate(meeting.id)} size="small" color="error"><Trash2 size={18} /></IconButton>
+                                    <IconButton onClick={() => handleAction({ id: meeting.id }, 'DELETE', meeting.id)} size="small" color="error"><Trash2 size={18} /></IconButton>
                                 </Box>
                             </Box>
                             <Typography variant="subtitle1" fontWeight="800" sx={{ mb: 1 }}>{meeting.title}</Typography>
@@ -349,6 +362,38 @@ export default function Meetings() {
                                     ))}
                                 </TextField>
                             )}
+
+                            {!editMeeting && (
+                                <FormControl fullWidth required>
+                                    <InputLabel id="pastors-label" sx={{ fontWeight: 700 }}>Choose 2 Authorizing Pastors</InputLabel>
+                                    <Select
+                                        labelId="pastors-label"
+                                        id="pastors-select"
+                                        multiple
+                                        label="Choose 2 Authorizing Pastors"
+                                        value={formData.pastorIds}
+                                        onChange={(e) => {
+                                            const values = e.target.value as string[];
+                                            if (values.length <= 2) setFormData({ ...formData, pastorIds: values });
+                                        }}
+                                        renderValue={(sel: any) => (
+                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                                {pastors?.filter((p: any) => (sel as string[]).includes(p.id)).map((p: any) => (
+                                                    <Chip key={p.id} label={p.name} size="small" />
+                                                ))}
+                                            </Box>
+                                        )}
+                                    >
+                                        {pastors?.length === 0 && <MenuItem disabled>No Pastors found</MenuItem>}
+                                        {pastors?.map((p: any) => (
+                                            <MenuItem key={p.id} value={p.id}>
+                                                <Checkbox checked={formData.pastorIds.includes(p.id)} />
+                                                <ListItemText primary={p.name} />
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                            )}
                         </Box>
                     </DialogContent>
                     <DialogActions sx={{ p: 4 }}>
@@ -356,7 +401,7 @@ export default function Meetings() {
                         <Button
                             type="submit"
                             variant="contained"
-                            disabled={createMutation.isLoading || updateMutation.isLoading}
+                            disabled={false}
                             sx={{ borderRadius: 2, px: 4, fontWeight: 'bold' }}
                         >
                             {editMeeting ? 'Confirm Adjustments' : 'Initialize Briefing'}

@@ -7,7 +7,7 @@ import {
     Avatar, Skeleton, useMediaQuery, useTheme, Modal, Backdrop, Fade, Stack, Snackbar, Alert, Container
 } from '@mui/material';
 import {
-    Calendar, Briefcase, Sparkles, ThumbsUp, Smile, Heart, FileText, Bell, Megaphone, Star, BookOpen
+    Calendar, Briefcase, Sparkles, ThumbsUp, Smile, Heart, FileText, Bell, Megaphone, Star, BookOpen, Settings
 } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
@@ -19,6 +19,9 @@ import ProjectFormModal from '../components/modals/ProjectFormModal';
 import EventFormModal from '../components/modals/EventFormModal';
 import PlanFormModal from '../components/modals/PlanFormModal';
 import AnnouncementFormModal from '../components/modals/AnnouncementFormModal';
+import DepartmentReportModal from '../components/modals/DepartmentReportModal';
+import TechnicalRepairModal from '../components/modals/TechnicalRepairModal';
+import MissionReportsViewer from '../components/dashboard/MissionReportsViewer';
 import FinancialLedger from '../components/dashboard/FinancialLedger';
 
 export default function DepartmentDashboard() {
@@ -53,6 +56,8 @@ export default function DepartmentDashboard() {
     const [eventModal, setEventModal] = useState({ open: false, data: null });
     const [planModal, setPlanModal] = useState({ open: false, data: null });
     const [announcementModal, setAnnouncementModal] = useState({ open: false, data: null });
+    const [reportModalOpen, setReportModalOpen] = useState(false);
+    const [repairModalOpen, setRepairModalOpen] = useState(false);
     const [enrollModalOpen, setEnrollModalOpen] = useState(false);
     const [enrollAmount, setEnrollAmount] = useState<number>(700);
     const [toast, setToast] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({
@@ -130,7 +135,7 @@ export default function DepartmentDashboard() {
                     .mission-marquee-leader {
                         display: flex;
                         gap: 16px;
-                        animation: marquee-leader 1000s linear infinite;
+                        animation: marquee-leader 100s linear infinite;
                         width: max-content;
                     }
                     .mission-marquee-leader:hover {
@@ -217,39 +222,49 @@ export default function DepartmentDashboard() {
                                         sx={{ color: 'var(--cyan)', borderColor: 'var(--cyan-glow)', fontWeight: 900, mb: 3 }} 
                                     />
                                     
-                                    <Typography variant="h4" fontWeight="950" sx={{ mb: 2, color: 'primary.main', opacity: 0.9 }}>{devotion?.title}</Typography>
-                                    <Typography variant="body1" sx={{ mb: 4, lineHeight: 1.8, fontSize: '1.1rem', opacity: 0.8, fontStyle: 'italic' }}>
-                                        "{devotion?.content}"
-                                    </Typography>
+                                    {!devotion ? (
+                                        <Box sx={{ p: 4, textAlign: 'center', border: '1px dashed rgba(0,255,255,0.3)', bgcolor: 'rgba(0,255,255,0.02)', borderRadius: 2 }}>
+                                            <Sparkles size={24} color="var(--cyan)" style={{ marginBottom: 8, opacity: 0.5 }} />
+                                            <Typography variant="subtitle2" fontWeight="950" sx={{ color: 'var(--cyan)', opacity: 0.7 }}>AWAITING TODAY&apos;S MINISTERIAL DEVOTION</Typography>
+                                            <Typography variant="caption" sx={{ display: 'block', mt: 1, opacity: 0.5 }}>The leadership has not yet published the devotion for today.</Typography>
+                                        </Box>
+                                    ) : (
+                                        <>
+                                            <Typography variant="h4" fontWeight="950" sx={{ mb: 2, color: 'primary.main', opacity: 0.9 }}>{devotion?.title}</Typography>
+                                            <Typography variant="body1" sx={{ mb: 4, lineHeight: 1.8, fontSize: '1.1rem', opacity: 0.8, fontStyle: 'italic' }}>
+                                                &quot;{devotion?.content}&quot;
+                                            </Typography>
 
-                                    <Divider sx={{ mb: 3, opacity: 0.1 }} />
+                                            <Divider sx={{ mb: 3, opacity: 0.1 }} />
 
-                                    <Box display="flex" justifyContent="space-between" alignItems="center">
-                                        <Stack direction="row" spacing={1}>
-                                            {[
-                                                { icon: ThumbsUp, label: 'Amen', value: 'AMEN', type: 'AMEN' },
-                                                { icon: Smile, label: 'Blessed', value: '😊', type: 'EMOJI' },
-                                                { icon: Heart, label: 'Love', value: '❤️', type: 'EMOJI' },
-                                            ].map((btn) => {
-                                                const count = devotion?.interactions?.filter((i: any) => i.value === btn.value).length || 0;
-                                                const isActive = devotion?.interactions?.some((i: any) => i.value === btn.value && i.userId === user?.id);
-                                                return (
-                                                    <Button key={btn.value} size="small" startIcon={<btn.icon size={16} />} onClick={() => devotionMutation.mutate({ type: btn.type, value: btn.value })}
-                                                        sx={{ 
-                                                            borderRadius: 20, px: 2, 
-                                                            bgcolor: isActive ? 'rgba(0,180,216,0.2)' : 'rgba(255,255,255,0.03)', 
-                                                            color: isActive ? 'var(--cyan)' : 'inherit', 
-                                                            border: isActive ? '1px solid var(--cyan)' : '1px solid transparent',
-                                                            '&:hover': { bgcolor: 'rgba(0,180,216,0.1)' }
-                                                        }}
-                                                    >
-                                                        {btn.label} {count > 0 && `(${count})`}
-                                                    </Button>
-                                                );
-                                            })}
-                                        </Stack>
-                                        <Typography variant="caption" fontWeight="900" sx={{ opacity: 0.4 }}>{new Date().toLocaleDateString()}</Typography>
-                                    </Box>
+                                            <Box display="flex" justifyContent="space-between" alignItems="center">
+                                                <Stack direction="row" spacing={1}>
+                                                    {[
+                                                        { icon: ThumbsUp, label: 'Amen', value: 'AMEN', type: 'AMEN' },
+                                                        { icon: Smile, label: 'Blessed', value: '😊', type: 'EMOJI' },
+                                                        { icon: Heart, label: 'Love', value: '❤️', type: 'EMOJI' },
+                                                    ].map((btn) => {
+                                                        const count = devotion?.interactions?.filter((i: any) => i.value === btn.value).length || 0;
+                                                        const isActive = devotion?.interactions?.some((i: any) => i.value === btn.value && i.userId === user?.id);
+                                                        return (
+                                                            <Button key={btn.value} size="small" startIcon={<btn.icon size={16} />} onClick={() => devotionMutation.mutate({ type: btn.type, value: btn.value })}
+                                                                sx={{ 
+                                                                    borderRadius: 20, px: 2, 
+                                                                    bgcolor: isActive ? 'rgba(0,180,216,0.2)' : 'rgba(255,255,255,0.03)', 
+                                                                    color: isActive ? 'var(--cyan)' : 'inherit', 
+                                                                    border: isActive ? '1px solid var(--cyan)' : '1px solid transparent',
+                                                                    '&:hover': { bgcolor: 'rgba(0,180,216,0.1)' }
+                                                                }}
+                                                            >
+                                                                {btn.label} {count > 0 && `(${count})`}
+                                                            </Button>
+                                                        );
+                                                    })}
+                                                </Stack>
+                                                <Typography variant="caption" fontWeight="900" sx={{ opacity: 0.4 }}>{new Date().toLocaleDateString()}</Typography>
+                                            </Box>
+                                        </>
+                                    )}
                                 </CardContent>
                             </Card>
 
@@ -261,6 +276,10 @@ export default function DepartmentDashboard() {
                                         { label: 'NEW PROJECT', icon: Briefcase, color: 'cyan', onClick: () => setProjectModal({ open: true, data: null }) },
                                         { label: 'HOST EVENT', icon: Calendar, color: 'primary', onClick: () => setEventModal({ open: true, data: null }) },
                                         { label: 'STRATEGIC PLAN', icon: FileText, color: 'cyan', onClick: () => setPlanModal({ open: true, data: null }) },
+                                        { label: 'SUBMIT REPORT', icon: FileText, color: 'primary', onClick: () => setReportModalOpen(true) },
+                                        ...(department?.name === 'Technical, Sound & Lighting' ? [
+                                            { label: 'REQUEST REPAIR', icon: Settings, color: 'error', onClick: () => setRepairModalOpen(true) }
+                                        ] : []),
                                     ].map((action, i) => (
                                         <Grid item xs={12} sm={4} key={i}>
                                             <Button fullWidth onClick={action.onClick}
@@ -344,12 +363,17 @@ export default function DepartmentDashboard() {
                                 </CardContent>
                             </Card>
 
-                            {/* DIVINE MANDATE - Matched Classes */}
                             <Card className="holographic-card divine-mandate-card-leader" sx={{ p: 4, borderRadius: 0 }}>
                                 <Typography variant="h6" fontWeight="950" mb={1} sx={{ color: 'var(--cyan)', letterSpacing: 2 }}>DIVINE MANDATE</Typography>
-                                <Typography variant="h5" className="divine-text-premium" sx={{ opacity: 0.9, lineHeight: 1.4, fontStyle: 'italic' }}>
-                                    "{settings?.themeOfMonth?.toUpperCase() || "WALKING IN DIVINE AUTHORITY"}"
-                                </Typography>
+                                {!syncData?.affirmation ? (
+                                    <Typography variant="h5" sx={{ opacity: 0.5, lineHeight: 1.4, fontStyle: 'italic' }}>
+                                        Awaiting today&apos;s mandate...
+                                    </Typography>
+                                ) : (
+                                    <Typography variant="h5" className="divine-text-premium" sx={{ opacity: 0.9, lineHeight: 1.4, fontStyle: 'italic' }}>
+                                        &quot;{syncData.affirmation.content}&quot;
+                                    </Typography>
+                                )}
                             </Card>
 
                             {/* BROADCAST CENTER TERMINAL - Holographic */}
@@ -374,7 +398,7 @@ export default function DepartmentDashboard() {
                                     </Box>
                                     <Typography variant="subtitle2" fontWeight="950" sx={{ mb: 1 }}>BECOME A PRAYER PALACE PARTNER</Typography>
                                     <Typography variant="caption" sx={{ opacity: 0.6, fontStyle: 'italic', fontWeight: 700, display: 'block', mb: 2 }}>
-                                        "Partnering with Prayer Palace Apostolic Ministry for Global impact by making sure the church Budget is met"
+                                        &quot;Partnering with Prayer Palace Apostolic Ministry for Global impact by making sure the church Budget is met&quot;
                                     </Typography>
                                     <Button 
                                         startIcon={<Star size={12} />} 
@@ -384,6 +408,17 @@ export default function DepartmentDashboard() {
                                         onClick={() => setEnrollModalOpen(true)}
                                         sx={{ borderColor: 'orange', color: 'orange', fontWeight: 900, borderRadius: 0, fontSize: '0.65rem', '&:hover': { bgcolor: 'orange', color: 'black' } }}
                                     > ENROLL IN PARTNERSHIP </Button>
+                                </CardContent>
+                            </Card>
+
+                            {/* SECTORAL MISSION REPORTS */}
+                            <Card className="holographic-card" sx={{ borderRadius: 0, border: '1px solid rgba(0, 255, 255, 0.2)' }}>
+                                <CardContent sx={{ p: 3 }}>
+                                    <Box display="flex" alignItems="center" gap={1.5} mb={3}>
+                                        <FileText size={20} color="var(--cyan)" />
+                                        <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 2 }}>MISSION SECTOR REPORTS (PDF)</Typography>
+                                    </Box>
+                                    <MissionReportsViewer departmentId={effectiveId} limit={5} />
                                 </CardContent>
                             </Card>
                         </Stack>
@@ -416,12 +451,48 @@ export default function DepartmentDashboard() {
                 onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} 
             />
             
+            <ProjectFormModal 
+                open={projectModal.open} 
+                onClose={() => setProjectModal({ open: false, data: null })} 
+                project={projectModal.data} 
+                defaultDepartmentId={effectiveId}
+                onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} 
+            />
+            
+            <EventFormModal 
+                open={eventModal.open} 
+                onClose={() => setEventModal({ open: false, data: null })} 
+                event={eventModal.data} 
+                defaultDepartmentId={effectiveId}
+                onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} 
+            />
+            
+            <PlanFormModal 
+                open={planModal.open} 
+                onClose={() => setPlanModal({ open: false, data: null })} 
+                plan={planModal.data} 
+                defaultDepartmentId={effectiveId}
+                onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} 
+            />
+            
             <AnnouncementFormModal 
                 open={announcementModal.open} 
                 onClose={() => setAnnouncementModal({ open: false, data: null })} 
-                announcement={announcementModal.data} 
-                defaultDepartmentId={effectiveId}
                 onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} 
+            />
+            
+            <DepartmentReportModal 
+                open={reportModalOpen} 
+                onClose={() => setReportModalOpen(false)} 
+                departmentId={effectiveId}
+                onSuccess={() => setToast({ open: true, message: 'Report submitted successfully!', severity: 'success' })}
+            />
+
+            <TechnicalRepairModal
+                open={repairModalOpen}
+                onClose={() => setRepairModalOpen(false)}
+                departmentId={effectiveId}
+                onSuccess={() => setToast({ open: true, message: 'Repair request initiated!', severity: 'success' })}
             />
 
             {/* 💰 COVENANT PARTNERSHIP ENROLLMENT MODAL - pixel-perfect from PastorsDashboard */}
@@ -449,7 +520,7 @@ export default function DepartmentDashboard() {
                         </Box>
 
                         <Typography variant="body2" sx={{ mb: 4, opacity: 0.7, lineHeight: 1.6 }}>
-                            "Honor the Lord with your wealth and with the firstfruits of all your produce." <br/>
+                            &quot;Honor the Lord with your wealth and with the firstfruits of all your produce.&quot; <br/>
                             Enroll with a minimum monthly seed of <b>700 KES</b> to fuel the global mission.
                         </Typography>
 
