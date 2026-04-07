@@ -37,7 +37,7 @@ export const getMessages = async (req: Request, res: Response) => {
             const sender = msg.sender;
             const receiver = msg.receiver;
 
-            const isSenderLeader = sender?.role === 'DEPARTMENT_LEADER' || sender?.role === 'SUPER_ADMIN' || sender?.role === 'WATUA' || sender?.role === 'PASTOR';
+            const isSenderLeader = ['DEPARTMENT_LEADER', 'SUPER_ADMIN', 'WATUA', 'PASTOR', 'ASSOCIATE_PASTOR'].includes(sender?.role);
 
             return {
                 ...msg,
@@ -50,8 +50,8 @@ export const getMessages = async (req: Request, res: Response) => {
                     receiver: {
                         ...receiver,
                         // If it's a private chat, receiver info is also important
-                        name: (receiver?.role === 'DEPARTMENT_LEADER' || receiver?.role === 'SUPER_ADMIN' || receiver?.role === 'PASTOR' || receiver?.role === 'WATUA') ? receiver.name : 'Ministry Member',
-                        avatarUrl: (receiver?.role === 'DEPARTMENT_LEADER' || receiver?.role === 'SUPER_ADMIN' || receiver?.role === 'PASTOR' || receiver?.role === 'WATUA') ? receiver.avatarUrl : null
+                        name: (['DEPARTMENT_LEADER', 'SUPER_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'WATUA'].includes(receiver?.role)) ? receiver.name : 'Ministry Member',
+                        avatarUrl: (['DEPARTMENT_LEADER', 'SUPER_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'WATUA'].includes(receiver?.role)) ? receiver.avatarUrl : null
                     }
                 })
             };
@@ -134,7 +134,7 @@ export const createMessage = async (req: Request, res: Response) => {
         }
 
         // Sanitize before response/emit
-        const isSenderLeader = (message as any).sender?.role === 'DEPARTMENT_LEADER' || (message as any).sender?.role === 'SUPER_ADMIN' || (message as any).sender?.role === 'WATUA' || (message as any).sender?.role === 'PASTOR';
+        const isSenderLeader = ['DEPARTMENT_LEADER', 'SUPER_ADMIN', 'WATUA', 'PASTOR', 'ASSOCIATE_PASTOR'].includes((message as any).sender?.role);
         const sanitizedMessage = {
             ...message,
             sender: {
@@ -145,8 +145,8 @@ export const createMessage = async (req: Request, res: Response) => {
             ...((message as any).receiver && {
                 receiver: {
                     ...(message as any).receiver,
-                    name: ((message as any).receiver?.role === 'DEPARTMENT_LEADER' || (message as any).receiver?.role === 'SUPER_ADMIN' || (message as any).receiver?.role === 'PASTOR' || (message as any).receiver?.role === 'WATUA') ? (message as any).receiver.name : 'Ministry Member',
-                    avatarUrl: ((message as any).receiver?.role === 'DEPARTMENT_LEADER' || (message as any).receiver?.role === 'SUPER_ADMIN' || (message as any).receiver?.role === 'PASTOR' || (message as any).receiver?.role === 'WATUA') ? (message as any).receiver.avatarUrl : null
+                    name: (['DEPARTMENT_LEADER', 'SUPER_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'WATUA'].includes((message as any).receiver?.role)) ? (message as any).receiver.name : 'Ministry Member',
+                    avatarUrl: (['DEPARTMENT_LEADER', 'SUPER_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'WATUA'].includes((message as any).receiver?.role)) ? (message as any).receiver.avatarUrl : null
                 }
             })
         };

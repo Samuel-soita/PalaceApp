@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import api from '../lib/api-client.js';
+import { LocalAuthService } from '../lib/LocalAuthService';
+import { db } from '../lib/db';
 
 interface AuthUser {
     id: string;
@@ -22,7 +23,8 @@ interface AuthUser {
 interface AuthContextType {
     user: AuthUser | null;
     token: string | null;
-    login: (data: { user: AuthUser; token: string }) => void;
+    login: (data: { user: AuthUser; token: string; pin?: string }) => void;
+    loginOffline: (userId: string, pin: string) => Promise<boolean>;
     logout: () => void;
     updateUser: (data: Partial<AuthUser>) => void;
     loading: boolean;
@@ -39,27 +41,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        async function fetchProfile() {
-            if (token && navigator.onLine) {
-                try {
-                    const res = await api.get('/auth/profile');
-                    setUser(res.data);
-                } catch (error) {
-                    logout();
-                }
-            } else if (!token) {
-                logout();
-            }
-            setLoading(false);
-        }
-        fetchProfile();
+        // Local-First: Initial load is complete once state is restored from localStorage.
+        setLoading(false);
     }, [token]);
 
-    const login = (data: any) => {
+    const login = async (data: any) => {
         setUser(data.user);
         setToken(data.token);
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
+
+        // 🔥 Production Strategy: Pin the user's credential locally on successful online login
+        if (data.pin) {
+            await LocalAuthService.setLocalPin(data.user.id, data.pin);
+        }
+    };
+
+    /**
+     * Attempts to activate a secure session while 100% offline.
+     * Validates against the local persistent credential vault.
+     */
+    const loginOffline = async (userId: string, pin: string): Promise<boolean> => {
+        const isValid = await LocalAuthService.validateLocalPin(userId, pin);
+        if (isValid) {
+            // Restore identity from local Dexie store
+            const localUser = await db.users.get(userId);
+            if (localUser) {
+                const userData: AuthUser = {
+                    ...localUser as any,
+                    // Re-hydrate basic auth fields
+                };
+                setUser(userData);
+                setToken(`offline_token_${crypto.randomUUID()}`);
+                localStorage.setItem('user', JSON.stringify(userData));
+                return true;
+            }
+        }
+        return false;
     };
 
     const logout = () => {
@@ -79,7 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     return (
-        <AuthContext.Provider value={{ user, token, login, logout, updateUser, loading }}>
+        <AuthContext.Provider value={{ user, token, login, loginOffline, logout, updateUser, loading }}>
             {children}
         </AuthContext.Provider>
     );

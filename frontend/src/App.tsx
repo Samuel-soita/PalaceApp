@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import { Box, CircularProgress, Typography } from '@mui/material';
@@ -121,7 +121,22 @@ function LeaderGuard({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
 }
 
+import { PermissionService } from './lib/PermissionService';
+import { DeviceService } from './lib/DeviceService';
+
 function App() {
+    useEffect(() => {
+        const initKernel = async () => {
+            // 🔐 1. Initialize Device Identity
+            await DeviceService.getDeviceId();
+            
+            // 🛡️ 2. Sync Permission Engine with Cloud Source of Truth
+            await PermissionService.syncWithCloud();
+        };
+
+        initKernel();
+    }, []);
+
     return (
         <Suspense fallback={<LoadingFallback />}>
             <OfflineStatus />

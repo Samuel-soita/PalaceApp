@@ -55,7 +55,12 @@ app.use(compression({
         return compression.filter(req, res);
     }
 }));
-app.use(cors());
+app.use(cors({
+    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Idempotency-Key']
+}));
 app.use(express.json());
 
 // --- PRODUCTION SCALABILITY: RATE LIMITING ---
@@ -69,11 +74,9 @@ const limiter = rateLimit({
     message: { error: 'Too many requests from this IP, please try again after a minute.' }
 });
 
-import { auditLogger } from './middleware/audit.middleware.js';
 
 // Apply to all routes
 app.use(limiter);
-// app.use(auditLogger); // Moved to router-level to capture authenticated user context
 
 // Skip redundant loginRateLimiter at the root if it's already in authRoutes
 // app.use('/auth/login', loginRateLimiter);

@@ -105,6 +105,10 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
             alert("Exactly 2 Pastors must authorize this Event.");
             return;
         }
+        if (!formData.departmentId) {
+            alert("Please select a Department for this Event.");
+            return;
+        }
 
         let attachmentUrl = event?.attachmentUrl;
 

@@ -69,7 +69,6 @@ async function dedupeAndPrune() {
                     await tx.budget.updateMany({ where: { departmentId: duplicateId }, data: { departmentId: primaryDept.id } });
                     await tx.child.updateMany({ where: { departmentId: duplicateId }, data: { departmentId: primaryDept.id } });
                     await tx.message.updateMany({ where: { departmentId: duplicateId }, data: { departmentId: primaryDept.id } });
-                    await tx.volunteer.updateMany({ where: { departmentId: duplicateId }, data: { departmentId: primaryDept.id } });
                     
                     // Update Financial Accounts
                     // We can't merge account balances perfectly, so we'll just link the current account to the new dept 
@@ -106,7 +105,6 @@ async function dedupeAndPrune() {
                 await tx.budget.deleteMany({ where: { departmentId: secDept.id } });
                 await tx.child.deleteMany({ where: { departmentId: secDept.id } });
                 await tx.message.deleteMany({ where: { departmentId: secDept.id } });
-                await tx.volunteer.deleteMany({ where: { departmentId: secDept.id } });
                 
                 await tx.account.deleteMany({ where: { departmentId: secDept.id } });
                 

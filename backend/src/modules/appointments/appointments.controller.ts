@@ -68,7 +68,7 @@ export const getAllAppointments = async (req: any, res: Response) => {
         let where: any = {};
         
         // Admins and Pastors see all, but filtered by role if not WATUA/SYSTEM_ADMIN
-        if (role === 'PASTOR' || role === 'SUPER_ADMIN') {
+        if (['PASTOR', 'ASSOCIATE_PASTOR', 'SUPER_ADMIN'].includes(role)) {
             where = {
                 OR: [
                     { targetId: userId },

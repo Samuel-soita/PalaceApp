@@ -91,7 +91,7 @@ export const getMeetings = catchAsync(async (req: Request, res: Response) => {
     
     if (user.role === 'WATUA') {
         // WATUA (System Engineer) has global oversight, no filters needed
-    } else if (user.role === 'SUPER_ADMIN' || user.role === 'SYSTEM_ADMIN' || user.role === 'SECRETARY' || user.role === 'PASTOR') {
+    } else if (['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role)) {
         if (departmentId) where.departmentId = String(departmentId);
     } else if (user.role === 'DEPARTMENT_LEADER') {
         if (departmentId) {
@@ -200,7 +200,7 @@ export const approveMeeting = catchAsync(async (req: any, res: Response) => {
             create: {
                 meetingId: id,
                 userId,
-                role: userRole === 'SUPER_ADMIN' ? 'BISHOP' : 'PASTOR',
+                role: userRole === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(userRole) ? 'PASTOR' : userRole),
                 approved: true
             }
         });

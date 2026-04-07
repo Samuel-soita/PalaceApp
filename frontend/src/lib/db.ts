@@ -18,6 +18,8 @@ export interface LocalEvent {
     pastorIds: string[];
     version: number;
     syncStatus: 'SYNCED' | 'PENDING' | 'CONFLICT';
+    deviceId: string;
+    lastModifiedBy: string;
     createdAt?: Date | string;
     updatedAt?: Date | string;
 }
@@ -34,6 +36,8 @@ export interface LocalProject {
     status: string;
     version: number;
     syncStatus: 'SYNCED' | 'PENDING' | 'CONFLICT';
+    deviceId: string;
+    lastModifiedBy: string;
     createdAt?: Date | string;
     updatedAt?: Date | string;
 }
@@ -50,6 +54,8 @@ export interface LocalPlan {
     department?: { name: string };
     version: number;
     syncStatus: 'SYNCED' | 'PENDING' | 'CONFLICT';
+    deviceId: string;
+    lastModifiedBy: string;
     createdAt?: Date | string;
     updatedAt?: Date | string;
 }
@@ -67,6 +73,8 @@ export interface LocalAnnouncement {
     status: string;
     version: number;
     syncStatus: 'SYNCED' | 'PENDING' | 'CONFLICT';
+    deviceId: string;
+    lastModifiedBy: string;
     createdAt?: Date | string;
     updatedAt?: Date | string;
 }
@@ -87,6 +95,8 @@ export interface LocalMeeting {
     meetingStatus: string;
     version: number;
     syncStatus: 'SYNCED' | 'PENDING' | 'CONFLICT';
+    deviceId: string;
+    lastModifiedBy: string;
     createdAt?: Date | string;
     updatedAt?: Date | string;
 }
@@ -101,6 +111,8 @@ export interface LocalDevotion {
     authorId: string;
     version: number;
     syncStatus: 'SYNCED' | 'PENDING' | 'CONFLICT';
+    deviceId: string;
+    lastModifiedBy: string;
     createdAt?: Date | string;
     updatedAt?: Date | string;
 }
@@ -119,6 +131,7 @@ export interface LocalMessage {
     timestamp: Date | string;
     version: number;
     syncStatus: 'SYNCED' | 'PENDING' | 'CONFLICT';
+    deviceId: string;
     isEdited?: boolean;
     isDeleted?: boolean;
     sender?: { name: string; role: string; avatarUrl?: string | null };
@@ -128,21 +141,51 @@ export interface LocalMessage {
 export interface SyncJob {
     id: string;
     timestamp: number;
-    entity: 'EVENT' | 'USER' | 'DEPARTMENT' | 'PROJECT' | 'PLAN' | 'ANNOUNCEMENT' | 'MEETING' | 'DEVOTION' | 'MESSAGE';
-    method: 'POST' | 'PATCH' | 'DELETE';
+    entity: string;
+    method: 'POST' | 'PATCH' | 'DELETE' | 'PUT';
     url: string;
     payload: any;
-    status: 'PENDING' | 'RETRYING' | 'FAILED';
+    status: 'PENDING' | 'RETRYING' | 'FAILED' | 'SYNCED';
     retryCount: number;
-    errorLog: string[];
+    maxRetries?: number;
+    lastError?: string;
+    errorLog?: any[];
+    deviceId?: string;
 }
 
 export interface LocalUser {
     id: string;
+    idNumber: string;
+    dob: Date | string;
+    gender?: string | null;
     name: string;
+    avatarUrl?: string | null;
+    membershipNumber: string;
+    membershipNumberUpdatedAt?: Date | string | null;
+    status: string;
     role: string;
-    departmentId?: string;
-    syncStatus: string;
+    departmentId?: string | null;
+    phoneNumber?: string | null;
+    profilePhoto?: string | null;
+    deletionRequested: boolean;
+    authenticatedAt?: Date | string | null;
+    authenticatedById?: string | null;
+    wrongdoingCount: number;
+    isSuspended: boolean;
+    lastSuspendedAt?: Date | string | null;
+    createdAt?: Date | string;
+    updatedAt?: Date | string;
+    isCardPaid: boolean;
+    isPartner: boolean;
+    canManagePartnerships: boolean;
+    deletedAt?: Date | string | null;
+    version: number;
+    cardStatus: string;
+    isCardReplacementRequested: boolean;
+    membershipExpiry?: Date | string | null;
+    syncStatus: 'SYNCED' | 'PENDING' | 'CONFLICT';
+    deviceId: string;
+    lastModifiedBy: string;
 }
 
 export interface LocalTransaction {
@@ -156,6 +199,8 @@ export interface LocalTransaction {
     approvedById?: string | null;
     version: number;
     syncStatus: 'SYNCED' | 'PENDING' | 'CONFLICT';
+    deviceId: string;
+    lastModifiedBy: string;
     createdAt?: Date | string;
     updatedAt?: Date | string;
 }
@@ -178,6 +223,8 @@ export interface LocalRepair {
     requesterId: string;
     version: number;
     syncStatus: 'SYNCED' | 'PENDING' | 'CONFLICT';
+    deviceId: string;
+    lastModifiedBy: string;
     createdAt?: Date | string;
     updatedAt?: Date | string;
     department?: any;
@@ -200,6 +247,8 @@ export interface LocalAppointment {
     adminNotes?: string | null;
     version: number;
     syncStatus: 'SYNCED' | 'PENDING' | 'CONFLICT';
+    deviceId: string;
+    lastModifiedBy: string;
     createdAt?: Date | string;
     updatedAt?: Date | string;
     member?: any;
@@ -217,6 +266,8 @@ export interface LocalPartnership {
     lastPaymentDate?: Date | string | null;
     version: number;
     syncStatus: 'SYNCED' | 'PENDING' | 'CONFLICT';
+    deviceId: string;
+    lastModifiedBy: string;
     createdAt?: Date | string;
     updatedAt?: Date | string;
     user?: any;
@@ -234,6 +285,8 @@ export interface LocalPartnershipLedger {
     date: Date | string;
     version: number;
     syncStatus: 'SYNCED' | 'PENDING' | 'CONFLICT';
+    deviceId: string;
+    lastModifiedBy: string;
     createdAt?: Date | string;
     updatedAt?: Date | string;
 }
@@ -250,6 +303,8 @@ export interface LocalBaptism {
     user?: any;
     version: number;
     syncStatus: 'SYNCED' | 'PENDING' | 'CONFLICT';
+    deviceId: string;
+    lastModifiedBy: string;
     createdAt?: Date | string;
     updatedAt?: Date | string;
 }
@@ -273,14 +328,78 @@ export interface LocalChild {
     department?: any;
     version: number;
     syncStatus: 'SYNCED' | 'PENDING' | 'CONFLICT';
+    deviceId: string;
+    lastModifiedBy: string;
     createdAt?: Date | string;
     updatedAt?: Date | string;
+}
+
+export interface LocalRole {
+    id: string;
+    name: string;
+    description?: string;
+    version: number;
+    syncStatus: string;
+    deviceId: string;
+}
+
+export interface LocalPermission {
+    id: string;
+    code: string;
+    description: string;
+    module: string;
+    version: number;
+    syncStatus: string;
+    deviceId: string;
+}
+
+export interface LocalRolePermission {
+    id: string;
+    roleId: string;
+    permissionId: string;
+    version: number;
+    syncStatus: string;
+    deviceId: string;
 }
 
 export interface LocalDepartment {
     id: string;
     name: string;
+    version: number;
     syncStatus: string;
+    deviceId: string;
+}
+
+/**
+ * 📦 PRODUCTION-GRADE ADDITIONS
+ */
+
+export interface AuditLog {
+    id: string;
+    action: string;
+    targetId?: string;
+    entityType: string;
+    performedBy: string; // userId
+    deviceId: string;
+    timestamp: string; // ISO
+    metadata: any;
+    syncStatus: 'SYNCED' | 'PENDING';
+}
+
+export interface DeviceSettings {
+    id: string; // 'current_device'
+    deviceId: string;
+    deviceType: string;
+    firstLaunch: string;
+    trustScore: number;
+    lastBackupAt?: string;
+}
+
+export interface LocalCredential {
+    id: string; // userId
+    hashedPin: string; // SHA-256
+    isActive: boolean;
+    updatedAt: string;
 }
 
 export class PalaceLocalDatabase extends Dexie {
@@ -301,31 +420,44 @@ export class PalaceLocalDatabase extends Dexie {
     appointments!: Table<LocalAppointment, string>;
     partnerships!: Table<LocalPartnership, string>;
     partnershipLedgers!: Table<LocalPartnershipLedger, string>;
+    roles!: Table<LocalRole, string>;
+    permissions!: Table<LocalPermission, string>;
+    rolePermissions!: Table<LocalRolePermission, string>;
+    auditLogs!: Table<AuditLog, string>;
+    deviceSettings!: Table<DeviceSettings, string>;
+    localCredentials!: Table<LocalCredential, string>;
     syncQueue!: Table<SyncJob, string>;
 
     constructor() {
         super('palace-local-first-db');
         
         // Ensure version increases if you change stores
-        this.version(8).stores({
-            events: 'id, departmentId, date, syncStatus, createdAt',
-            users: 'id, role, departmentId, syncStatus',
-            departments: 'id, name, syncStatus',
-            projects: 'id, departmentId, status, syncStatus',
-            plans: 'id, departmentId, status, syncStatus',
-            announcements: 'id, departmentId, date, syncStatus, createdAt',
-            meetings: 'id, departmentId, date, syncStatus',
-            devotions: 'id, authorId, date, syncStatus',
-            messages: 'id, senderId, receiverId, timestamp, syncStatus',
-            baptisms: 'id, userId, status, syncStatus',
-            children: 'id, parentId, workflowStatus, syncStatus',
-            transactions: 'id, requestedById, status, syncStatus',
+        // 🚀 Version 12: Indexing Transactions by Type for Dashboard Telemetry
+        this.version(12).stores({
+            events: 'id, departmentId, date, syncStatus, deviceId, version',
+            users: 'id, role, departmentId, status, idNumber, membershipNumber, syncStatus, deviceId, version',
+            departments: 'id, name, syncStatus, deviceId, version',
+            roles: 'id, name, syncStatus, deviceId, version',
+            permissions: 'id, code, module, syncStatus, deviceId, version',
+            rolePermissions: 'id, roleId, permissionId, syncStatus, deviceId, version',
+            projects: 'id, departmentId, status, syncStatus, deviceId, version',
+            plans: 'id, departmentId, status, syncStatus, deviceId, version',
+            announcements: 'id, departmentId, date, syncStatus, deviceId, version',
+            meetings: 'id, departmentId, date, syncStatus, deviceId, version',
+            devotions: 'id, authorId, date, syncStatus, deviceId, version',
+            messages: 'id, senderId, receiverId, timestamp, syncStatus, deviceId, version',
+            baptisms: 'id, userId, status, syncStatus, deviceId, version',
+            children: 'id, parentId, workflowStatus, syncStatus, deviceId, version',
+            transactions: 'id, type, requestedById, status, syncStatus, deviceId, version',
             account: 'id',
-            repairs: 'id, departmentId, status, syncStatus',
-            appointments: 'id, memberId, targetId, status, syncStatus',
-            partnerships: 'id, userId, status, syncStatus',
-            partnershipLedgers: 'id, partnershipId, referenceCode, syncStatus',
-            syncQueue: 'id, timestamp, status'
+            repairs: 'id, departmentId, status, syncStatus, deviceId, version',
+            appointments: 'id, memberId, targetId, status, syncStatus, deviceId, version',
+            partnerships: 'id, userId, status, syncStatus, deviceId, version',
+            partnershipLedgers: 'id, partnershipId, referenceCode, syncStatus, deviceId, version',
+            auditLogs: 'id, action, targetId, performedBy, deviceId, timestamp, syncStatus',
+            deviceSettings: 'id, deviceId',
+            localCredentials: 'id, hashedPin',
+            syncQueue: 'id, timestamp, status, deviceId'
         });
     }
 }

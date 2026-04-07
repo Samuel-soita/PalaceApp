@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { 
-    Container, Grid, Typography, Box, Card, CardContent, Button, Avatar, Chip, 
+import {
+    Container, Grid, Typography, Box, Card, CardContent, Button, Avatar, Chip,
     IconButton, LinearProgress, Modal, Backdrop, Fade, Stack, Divider,
     Snackbar, Alert, Badge
 } from '@mui/material';
-import { 
-    Bell, Calendar, UserPlus, Baby, Heart, BookOpen, Quote, Star, 
-    ArrowRight, Droplet, CheckCircle2, Clock, Sparkles, Megaphone, 
+import {
+    Bell, Calendar, UserPlus, Baby, Heart, BookOpen, Quote, Star,
+    ArrowRight, Droplet, CheckCircle2, Clock, Sparkles, Megaphone,
     ThumbsUp, Smile, Send, Shield, ChevronRight, TrendingUp, Zap, Wrench, FileText
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -23,6 +23,7 @@ import EventFormModal from '../components/modals/EventFormModal';
 import ProjectFormModal from '../components/modals/ProjectFormModal';
 import PlanFormModal from '../components/modals/PlanFormModal';
 import AnnouncementFormModal from '../components/modals/AnnouncementFormModal';
+import DevotionFormModal from '../components/modals/DevotionFormModal';
 import RepairApprovalManager from '../components/dashboard/RepairApprovalManager';
 import MissionReportsViewer from '../components/dashboard/MissionReportsViewer';
 import DepartmentReportModal from '../components/modals/DepartmentReportModal';
@@ -35,15 +36,16 @@ export default function PastorsDashboard() {
 
     // 👨‍⚖️ Module Scoping Helper
     const hasModule = (moduleName: string) => {
-        if (['SUPER_ADMIN', 'SYSTEM_ADMIN', 'WATUA'].includes(user?.role || '')) return true;
+        if (['SUPER_ADMIN', 'SYSTEM_ADMIN', 'WATUA', 'BISHOP'].includes(user?.role || '')) return true;
         return user?.pastorModules?.some(m => m.moduleName === moduleName);
     };
-    
+
     // Pastoral Tool States
     const [baptismsOpen, setBaptismsOpen] = useState(false);
     const [dedicationOpen, setDedicationOpen] = useState(false);
     const [appointmentsOpen, setAppointmentsOpen] = useState(false);
     const [partnershipManagerOpen, setPartnershipManagerOpen] = useState(false);
+    const [devotionModalOpen, setDevotionModalOpen] = useState(false);
 
     // Personal Family States
     const [baptismModalOpen, setBaptismModalOpen] = useState(false);
@@ -63,7 +65,7 @@ export default function PastorsDashboard() {
     const [planModalOpen, setPlanModalOpen] = useState(false);
     const [announcementModalOpen, setAnnouncementModalOpen] = useState(false);
     const [reportModalOpen, setReportModalOpen] = useState(false);
-    
+
     // ─── Edit States ────────────────────────────────────────────────────────
     const [editingProject, setEditingProject] = useState<any>(null);
     const [editingEvent, setEditingEvent] = useState<any>(null);
@@ -107,7 +109,7 @@ export default function PastorsDashboard() {
     );
 
     const createAppointmentMutation = useMutation(
-        async (data: { targetRole: string, type: string, reason: string, preferredDate: string, preferredTime: string }) => 
+        async (data: { targetRole: string, type: string, reason: string, preferredDate: string, preferredTime: string }) =>
             api.post('/appointments', data),
         {
             onSuccess: () => {
@@ -139,10 +141,10 @@ export default function PastorsDashboard() {
                 setToast({ open: true, message: 'Record decommissioned successfully.', severity: 'success' });
             },
             onError: (err: any) => {
-                setToast({ 
-                    open: true, 
-                    message: err.response?.data?.error || 'Failed to delete record.', 
-                    severity: 'error' 
+                setToast({
+                    open: true,
+                    message: err.response?.data?.error || 'Failed to delete record.',
+                    severity: 'error'
                 });
             }
         }
@@ -207,7 +209,7 @@ export default function PastorsDashboard() {
             <Container maxWidth="xl" sx={{ mt: 2 }}>
                 {/* Header Section */}
                 <Box sx={{ mb: 6, textAlign: 'center', maxWidth: 900, mx: 'auto' }}>
-                    <Typography variant="h2" fontWeight="1000" sx={{ 
+                    <Typography variant="h2" fontWeight="1000" sx={{
                         background: 'linear-gradient(45deg, #fff, var(--cyan))',
                         WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
                         mb: 1, letterSpacing: -3, fontSize: { xs: '2.5rem', md: '4rem' }
@@ -220,24 +222,24 @@ export default function PastorsDashboard() {
                         </Typography>
                         <Chip label={user?.role?.replace('_', ' ')} size="small" sx={{ bgcolor: 'rgba(0, 255, 255, 0.1)', color: 'var(--cyan)', fontWeight: 900, borderRadius: 0 }} />
                         {syncData?.isPartner && (
-                            <Chip 
+                            <Chip
                                 icon={<Star size={12} />}
-                                label="COVENANT PARTNER" 
-                                size="small" 
-                                sx={{ bgcolor: 'rgba(255, 165, 0, 0.1)', color: 'orange', fontWeight: 950, borderRadius: 0, border: '1px solid rgba(255, 165, 0, 0.3)', '.MuiChip-icon': { color: 'orange' } }} 
+                                label="COVENANT PARTNER"
+                                size="small"
+                                sx={{ bgcolor: 'rgba(255, 165, 0, 0.1)', color: 'orange', fontWeight: 950, borderRadius: 0, border: '1px solid rgba(255, 165, 0, 0.3)', '.MuiChip-icon': { color: 'orange' } }}
                             />
                         )}
                     </Box>
                     <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
-                        <Chip 
-                            label={`YEAR: ${syncData?.ministrySettings?.themeOfYear || 'YEAR OF DIVINE ESTABLISHMENT'}`} 
-                            size="small" 
-                            sx={{ bgcolor: 'rgba(79, 139, 255, 0.1)', color: 'var(--primary)', fontWeight: 900, borderRadius: 0 }} 
+                        <Chip
+                            label={`YEAR: ${syncData?.ministrySettings?.themeOfYear || 'YEAR OF DIVINE ESTABLISHMENT'}`}
+                            size="small"
+                            sx={{ bgcolor: 'rgba(79, 139, 255, 0.1)', color: 'var(--primary)', fontWeight: 900, borderRadius: 0 }}
                         />
-                        <Chip 
-                            label={`MONTH: ${syncData?.ministrySettings?.themeOfMonth || 'MONTH OF NEW BEGINNINGS'}`} 
-                            size="small" 
-                            sx={{ bgcolor: 'rgba(0, 180, 216, 0.1)', color: 'var(--cyan)', fontWeight: 900, borderRadius: 0 }} 
+                        <Chip
+                            label={`MONTH: ${syncData?.ministrySettings?.themeOfMonth || 'MONTH OF NEW BEGINNINGS'}`}
+                            size="small"
+                            sx={{ bgcolor: 'rgba(0, 180, 216, 0.1)', color: 'var(--cyan)', fontWeight: 900, borderRadius: 0 }}
                         />
                     </Box>
                 </Box>
@@ -248,15 +250,15 @@ export default function PastorsDashboard() {
                         {/* Interactive Devotion */}
                         <Card sx={{ mb: 4, bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: 4 }}>
                             <CardContent sx={{ p: 4 }}>
-                                    <Box display="flex" alignItems="center" gap={2}>
-                                        <Sparkles size={24} color="var(--cyan)" />
-                                        <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>MINISTERIAL DEVOTION</Typography>
-                                    </Box>
-                                    <Chip 
-                                        label={devotion?.themeOfMonth?.toUpperCase() || syncData?.ministrySettings?.themeOfMonth?.toUpperCase()} 
-                                        size="small" variant="outlined" 
-                                        sx={{ color: 'var(--cyan)', borderColor: 'var(--cyan-glow)', fontWeight: 900 }} 
-                                    />
+                                <Box display="flex" alignItems="center" gap={2}>
+                                    <Sparkles size={24} color="var(--cyan)" />
+                                    <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>MINISTERIAL DEVOTION</Typography>
+                                </Box>
+                                <Chip
+                                    label={devotion?.themeOfMonth?.toUpperCase() || syncData?.ministrySettings?.themeOfMonth?.toUpperCase()}
+                                    size="small" variant="outlined"
+                                    sx={{ color: 'var(--cyan)', borderColor: 'var(--cyan-glow)', fontWeight: 900 }}
+                                />
 
                                 {isDevotionLoading ? <LinearProgress /> : (
                                     <>
@@ -300,8 +302,8 @@ export default function PastorsDashboard() {
                             ].map((action, i) => (
                                 <Grid item xs={12} sm={4} key={i}>
                                     <Button fullWidth component={action.href ? Link : 'button'} {...(action.href ? { to: action.href } : { onClick: action.onClick })}
-                                        sx={{ 
-                                            height: 90, display: 'flex', flexDirection: 'column', gap: 1, 
+                                        sx={{
+                                            height: 90, display: 'flex', flexDirection: 'column', gap: 1,
                                             bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: 2, color: 'white',
                                             '&:hover': { bgcolor: 'rgba(0,255,255,0.05)', borderColor: 'var(--cyan)', transform: 'translateY(-2px)' }
                                         }}
@@ -341,10 +343,10 @@ export default function PastorsDashboard() {
 
                                 <Stack spacing={2}>
                                     {/* 💰 PARTNER INTELLIGENCE / CTA */}
-                                    <Card 
-                                        sx={{ 
-                                            p: 0, 
-                                            borderRadius: 0, 
+                                    <Card
+                                        sx={{
+                                            p: 0,
+                                            borderRadius: 0,
                                             border: syncData?.isPartner ? '1px solid var(--primary-glow)' : '1px solid rgba(255, 165, 0, 0.4)',
                                             background: syncData?.isPartner ? 'rgba(79, 139, 255, 0.05)' : 'rgba(255, 165, 0, 0.05)'
                                         }}
@@ -355,7 +357,7 @@ export default function PastorsDashboard() {
                                                     <Avatar sx={{ bgcolor: 'orange', width: 32, height: 32, boxShadow: '0 0 10px rgba(255,165,0,0.5)' }}><Star size={16} /></Avatar>
                                                     <Typography variant="caption" fontWeight="1000" sx={{ color: 'orange', letterSpacing: 1 }}>COVENANT PARTNERSHIP STATUS</Typography>
                                                 </Box>
-                                                
+
                                                 <Grid container spacing={1} mb={2}>
                                                     <Grid item xs={6}>
                                                         <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>COMMITTED</Typography>
@@ -391,10 +393,10 @@ export default function PastorsDashboard() {
                                                 <Typography variant="caption" sx={{ opacity: 0.7, display: 'block', mb: 2, lineHeight: 1.4 }}>
                                                     Fuel the mission. Enroll monthly to receive strategic financial intelligence. Renew with varying amounts as led.
                                                 </Typography>
-                                                <Button 
-                                                    variant="outlined" 
-                                                    fullWidth 
-                                                    size="small" 
+                                                <Button
+                                                    variant="outlined"
+                                                    fullWidth
+                                                    size="small"
                                                     component={Link}
                                                     to="/"
                                                     onClick={(e) => { e.preventDefault(); setEnrollModalOpen(true); }}
@@ -412,7 +414,7 @@ export default function PastorsDashboard() {
                                             ...(syncData?.events || []).filter((e: any) => e.isMajor).map((e: any) => ({ ...e, intelType: 'MAJOR EVENT', icon: Calendar, color: 'primary' })),
                                             ...(syncData?.projects || []).filter((p: any) => p.isMajor).map((p: any) => ({ ...p, intelType: 'STRATEGIC PROJECT', icon: Star, color: 'cyan' })),
                                             ...(syncData?.plans || []).filter((p: any) => p.isMajor).map((p: any) => ({ ...p, intelType: 'MINISTRY PLAN', icon: BookOpen, color: 'orange' })),
-                                        ].sort((a,b) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime()).slice(0, 10);
+                                        ].sort((a, b) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime()).slice(0, 10);
 
                                         if (globalIntel.length === 0) {
                                             return (
@@ -491,15 +493,15 @@ export default function PastorsDashboard() {
                                             </Box>
                                             <ChevronRight size={18} />
                                         </Button>
-                                        
+
                                         {hasModule('Partnership Management') && (
-                                            <Button 
-                                                fullWidth 
-                                                onClick={() => setPartnershipManagerOpen(true)} 
-                                                sx={{ 
-                                                    justifyContent: 'space-between', 
-                                                    bgcolor: 'rgba(255,165,0,0.1)', 
-                                                    p: 2, 
+                                            <Button
+                                                fullWidth
+                                                onClick={() => setPartnershipManagerOpen(true)}
+                                                sx={{
+                                                    justifyContent: 'space-between',
+                                                    bgcolor: 'rgba(255,165,0,0.1)',
+                                                    p: 2,
                                                     border: '1px solid rgba(255,165,0,0.3)',
                                                     '&:hover': { bgcolor: 'rgba(255,165,0,0.2)', borderColor: 'orange' }
                                                 }}
@@ -553,9 +555,9 @@ export default function PastorsDashboard() {
                                                 <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>NEW PLAN</Typography>
                                             </Button>
                                         </Grid>
-                                        {hasModule('Devotion Publishing') && (
+                                        {hasModule('DevotionPublishing') && (
                                             <Grid item xs={6}>
-                                                <Button fullWidth onClick={() => setAnnouncementModalOpen(true)} sx={{ height: 60, display: 'flex', flexDirection: 'column', gap: 0.5, bgcolor: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--glass-border)', borderRadius: 2 }}>
+                                                <Button fullWidth onClick={() => setDevotionModalOpen(true)} sx={{ height: 60, display: 'flex', flexDirection: 'column', gap: 0.5, bgcolor: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--glass-border)', borderRadius: 2 }}>
                                                     <Megaphone size={18} />
                                                     <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>NEW INTEL</Typography>
                                                 </Button>
@@ -599,8 +601,8 @@ export default function PastorsDashboard() {
                                         ].sort((a: any, b: any) => new Date(a.date || a.createdAt).getTime() - new Date(b.date || b.createdAt).getTime());
 
                                         return (
-                                            <OperationalTimeline 
-                                                items={timelineItems} 
+                                            <OperationalTimeline
+                                                items={timelineItems}
                                                 onEdit={handleEdit}
                                                 onDelete={handleDelete}
                                             />
@@ -628,7 +630,7 @@ export default function PastorsDashboard() {
                 BackdropProps={{ timeout: 500, sx: { backdropFilter: 'blur(12px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
             >
                 <Fade in={enrollModalOpen}>
-                    <Box tabIndex={-1} sx={{ 
+                    <Box tabIndex={-1} sx={{
                         position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
                         width: { xs: '90%', sm: 400 },
                         bgcolor: '#0a0a0a', border: '1px solid orange',
@@ -644,24 +646,24 @@ export default function PastorsDashboard() {
                         </Box>
 
                         <Typography variant="body2" sx={{ mb: 4, opacity: 0.7, lineHeight: 1.6 }}>
-                            &quot;Honor the Lord with your wealth and with the firstfruits of all your produce.&quot; <br/>
+                            &quot;Honor the Lord with your wealth and with the firstfruits of all your produce.&quot; <br />
                             Enroll with a minimum monthly seed of <b>700 KES</b> to fuel the global mission.
                         </Typography>
 
                         <Stack spacing={3}>
                             <Box>
                                 <Typography variant="caption" fontWeight="900" sx={{ mb: 1, display: 'block', opacity: 0.5 }}>AMOUNT TO PARTNER WITH (MIN 700 KES)</Typography>
-                                <input 
-                                    type="number" 
+                                <input
+                                    type="number"
                                     value={enrollAmount}
                                     onChange={(e) => setEnrollAmount(Number(e.target.value))}
-                                    style={{ 
-                                        width: '100%', 
-                                        background: 'rgba(255,255,255,0.05)', 
-                                        border: '1px solid rgba(255, 165, 0, 0.3)', 
-                                        color: '#fff', 
-                                        padding: '12px', 
-                                        fontSize: '1.2rem', 
+                                    style={{
+                                        width: '100%',
+                                        background: 'rgba(255,255,255,0.05)',
+                                        border: '1px solid rgba(255, 165, 0, 0.3)',
+                                        color: '#fff',
+                                        padding: '12px',
+                                        fontSize: '1.2rem',
                                         fontWeight: 900,
                                         outline: 'none'
                                     }}
@@ -671,15 +673,15 @@ export default function PastorsDashboard() {
                                 )}
                             </Box>
 
-                            <Button 
-                                variant="contained" 
-                                fullWidth 
+                            <Button
+                                variant="contained"
+                                fullWidth
                                 disabled={enrollAmount < 700 || enrollPartnershipMutation.isLoading}
                                 onClick={() => enrollPartnershipMutation.mutate(enrollAmount)}
-                                sx={{ 
-                                    bgcolor: 'orange', 
-                                    color: '#000', 
-                                    fontWeight: 950, 
+                                sx={{
+                                    bgcolor: 'orange',
+                                    color: '#000',
+                                    fontWeight: 950,
                                     py: 1.5,
                                     borderRadius: 0,
                                     '&:hover': { bgcolor: '#ffb347' },
@@ -689,9 +691,9 @@ export default function PastorsDashboard() {
                                 {enrollPartnershipMutation.isLoading ? 'COMMITTING SEED...' : 'ENROLL AS PARTNER'}
                             </Button>
 
-                            <Button 
-                                fullWidth 
-                                variant="text" 
+                            <Button
+                                fullWidth
+                                variant="text"
                                 onClick={() => setEnrollModalOpen(false)}
                                 sx={{ color: 'rgba(255,255,255,0.4)', fontWeight: 800, fontSize: '0.7rem' }}
                             >
@@ -711,7 +713,7 @@ export default function PastorsDashboard() {
                 BackdropProps={{ timeout: 500, sx: { backdropFilter: 'blur(10px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
             >
                 <Fade in={appointmentModalOpen}>
-                    <Box sx={{ 
+                    <Box sx={{
                         position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
                         width: { xs: '90%', sm: 500 },
                         bgcolor: '#0a0a0a', border: '1px solid var(--primary)',
@@ -742,10 +744,10 @@ export default function PastorsDashboard() {
                             <Stack spacing={3}>
                                 <Box>
                                     <Typography variant="caption" fontWeight="900" sx={{ mb: 1, display: 'block', opacity: 0.5 }}>APPOINTMENT CATEGORY</Typography>
-                                    <select 
+                                    <select
                                         name="type"
                                         required
-                                        style={{ 
+                                        style={{
                                             width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)',
                                             color: '#fff', padding: '12px', fontSize: '1rem', fontWeight: 800, outline: 'none'
                                         }}
@@ -760,11 +762,11 @@ export default function PastorsDashboard() {
                                 <Box sx={{ display: 'flex', gap: 2, flexDirection: 'row' }}>
                                     <Box flexGrow={1}>
                                         <Typography variant="caption" fontWeight="900" sx={{ mb: 1, display: 'block', opacity: 0.5 }}>PREFERRED DATE</Typography>
-                                        <input 
-                                            type="date" 
+                                        <input
+                                            type="date"
                                             name="preferredDate"
                                             required
-                                            style={{ 
+                                            style={{
                                                 width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)',
                                                 color: '#fff', padding: '12px', fontSize: '1rem', fontWeight: 800, outline: 'none'
                                             }}
@@ -772,11 +774,11 @@ export default function PastorsDashboard() {
                                     </Box>
                                     <Box flexGrow={1}>
                                         <Typography variant="caption" fontWeight="900" sx={{ mb: 1, display: 'block', opacity: 0.5 }}>PREFERRED TIME</Typography>
-                                        <input 
-                                            type="time" 
+                                        <input
+                                            type="time"
                                             name="preferredTime"
                                             required
-                                            style={{ 
+                                            style={{
                                                 width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)',
                                                 color: '#fff', padding: '12px', fontSize: '1rem', fontWeight: 800, outline: 'none'
                                             }}
@@ -786,24 +788,24 @@ export default function PastorsDashboard() {
 
                                 <Box>
                                     <Typography variant="caption" fontWeight="900" sx={{ mb: 1, display: 'block', opacity: 0.5 }}>REASON FOR APPOINTMENT</Typography>
-                                    <textarea 
+                                    <textarea
                                         name="reason"
                                         required
                                         rows={3}
                                         placeholder="Briefly describe your request..."
-                                        style={{ 
+                                        style={{
                                             width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)',
                                             color: '#fff', padding: '12px', fontSize: '1rem', fontWeight: 600, outline: 'none', resize: 'none'
                                         }}
                                     />
                                 </Box>
 
-                                <Button 
+                                <Button
                                     type="submit"
-                                    variant="contained" 
-                                    fullWidth 
+                                    variant="contained"
+                                    fullWidth
                                     disabled={createAppointmentMutation.isLoading}
-                                    sx={{ 
+                                    sx={{
                                         bgcolor: 'var(--primary)', color: '#fff', fontWeight: 950, py: 1.5,
                                         borderRadius: 0, '&:hover': { bgcolor: 'var(--primary-glow)' }
                                     }}
@@ -811,9 +813,9 @@ export default function PastorsDashboard() {
                                     {createAppointmentMutation.isLoading ? 'SUBMITTING REQUEST...' : 'SUBMIT APPOINTMENT REQUEST'}
                                 </Button>
 
-                                <Button 
-                                    fullWidth 
-                                    variant="text" 
+                                <Button
+                                    fullWidth
+                                    variant="text"
                                     onClick={() => setAppointmentModalOpen(false)}
                                     sx={{ color: 'rgba(255,255,255,0.4)', fontWeight: 800, fontSize: '0.7rem' }}
                                 >
@@ -832,15 +834,15 @@ export default function PastorsDashboard() {
             <ProjectFormModal open={projectModalOpen} onClose={() => { setProjectModalOpen(false); setEditingProject(null); }} project={editingProject} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
             <PlanFormModal open={planModalOpen} onClose={() => { setPlanModalOpen(false); setEditingPlan(null); }} plan={editingPlan} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
             <AnnouncementFormModal open={announcementModalOpen} onClose={() => { setAnnouncementModalOpen(false); setEditingAnnouncement(null); }} announcement={editingAnnouncement} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
-
+            <DevotionFormModal open={devotionModalOpen} onClose={() => setDevotionModalOpen(false)} onSuccess={() => { queryClient.invalidateQueries(['devotion']); setToast({ open: true, message: 'Devotion published globally.', severity: 'success' }); }} />
 
             <Snackbar open={toast.open} autoHideDuration={6000} onClose={() => setToast({ ...toast, open: false })}>
                 <Alert severity={toast.severity} sx={{ width: '100%', fontWeight: 800 }}>{toast.message}</Alert>
             </Snackbar>
-            <DepartmentReportModal 
-                open={reportModalOpen} 
-                onClose={() => setReportModalOpen(false)} 
-                departmentId={user?.departmentId || undefined} 
+            <DepartmentReportModal
+                open={reportModalOpen}
+                onClose={() => setReportModalOpen(false)}
+                departmentId={user?.departmentId || undefined}
                 onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])}
             />
         </DashboardLayout>

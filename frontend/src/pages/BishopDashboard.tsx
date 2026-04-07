@@ -1,14 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-    Container, Grid, Typography, Box, Card, CardContent, Button, Avatar, Chip, 
-    IconButton, LinearProgress, Stack, Divider, Badge, Paper, Tooltip, Snackbar, Alert
+    Switch, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, TextField, 
+    IconButton, LinearProgress, Stack, Divider, Badge, Paper, Tooltip, Snackbar, Alert,
+    Container, Grid, Typography, Box, Card, CardContent, Button, Avatar, Chip
 } from '@mui/material';
 import { 
-    Shield, Activity, Users, Landmark, Zap, Globe, 
-    TrendingUp, MessageSquare, Bell, Star, ChevronRight, 
-    Search, Filter, LayoutDashboard, Briefcase, Coins,
-    ArrowUpRight, Clock, CheckCircle2, AlertCircle, Send, Wrench, FileText,
-    Calendar, Target
+    Calendar, Target, Search, UserCheck, Smartphone, CheckCircle, Zap, ShieldCheck, PenTool, Trash2, 
+    ArrowRight, MessageSquare, Bell, Star, ChevronRight, Filter, LayoutDashboard, Briefcase, Coins,
+    ArrowUpRight, Clock, CheckCircle2, AlertCircle, Send, Wrench, FileText, SwitchCamera,
+    Shield, Activity, Users, Landmark, Globe, TrendingUp
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -23,7 +23,9 @@ import EventFormModal from '../components/modals/EventFormModal';
 import ProjectFormModal from '../components/modals/ProjectFormModal';
 import PlanFormModal from '../components/modals/PlanFormModal';
 import AnnouncementFormModal from '../components/modals/AnnouncementFormModal';
+import DevotionFormModal from '../components/modals/DevotionFormModal';
 import DepartmentReportModal from '../components/modals/DepartmentReportModal';
+import ThemeFormModal from '../components/modals/ThemeFormModal';
 
 export default function BishopDashboard() {
     const { user } = useAuth();
@@ -48,11 +50,54 @@ export default function BishopDashboard() {
     const [planModalOpen, setPlanModalOpen] = useState(false);
     const [announcementModalOpen, setAnnouncementModalOpen] = useState(false);
     const [reportModalOpen, setReportModalOpen] = useState(false);
+    const [themeModalOpen, setThemeModalOpen] = useState(false);
     const [toast, setToast] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({
         open: false,
         message: '',
         severity: 'info'
     });
+
+    // --- Pastor Module Management ---
+    const [pastorManagementOpen, setPastorManagementOpen] = useState(false);
+    const [moduleDialog, setModuleDialog] = useState<{ open: boolean; userId: string; name: string }>({
+        open: false, userId: '', name: ''
+    });
+    const [pastorModules, setPastorModules] = useState<any[]>([]);
+    const [moduleLoading, setModuleLoading] = useState(false);
+
+    const { data: pastorsData, isLoading: isPastorsLoading } = useQuery(['pastors'], async () => {
+        const res = await api.get('/users', { params: { role: ['PASTOR', 'ASSOCIATE_PASTOR'], limit: 100 } });
+        return res.data.data;
+    }, { enabled: pastorManagementOpen });
+
+    const fetchPastorModules = async (userId: string) => {
+        setModuleLoading(true);
+        try {
+            const res = await api.get(`/users/pastor/assigned-modules?userId=${userId}`);
+            setPastorModules(res.data.data);
+        } catch (err) {
+            console.error('Failed to fetch pastor modules:', err);
+        } finally {
+            setModuleLoading(false);
+        }
+    };
+
+    const handleToggleModule = async (userId: string, moduleKey: string, active: boolean) => {
+        try {
+            if (active) {
+                await api.post('/users/pastor/modules/assign', { pastorId: userId, moduleKey, permissions: {} });
+            } else {
+                const existing = pastorModules.find(m => m.moduleKey === moduleKey);
+                if (existing) {
+                    await api.delete(`/users/pastor/modules/revoke/${existing.id}`);
+                }
+            }
+            fetchPastorModules(userId);
+            setToast({ open: true, message: `Module ${moduleKey} updated.`, severity: 'success' });
+        } catch (err) {
+            setToast({ open: true, message: 'Failed to update module.', severity: 'error' });
+        }
+    };
 
     // ─── Edit States ────────────────────────────────────────────────────────
     const [editingProject, setEditingProject] = useState<any>(null);
@@ -217,8 +262,10 @@ export default function BishopDashboard() {
                             { label: 'STRATEGIC PLAN', icon: Target, color: 'pink', onClick: () => setPlanModalOpen(true) },
                             { label: 'SUBMIT REPORT', icon: FileText, color: 'var(--cyan)', onClick: () => setReportModalOpen(true) },
                             { label: 'GLOBAL ALERT', icon: Bell, color: 'orange', onClick: () => setAnnouncementModalOpen(true) },
+                            { label: 'GLOBAL THEMES', icon: Globe, color: '#ffcc00', onClick: () => setThemeModalOpen(true) },
+                            { label: 'PASTORS HUB', icon: Shield, color: '#22c55e', onClick: () => setPastorManagementOpen(true) },
                         ].map((action, i) => (
-                            <Grid item xs={6} sm={4} md={2.4} key={i}>
+                            <Grid item xs={6} sm={4} md={2} key={i}>
                                 <Button
                                     fullWidth
                                     onClick={action.onClick}
@@ -457,10 +504,90 @@ export default function BishopDashboard() {
             <PlanFormModal open={planModalOpen} onClose={() => { setPlanModalOpen(false); setEditingPlan(null); }} plan={editingPlan} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
             <AnnouncementFormModal open={announcementModalOpen} onClose={() => { setAnnouncementModalOpen(false); setEditingAnnouncement(null); }} announcement={editingAnnouncement} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
             <DepartmentReportModal open={reportModalOpen} onClose={() => setReportModalOpen(false)} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
+            <ThemeFormModal 
+                open={themeModalOpen} 
+                onClose={() => setThemeModalOpen(false)} 
+                onSuccess={(msg) => setToast({ open: true, message: msg, severity: 'success' })}
+                onError={(msg) => setToast({ open: true, message: msg, severity: 'error' })}
+            />
             
             <Snackbar open={toast.open} autoHideDuration={4000} onClose={() => setToast({ ...toast, open: false })} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
                 <Alert onClose={() => setToast({ ...toast, open: false })} severity={toast.severity} variant="filled" sx={{ width: '100%', borderRadius: 2 }}>{toast.message}</Alert>
             </Snackbar>
+
+            {/* Pastor Management Dialog */}
+            <Dialog open={pastorManagementOpen} onClose={() => setPastorManagementOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { bgcolor: '#0a0b10', color: '#f8fafc', border: '1px solid rgba(34, 197, 94, 0.2)' } }}>
+                <DialogTitle sx={{ fontWeight: 900, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    <Box display="flex" alignItems="center" gap={1}>
+                        <Shield size={20} color="#22c55e" />
+                        PASTORAL COMMAND CENTER
+                    </Box>
+                </DialogTitle>
+                <DialogContent>
+                    <Typography variant="caption" sx={{ opacity: 0.5, mb: 2, display: 'block', mt: 2 }}>
+                        LIST OF ENROLLED PASTORS AND ASSOCIATE PASTORS IN THE SYSTEM.
+                    </Typography>
+                    {isPastorsLoading ? <LinearProgress sx={{ my: 2 }} /> : (
+                        <Stack spacing={1}>
+                            {pastorsData?.map((pastor: any) => (
+                                <Box key={pastor.id} sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', '&:hover': { bgcolor: 'rgba(34, 197, 94, 0.05)', borderColor: '#22c55e' } }}>
+                                    <Box>
+                                        <Typography variant="subtitle2" fontWeight="950">{pastor.name.toUpperCase()}</Typography>
+                                        <Typography variant="caption" sx={{ opacity: 0.5 }}>{pastor.role} — {pastor.membershipNumber}</Typography>
+                                    </Box>
+                                    <Button size="small" onClick={() => { setModuleDialog({ open: true, userId: pastor.id, name: pastor.name }); fetchPastorModules(pastor.id); }} sx={{ color: 'var(--cyan)', fontWeight: 900 }}>
+                                        MANAGE MODULES
+                                    </Button>
+                                </Box>
+                            ))}
+                        </Stack>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setPastorManagementOpen(false)} sx={{ color: 'white', fontWeight: 900 }}>DISMISS</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Pastor Module Permissions Dialog */}
+            <Dialog open={moduleDialog.open} onClose={() => setModuleDialog({ ...moduleDialog, open: false })} maxWidth="xs" fullWidth PaperProps={{ sx: { bgcolor: '#0a0b10', color: '#f8fafc', border: '1px solid var(--cyan)' } }}>
+                <DialogTitle sx={{ fontWeight: 900, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    <Box display="flex" alignItems="center" gap={1}>
+                        <Zap size={20} color="var(--cyan)" />
+                        ACCESS TOKENS: {moduleDialog.name.toUpperCase()}
+                    </Box>
+                </DialogTitle>
+                <DialogContent sx={{ pt: 2 }}>
+                    <Typography variant="caption" sx={{ opacity: 0.6, mb: 2, display: 'block' }}>
+                        ENABLE OR DISABLE DYNAMIC CAPABILITIES FOR THIS ENTITY.
+                    </Typography>
+                    {moduleLoading ? <CircularProgress size={24} sx={{ m: 'auto', display: 'block' }} /> : (
+                        <Stack spacing={2}>
+                            {[
+                                'DevotionPublishing',
+                                'EventOversight',
+                                'IntelligencePublishing',
+                                'PartnershipManagement',
+                                'ChildDedicationRegistry'
+                            ].map((moduleKey) => {
+                                const isActive = pastorModules.some(m => m.moduleKey === moduleKey);
+                                return (
+                                    <Box key={moduleKey} display="flex" justifyContent="space-between" alignItems="center" p={1.5} sx={{ bgcolor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                        <Typography variant="body2" fontWeight="700">{moduleKey}</Typography>
+                                        <Switch 
+                                            size="small" 
+                                            checked={isActive} 
+                                            onChange={(e) => handleToggleModule(moduleDialog.userId, moduleKey, e.target.checked)} 
+                                        />
+                                    </Box>
+                                );
+                            })}
+                        </Stack>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setModuleDialog({ ...moduleDialog, open: false })} sx={{ color: 'white', fontWeight: 900 }}>BACK</Button>
+                </DialogActions>
+            </Dialog>
         </DashboardLayout>
     );
 }

@@ -1,5 +1,6 @@
 import { db, SyncJob } from './db';
 import api from './api-client';
+import { DeviceService } from './DeviceService';
 
 /**
  * TRUE LOCAL-FIRST SYNC DAEMON
@@ -77,117 +78,139 @@ export async function processSyncDaemon() {
 
         // 2. PUSH UPSTREAM
         // Drain local Dexie syncQueue sequentially
+        const deviceId = await DeviceService.getDeviceId();
         const queue = await db.syncQueue.orderBy('timestamp').toArray();
+        
         for (const job of queue) {
-            if (job.status === 'PENDING' || job.status === 'RETRYING') {
-                try {
-                    let response;
-                    
-                    // 🛡️ Exhaustive Payload Cleaning for .strict() Backend Schemas
-                    // We remove internal sync markers AND server-generated metadata
-                    const { 
-                        isOfflineSync, 
-                        localVersion, 
-                        syncStatus, 
-                        version, 
-                        createdAt, 
-                        updatedAt, 
-                        deletedAt,
-                        id, // Client-side ID usually stripped on POST, preserved on PATCH
-                        ...cleanPayload 
-                    } = job.payload;
-                    
-                    // For POST, we strip the client 'id' because backend (Prisma) often auto-generates 
-                    // and Zod .strict() fails if 'id' is present in the body.
-                    const finalPayload = job.method === 'POST' ? cleanPayload : { ...cleanPayload, id };
-                    
-                    if (job.method === 'POST') {
-                        response = await api.post(job.url, finalPayload);
-                    } else if (job.method === 'PATCH') {
-                        response = await api.patch(job.url, finalPayload);
-                    } else if (job.method === 'DELETE') {
-                        response = await api.delete(job.url);
-                    }
+            // Already synced or too many failures
+            if (job.status === 'SYNCED' || job.status === 'FAILED') continue;
 
-                    // Successfully synced -> update local entity status to SYNCED
-                    // Use a generic update based on the entity-to-table mapping
-                    const tableMap: Record<string, any> = {
-                        'EVENT': db.events,
-                        'PROJECT': db.projects,
-                        'PLAN': db.plans,
-                        'ANNOUNCEMENT': db.announcements,
-                        'MEETING': db.meetings,
-                        'DEVOTION': db.devotions,
-                        'MESSAGE': db.messages,
-                        'BAPTISM': db.baptisms,
-                        'CHILD': db.children,
-                        'TRANSACTION': db.transactions,
-                        'REPAIR': db.repairs,
-                        'APPOINTMENT': db.appointments,
-                        'PARTNERSHIP': db.partnerships,
-                        'PARTNERSHIP_LEDGER': db.partnershipLedgers
-                    };
+            // Exponential Backoff calculation: 2^retryCount * 2000ms
+            if (job.status === 'RETRYING') {
+                const backoffMs = Math.pow(2, job.retryCount) * 2000;
+                if (Date.now() - job.timestamp < backoffMs) {
+                    console.debug(`[Palace-Daemon] Skipping job ${job.id}: Within backoff window.`);
+                    continue;
+                }
+            }
 
-                    const table = tableMap[job.entity];
-                    if (table && job.method !== 'DELETE') {
-                        // Use response ID if server generated a new one
-                        const finalId = response?.data?.id || job.payload.id;
-                        
-                        // If ID changed (server-generated), we must swap out the local record
-                        if (finalId !== job.payload.id) {
-                            const record = await table.get(job.payload.id);
-                            if (record) {
-                                await table.delete(job.payload.id);
-                                await table.put({ 
-                                    ...record, 
-                                    ...response?.data, 
-                                    syncStatus: 'SYNCED', 
-                                    version: response?.data?.version || 1 
-                                });
-                            }
-                        } else {
-                            await table.update(job.payload.id, { 
-                                syncStatus: 'SYNCED', 
-                                version: response?.data?.version || job.payload.version 
+            try {
+                let response;
+                
+                // 🛡️ Exhaustive Payload Cleaning
+                const { 
+                    syncStatus, 
+                    createdAt, 
+                    updatedAt, 
+                    deletedAt,
+                    id,
+                    ...cleanPayload 
+                } = job.payload;
+                
+                // Add device and version context to request headers
+                const finalHeaders = {
+                    'X-Device-ID': deviceId,
+                    'X-Client-Version': job.payload.version?.toString() || '1'
+                };
+
+                const finalPayload = job.method === 'POST' ? cleanPayload : { ...cleanPayload, id };
+                
+                if (job.method === 'POST') {
+                    response = await api.post(job.url, finalPayload, { headers: finalHeaders });
+                } else if (job.method === 'PATCH' || job.method === 'PUT') {
+                    response = await api.patch(job.url, finalPayload, { headers: finalHeaders });
+                } else if (job.method === 'DELETE') {
+                    response = await api.delete(job.url, { headers: finalHeaders });
+                }
+
+                // Successfully synced -> update local entity status to SYNCED
+                const tableMap: Record<string, any> = {
+                    'EVENT': db.events,
+                    'PROJECT': db.projects,
+                    'PLAN': db.plans,
+                    'ANNOUNCEMENT': db.announcements,
+                    'MEETING': db.meetings,
+                    'DEVOTION': db.devotions,
+                    'MESSAGE': db.messages,
+                    'BAPTISM': db.baptisms,
+                    'CHILD': db.children,
+                    'TRANSACTION': db.transactions,
+                    'REPAIR': db.repairs,
+                    'APPOINTMENT': db.appointments,
+                    'PARTNERSHIP': db.partnerships,
+                    'PARTNERSHIP_LEDGER': db.partnershipLedgers,
+                    'AUDIT_LOG': db.auditLogs
+                };
+
+                const table = tableMap[job.entity];
+                if (table && job.method !== 'DELETE') {
+                    const finalId = response?.data?.id || job.payload.id;
+                    
+                    if (finalId !== job.payload.id) {
+                        const record = await table.get(job.payload.id);
+                        if (record) {
+                            await table.delete(job.payload.id);
+                            await table.put({ 
+                                ...record, 
+                                ...response?.data, 
+                                syncStatus: 'SYNCED',
+                                updatedAt: new Date().toISOString()
                             });
                         }
-                    }
-                    
-                    await db.syncQueue.delete(job.id);
-                } catch (pushErr: any) {
-                    if (pushErr?.response?.status === 409) {
-                        // Optimistic Concurrency Conflict
-                        if (job.entity === 'EVENT') {
-                            await db.events.update(job.payload.id, { syncStatus: 'CONFLICT' });
-                        }
-                        await db.syncQueue.update(job.id, { status: 'FAILED' });
-                        
-                        // Fire conflict event for the UI
-                        window.dispatchEvent(new CustomEvent('pwa-conflict-detected', {
-                            detail: { action: job, serverData: pushErr.response.data }
-                        }));
-                        isSyncing = false;
-                        return; // Halt queue processing until arbitration
-                    } else if (pushErr?.response?.status >= 500 || !pushErr.response) {
-                        // Network error or 500, trigger jitter backoff
-                        const nextRetryCount = job.retryCount + 1;
-                        if (nextRetryCount < 10) {
-                            await db.syncQueue.update(job.id, { status: 'RETRYING', retryCount: nextRetryCount });
-                            const jitter = Math.random() * 1000;
-                            const backoff = Math.min((2 ** nextRetryCount) * 1000, 30000) + jitter;
-                            console.warn(`[Palace-Daemon] Push failed. Retrying in ${backoff}ms`);
-                            setTimeout(processSyncDaemon, backoff);
-                        } else {
-                            await db.syncQueue.update(job.id, { status: 'FAILED' });
-                        }
-                        isSyncing = false;
-                        return;
                     } else {
-                        // 400 Bad Request, permanently fail the job to unblock queue
-                        console.error('[Palace-Daemon] Permanent push reject', pushErr);
-                        await db.syncQueue.update(job.id, { status: 'FAILED' });
+                        await table.update(job.payload.id, { 
+                            syncStatus: 'SYNCED', 
+                            version: response?.data?.version || job.payload.version || 1,
+                            updatedAt: new Date().toISOString()
+                        });
                     }
                 }
+                
+                // Update queue job status
+                await db.syncQueue.update(job.id, { 
+                    status: 'SYNCED', 
+                    lastError: undefined 
+                });
+                
+                // Cleanup synced jobs after a small delay to avoid race conditions
+                setTimeout(() => db.syncQueue.delete(job.id), 100);
+
+            } catch (pushErr: any) {
+                const status = pushErr?.response?.status;
+                const errorMessage = pushErr?.response?.data?.message || pushErr.message;
+
+                if (status === 409) {
+                    // CONFLICT: Mark source record for resolution
+                    const tableMap: Record<string, any> = { 'EVENT': db.events, 'PROJECT': db.projects, 'USER': db.users };
+                    const table = tableMap[job.entity];
+                    if (table) await table.update(job.payload.id, { syncStatus: 'CONFLICT' });
+
+                    await db.syncQueue.update(job.id, { status: 'FAILED', lastError: 'CONFLICT' });
+                    
+                    window.dispatchEvent(new CustomEvent('pwa-conflict-detected', {
+                        detail: { action: job, serverData: pushErr.response.data }
+                    }));
+                } else if (status >= 500 || !status) {
+                    // RETRYABLE ERROR
+                    const nextRetryCount = job.retryCount + 1;
+                    if (nextRetryCount < (job.maxRetries ?? 10)) {
+                        await db.syncQueue.update(job.id, { 
+                            status: 'RETRYING', 
+                            retryCount: nextRetryCount,
+                            lastError: errorMessage 
+                        });
+                        console.warn(`[Palace-Daemon] Push failed. Job ${job.id} queued for backoff retry ${nextRetryCount}/${job.maxRetries}`);
+                    } else {
+                        await db.syncQueue.update(job.id, { status: 'FAILED', lastError: 'MAX_RETRIES_EXCEEDED' });
+                    }
+                } else {
+                    // PERMANENT REJECT (400, 403, 404, etc)
+                    console.error('[Palace-Daemon] Permanent push reject', pushErr);
+                    await db.syncQueue.update(job.id, { status: 'FAILED', lastError: errorMessage });
+                }
+                
+                // Stop processing the queue for this tick on failure to avoid cascading errors
+                break;
             }
         }
     } finally {
@@ -216,12 +239,15 @@ export interface QueuedAction extends Partial<SyncJob> {
 
 export async function queueAction(actionData: any) {
     const id = actionData.id || crypto.randomUUID();
+    const deviceId = await DeviceService.getDeviceId();
+    
     return db.syncQueue.put({
         id,
         timestamp: Date.now(),
         status: 'PENDING',
         retryCount: 0,
-        errorLog: [],
+        maxRetries: 10,
+        deviceId,
         entity: actionData.entity || 'EVENT',
         method: actionData.method || 'POST',
         url: actionData.url || '',

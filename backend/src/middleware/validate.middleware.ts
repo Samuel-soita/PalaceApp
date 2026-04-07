@@ -14,7 +14,13 @@ export const validate = (schema: AnyZodObject) => {
                 params: req.params,
             });
             next();
-        } catch (error) {
+        } catch (error: any) {
+            if (error instanceof ZodError) {
+                console.error(`\u001b[31m[VALIDATION ERROR in ${req.method} ${req.originalUrl}]\u001b[0m`, JSON.stringify({
+                    reqBody: req.body,
+                    errors: error.errors
+                }, null, 2));
+            }
             // Pass to global error handler which now handles ZodErrors
             next(error);
         }

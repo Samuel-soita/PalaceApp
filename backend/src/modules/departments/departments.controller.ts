@@ -38,8 +38,7 @@ export const getDepartmentById = catchAsync(async (req: Request, res: Response) 
         where: { id },
         include: {
             leaders: { select: { id: true, name: true } },
-            meetings: true,
-            volunteers: true
+            meetings: true
         }
     });
     

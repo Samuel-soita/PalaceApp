@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import api from '../../lib/api-client';
+import React, { useState, useMemo } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../../lib/db';
+import { PermissionService } from '../../lib/PermissionService';
 import {
     Box, Typography, Paper, Grid, Card, Table, TableBody,
     TableCell, TableContainer, TableHead, TableRow, Switch,
@@ -15,48 +16,49 @@ import {
 
 export default function PermissionEnginePanel() {
     const [tab, setTab] = useState<'MATRIX' | 'AUDIT'>('MATRIX');
-    const queryClient = useQueryClient();
+    const [searchTerm, setSearchTerm] = useState('');
 
-    // ─── DATA FETCHING ────────────────────────────────────────────────────────
-    const { data: roles, isLoading: rolesLoading } = useQuery(['permissions-roles'], async () => {
-        const res = await api.get('/permissions/roles');
-        return res.data;
-    });
+    // 🏛️ LOCAL-FIRST REACTIVE MATRIX
+    // fetch all permissions
+    const allPermissions = useLiveQuery(() => db.permissions.toArray()) || [];
+    // fetch all roles
+    const rolesTable = useLiveQuery(() => db.roles.toArray()) || [];
+    // fetch mapping
+    const mappings = useLiveQuery(() => db.rolePermissions.toArray()) || [];
+    // audit logs locally if implemented
+    const auditLogs = useLiveQuery(() => db.syncQueue.where('type').equals('PERMISSION_UPDATE').toArray()) || []; 
 
-    const { data: allPermissions, isLoading: permsLoading } = useQuery(['permissions-all'], async () => {
-        const res = await api.get('/permissions');
-        return res.data;
-    });
+    // ✅ Hydrate Roles with their permissions reactively
+    const roles = useMemo(() => {
+        return rolesTable.map(role => ({
+            ...role,
+            permissions: mappings
+                .filter(m => m.roleId === role.id)
+                .map(m => ({
+                    permissionId: m.permissionId,
+                    permission: allPermissions.find(p => p.id === m.permissionId)
+                }))
+        }));
+    }, [rolesTable, allPermissions, mappings]);
 
-    const { data: auditLogs, isLoading: logsLoading, isError: logsError } = useQuery(['permissions-audit'], async () => {
-        const res = await api.get('/permissions/audit-log');
-        return res.data;
-    });
+    const isGlobalError = roles.length === 0 && allPermissions.length === 0;
 
-    const isGlobalError = roles === undefined || allPermissions === undefined;
+    // ─── MUTATIONS (Cloud Actions) ────────────────────────────────────────────
+    const [isSyncing, setIsSyncing] = useState(false);
 
-    // ─── MUTATIONS ────────────────────────────────────────────────────────────
-    const toggleMutation = useMutation(async ({ roleId, permissionIds }: { roleId: string, permissionIds: string[] }) => {
-        return await api.put(`/permissions/roles/${roleId}/permissions`, { permissionIds });
-    }, {
-        onSuccess: () => {
-            queryClient.invalidateQueries(['permissions-roles']);
-            queryClient.invalidateQueries(['permissions-audit']);
+    const handleSync = async () => {
+        setIsSyncing(true);
+        try {
+            await PermissionService.syncWithCloud();
+        } catch (err) {
+            console.error('Cloud Sync failed:', err);
+        } finally {
+            setIsSyncing(false);
         }
-    });
-
-    const reSeedMutation = useMutation(async () => {
-        return await api.post('/permissions/re-seed');
-    }, {
-        onSuccess: () => {
-            queryClient.invalidateQueries(['permissions-roles']);
-            queryClient.invalidateQueries(['permissions-all']);
-            queryClient.invalidateQueries(['permissions-audit']);
-        }
-    });
+    };
 
     // ─── HANDLERS ─────────────────────────────────────────────────────────────
-    const handleToggle = (role: any, perm: any, active: boolean) => {
+    const handleToggle = async (role: any, perm: any, active: boolean) => {
         const currentPermIds = role.permissions.map((p: any) => p.permissionId);
         let newPermIds: string[];
         
@@ -66,19 +68,17 @@ export default function PermissionEnginePanel() {
             newPermIds = currentPermIds.filter((id: string) => id !== perm.id);
         }
 
-        toggleMutation.mutate({ roleId: role.id, permissionIds: newPermIds });
+        await PermissionService.updateRolePermissions(role.id, newPermIds);
     };
-
-    if (rolesLoading || permsLoading) return <CircularProgress sx={{ display: 'block', m: 'auto', mt: 10 }} />;
 
     if (isGlobalError) {
         return (
             <Box sx={{ p: 4 }}>
                 <Alert severity="error" sx={{ mb: 2 }}>
-                    Failed to load security matrix. Ensure you have WATUA orchestration clearance.
+                    Failed to load security matrix. Ensure you have WATUA orchestration clearance and a stable connection to the Cloud Kernel.
                 </Alert>
-                <Button variant="outlined" onClick={() => queryClient.invalidateQueries()}>
-                    Retry Connection
+                <Button variant="outlined" onClick={() => handleSync()}>
+                    Sync with Cloud
                 </Button>
             </Box>
         );
@@ -98,12 +98,13 @@ export default function PermissionEnginePanel() {
                 </Box>
                     <Button 
                         variant="outlined" 
-                        color="warning"
-                        onClick={() => reSeedMutation.mutate()}
-                        disabled={reSeedMutation.isLoading}
-                        startIcon={reSeedMutation.isLoading ? <CircularProgress size={18} /> : <RefreshCcw size={18} />}
+                        color="inherit"
+                        onClick={() => handleSync()}
+                        disabled={isSyncing}
+                        startIcon={isSyncing ? <CircularProgress size={18} /> : <RefreshCcw size={18} />}
+                        sx={{ borderColor: 'var(--cyan)', color: 'var(--cyan)' }}
                     >
-                        Re-Sync Engine
+                        Sync with Cloud
                     </Button>
                     <Button 
                         variant={tab === 'MATRIX' ? 'contained' : 'outlined'} 

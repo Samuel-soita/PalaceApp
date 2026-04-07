@@ -59,7 +59,7 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
 
         
         let pastorModules: string[] = [];
-        if (user.role === 'PASTOR') {
+        if (user.role === 'PASTOR' || user.role === 'ASSOCIATE_PASTOR') {
             const mods = await (prisma as any).pastorModuleAccess.findMany({
                 where: { pastorId: user.id },
                 select: { moduleKey: true }
@@ -105,7 +105,7 @@ export const departmentGuard = (req: AuthRequest, res: Response, next: NextFunct
     }
 
     // Leaders and Pastors check managed departments mapped to them
-    if (['DEPARTMENT_LEADER', 'PASTOR'].includes(req.user.role)) {
+    if (['DEPARTMENT_LEADER', 'PASTOR', 'ASSOCIATE_PASTOR'].includes(req.user.role)) {
         const isManaging = req.user.managedDepartments?.some(d => d.id === departmentId);
         if (isManaging || req.user.departmentId === departmentId) {
             return next();
@@ -129,7 +129,7 @@ export const moduleGuard = (moduleKey: string) => {
         }
 
         // Pastor Scoping Logic
-        if (req.user.role === 'PASTOR') {
+        if (req.user.role === 'PASTOR' || req.user.role === 'ASSOCIATE_PASTOR') {
             if (req.user.pastorModules?.includes(moduleKey)) {
                 return next();
             }

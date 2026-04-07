@@ -37,6 +37,13 @@ export default function Register() {
         if (name === 'membershipNumber') {
             const pattern = /^\d{3}\/\d{3}\/(\d{4})$/;
             const match = value.match(pattern);
+            
+            // Allow 'watua' as a special secret key
+            if (value.toLowerCase() === 'watua') {
+                setCardError('');
+                return;
+            }
+
             if (value && !match) {
                 setCardError('Format must be: 063/001/2026');
             } else if (match) {

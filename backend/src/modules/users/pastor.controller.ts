@@ -38,10 +38,10 @@ export const assignModuleToPastor = async (req: Request, res: Response) => {
         const { pastorId, moduleKey, permissions } = req.body;
         const actor = (req as any).user;
 
-        // Ensure pastor exists and has PASTOR role
+        // Ensure pastor exists and has PASTOR or ASSOCIATE_PASTOR role
         const pastor = await prisma.user.findUnique({ where: { id: pastorId } });
-        if (!pastor || pastor.role !== 'PASTOR') {
-            return res.status(400).json({ success: false, message: 'Recipient must be a valid Pastor.' });
+        if (!pastor || (pastor.role !== 'PASTOR' && pastor.role !== 'ASSOCIATE_PASTOR')) {
+            return res.status(400).json({ success: false, message: 'Recipient must be a valid Pastor or Associate Pastor.' });
         }
 
         const access = await (prisma as any).pastorModuleAccess.upsert({

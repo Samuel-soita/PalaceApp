@@ -31,7 +31,7 @@ export const getPlans = catchAsync(async (req: Request, res: Response) => {
             { isMajor: true },
             ...(user.departmentId ? [{ departmentId: user.departmentId }] : [])
         ];
-    } else if (user.role === 'DEPARTMENT_LEADER' || user.role === 'PASTOR') {
+    } else if (user.role === 'DEPARTMENT_LEADER' || user.role === 'PASTOR' || user.role === 'ASSOCIATE_PASTOR') {
         const managedDeptIds = user.managedDepartments?.map((d: any) => d.id) || [];
         if (user.departmentId) managedDeptIds.push(user.departmentId);
 
@@ -172,7 +172,7 @@ export const approvePlan = catchAsync(async (req: AuthRequest, res: Response) =>
             data: {
                 planId: id,
                 userId: user.id,
-                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : 'PASTOR'
+                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role) ? 'PASTOR' : user.role)
             }
         });
 
