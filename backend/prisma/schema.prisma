@@ -140,8 +140,9 @@ model Devotion {
   updatedAt    DateTime              @default(now()) @updatedAt
   deletedAt    DateTime?
   version      Int                   @default(0)
-  affirmations Affirmation[]
+
   interactions DevotionInteraction[]
+  affirmations Affirmation[]
 }
 
 model DevotionInteraction {
@@ -179,7 +180,7 @@ model Department {
   plans         Plan[]
   projects      Project[]
   leaders       User[]         @relation("DeptLeader")
-  volunteers    Volunteer[]
+
   managers      User[]         @relation("DeptManagers")
   reports       DepartmentReport[]
   repairs       TechnicalRepair[]
@@ -289,19 +290,6 @@ model Announcement {
   @@index([updatedAt])
 }
 
-model Volunteer {
-  id           String     @id @default(uuid())
-  name         String
-  email        String?
-  skills       String?
-  availability String?
-  departmentId String
-  status       String     @default("ACTIVE")
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  version      Int        @default(0)
-  department   Department @relation(fields: [departmentId], references: [id])
-}
 
 model Project {
   id                String            @id @default(uuid())
@@ -336,13 +324,6 @@ model Project {
   @@index([updatedAt])
 }
 
-model ProjectUpdate {
-  id        String   @id @default(uuid())
-  projectId String
-  message   String
-  date      DateTime @default(now())
-  project   Project  @relation(fields: [projectId], references: [id])
-}
 
 model Plan {
   id             String         @id @default(uuid())
@@ -581,24 +562,7 @@ model Baptism {
   @@index([deletedAt])
 }
 
-model MinistrySettings {
-  id           String   @id @default("GLOBAL")
-  themeOfYear  String   @default("YEAR OF DIVINE ESTABLISHMENT")
-  themeOfMonth String   @default("MONTH OF NEW BEGINNINGS")
-  updatedAt    DateTime @updatedAt
-  churchBudget Float    @default(0)
-  version      Int      @default(0)
-}
 
-model Affirmation {
-  id         String    @id @default(uuid())
-  content    String
-  date       DateTime  @unique @default(now())
-  createdAt  DateTime  @default(now())
-  version    Int       @default(0)
-  devotionId String?
-  devotion   Devotion? @relation(fields: [devotionId], references: [id])
-}
 
 model Partnership {
   id              String              @id @default(uuid())
@@ -707,17 +671,6 @@ model PermissionOverride {
   @@unique([userId, permissionId])
 }
 
-model WatuaActionLog {
-  id            String   @id @default(uuid())
-  engineerId    String
-  actionType    String
-  targetEntity  String
-  beforeState   Json?
-  afterState    Json?
-  approvalChain Json?
-  executed      Boolean  @default(false)
-  createdAt     DateTime @default(now())
-}
 
 model JobQueue {
   id          String    @id @default(uuid())
@@ -858,4 +811,42 @@ model RepairApproval {
   user       User            @relation(fields: [userId], references: [id])
 
   @@unique([repairId, userId])
+}
+
+model WatuaActionLog {
+  id            String   @id @default(uuid())
+  engineerId    String
+  actionType    String
+  targetEntity  String
+  beforeState   Json?
+  afterState    Json?
+  approvalChain Json?
+  executed      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+}
+
+model MinistrySettings {
+  id           String   @id @default("GLOBAL")
+  themeOfYear  String   @default("YEAR OF DIVINE ESTABLISHMENT")
+  themeOfMonth String   @default("MONTH OF NEW BEGINNINGS")
+  updatedAt    DateTime @updatedAt
+  version      Int      @default(0)
+}
+
+model Affirmation {
+  id         String   @id @default(uuid())
+  content    String
+  date       DateTime @unique @default(now())
+  createdAt  DateTime @default(now())
+  version    Int      @default(0)
+  devotionId String?
+  devotion   Devotion? @relation(fields: [devotionId], references: [id])
+}
+
+model ProjectUpdate {
+  id        String   @id @default(uuid())
+  projectId String
+  message   String
+  date      DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id])
 }

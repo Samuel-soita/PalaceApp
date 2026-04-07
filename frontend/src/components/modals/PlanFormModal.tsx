@@ -73,6 +73,10 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
             alert("Exactly 2 Pastors must authorize this Strategic Plan.");
             return;
         }
+        if (!formData.departmentId) {
+            alert("Please select a Department for this Plan.");
+            return;
+        }
         mutation.mutate(formData);
     };
 

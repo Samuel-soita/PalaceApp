@@ -187,7 +187,7 @@ export const approveProject = catchAsync(async (req: AuthRequest, res: Response)
             data: {
                 projectId: id,
                 userId: user.id,
-                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : 'PASTOR'
+                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role) ? 'PASTOR' : user.role)
             }
         });
 

@@ -386,6 +386,9 @@ export const executeIntervention = catchAsync(async (req: AuthRequest, res: Resp
             if (actor.role !== 'WATUA') throw new AppError('Engineer only.', 403);
             updateData = { role: 'SUPER_ADMIN', departmentId: null };
             break;
+        case 'MAKE_SYSTEM_ADMIN':
+        case 'MAKE_PASTOR':
+        case 'MAKE_ASSOCIATE_PASTOR':
         case 'MAKE_SECRETARY':
             if (!['WATUA', 'SUPER_ADMIN'].includes(actor.role)) throw new AppError('Bishop/Engineer only.', 403);
             {

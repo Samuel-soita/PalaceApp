@@ -110,9 +110,15 @@ export const getAllChildren = async (req: any, res: Response) => {
 
         const where: any = {};
         
-        // 🔒 PASTORAL SCOPING: Only see assigned children
-        if ((req.user as any).role === 'PASTOR') {
-            where.assignedPastorId = (req.user as any).id;
+        // 🔒 PASTORAL SCOPING: Only see assigned children OR unassigned pending dedications
+        if ((req.user as any).role === 'PASTOR' || (req.user as any).role === 'ASSOCIATE_PASTOR') {
+            where.OR = [
+                { assignedPastorId: (req.user as any).id },
+                { 
+                    assignedPastorId: null,
+                    workflowStatus: 'PENDING_DEDICATION'
+                }
+            ];
         }
 
         const [children, total] = await Promise.all([

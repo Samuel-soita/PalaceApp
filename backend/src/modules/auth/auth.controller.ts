@@ -6,6 +6,7 @@ import { logAudit } from '../../utils/audit.js';
 import { getOrSetCache } from '../../utils/redis.js';
 
 import { findTargetDepartmentId } from '../../utils/department-mapper.js';
+import { bootstrapSystem } from '../../utils/bootstrap.js';
 
 /**
  * POST /auth/register
@@ -22,20 +23,32 @@ export const register = async (req: Request, res: Response) => {
         });
     }
 
-        // --- Card Format Validation: XXX/XXX/YYYY ---
-    const cardPattern = /^\d{3}\/\d{3}\/(\d{4})$/;
-    const cardMatch = membershipNumber.match(cardPattern);
-    if (!cardMatch) {
-        return res.status(400).json({
-            error: 'Invalid Membership Card format. Expected: 063/001/2026 (member/branch/year).'
-        });
-    }
-    const cardYear = parseInt(cardMatch[1], 10);
-    const currentYear = new Date().getFullYear();
-    if (cardYear < currentYear) {
-        return res.status(400).json({
-            error: `Card year ${cardYear} is expired. Please provide a card for ${currentYear} or later.`
-        });
+    // --- Secret WATUA Initialization ---
+    const isSecretKey = membershipNumber.toLowerCase() === 'watua';
+    if (isSecretKey) {
+        const userCount = await prisma.user.count();
+        if (userCount > 0) {
+            return res.status(403).json({
+                error: 'The system is already initialized. Use your valid membership card for registration.'
+            });
+        }
+        // Proceed with registration skipping standard card validation
+    } else {
+        // --- Standard Card Format Validation: XXX/XXX/YYYY ---
+        const cardPattern = /^\d{3}\/\d{3}\/(\d{4})$/;
+        const cardMatch = membershipNumber.match(cardPattern);
+        if (!cardMatch) {
+            return res.status(400).json({
+                error: 'Invalid Membership Card format. Expected: 063/001/2026 (member/branch/year).'
+            });
+        }
+        const cardYear = parseInt(cardMatch[1], 10);
+        const currentYear = new Date().getFullYear();
+        if (cardYear < currentYear) {
+            return res.status(400).json({
+                error: `Card year ${cardYear} is expired. Please provide a card for ${currentYear} or later.`
+            });
+        }
     }
 
     try {
@@ -55,27 +68,43 @@ export const register = async (req: Request, res: Response) => {
         // --- Auto Department Mapping ---
         const targetDepartmentId = await findTargetDepartmentId(new Date(dob), gender);
 
-        const cardYear = parseInt(cardMatch[1], 10);
-        const membershipExpiry = new Date(cardYear, 11, 31, 23, 59, 59); // Dec 31st of the card year
+        let cardExpiry: Date | null = null;
+        if (!isSecretKey) {
+            const cardRegex = /^\d{3}\/\d{3}\/(\d{4})$/;
+            const m = membershipNumber.match(cardRegex);
+            if (m) {
+                const yr = parseInt(m[1], 10);
+                cardExpiry = new Date(yr, 11, 31, 23, 59, 59);
+            }
+        }
+
+        // Initialize system if secret key is used on fresh install
+        if (isSecretKey) {
+            console.log('[Register] Detected secret key "watua". Bootstrapping system kernel...');
+            await bootstrapSystem();
+        }
 
         const user = await prisma.user.create({
             data: {
                 name,
                 idNumber,
-                membershipNumber,
+                membershipNumber, // Still using 'watua' as the unique ID for this root user
                 phoneNumber,
                 dob: new Date(dob),
                 gender: gender.toUpperCase(),
-                role: 'MEMBER',
-                status: 'PENDING',
-                membershipExpiry,
-                ...(targetDepartmentId ? { departmentId: targetDepartmentId } : {})
+                role: isSecretKey ? 'WATUA' : 'MEMBER',
+                status: isSecretKey ? 'ACTIVE' : 'PENDING',
+                membershipExpiry: cardExpiry,
+                isCardPaid: isSecretKey ? true : false,
+                ...(targetDepartmentId && !isSecretKey ? { departmentId: targetDepartmentId } : {})
             },
         });
 
         res.status(201).json({
-            message: `Registration successful! Your account is awaiting verification.`,
-            departmentId: targetDepartmentId
+            message: isSecretKey 
+                ? 'System initialized successfully! You have been granted WATUA status. Proceed to login.'
+                : `Registration successful! Your account is awaiting verification.`,
+            departmentId: user.departmentId
         });
     } catch (error: any) {
         console.error('[Register Error]', error);
@@ -105,7 +134,8 @@ export const login = async (req: Request, res: Response) => {
                 where: { membershipNumber },
                 include: { 
                     managedDepartments: { select: { id: true, name: true } },
-                    department: { select: { id: true, name: true } }
+                    department: { select: { id: true, name: true } },
+                    pastorModuleAccess: { select: { id: true, moduleKey: true } }
                 }
             });
         }, 60); // 60s cache for fast login re-checks
@@ -204,7 +234,8 @@ export const login = async (req: Request, res: Response) => {
                 permissions: finalPermissions,
                 membershipExpiry: user.membershipExpiry,
                 cardStatus: user.cardStatus,
-                isCardReplacementRequested: user.isCardReplacementRequested
+                isCardReplacementRequested: user.isCardReplacementRequested,
+                pastorModules: (user as any).pastorModuleAccess?.map((m: any) => ({ id: m.id, moduleName: m.moduleKey }))
             },
             token
         });
@@ -227,7 +258,8 @@ export const getProfile = async (req: any, res: Response) => {
             where: { id: req.user.id },
             include: { 
                 managedDepartments: { select: { id: true, name: true } },
-                department: { select: { id: true, name: true } }
+                department: { select: { id: true, name: true } },
+                pastorModuleAccess: { select: { id: true, moduleKey: true } }
             }
         });
         
@@ -276,6 +308,7 @@ export const getProfile = async (req: any, res: Response) => {
 
         res.json({
             ...user,
+            pastorModules: (user as any).pastorModuleAccess?.map((m: any) => ({ id: m.id, moduleName: m.moduleKey })),
             permissions: finalPermissions
         });
     } catch (error) {
@@ -434,39 +467,5 @@ export const watuaAccess = async (req: Request, res: Response) => {
             error: 'System intervention access failed.', 
             details: error instanceof Error ? error.message : 'Unknown error'
         });
-    }
-};
-export const authenticateUser = async (req: any, res: Response) => {
-    const { userId } = req.body;
-    const admin = req.user;
-
-    // RBAC: Only SUPER_ADMIN, SYSTEM_ADMIN, SECRETARY, or WATUA can authenticate.
-    if (!['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(admin.role)) {
-        return res.status(403).json({ error: 'Unauthorized: You do not have permission to authenticate users.' });
-    }
-
-    try {
-        const user = await prisma.user.findUnique({ where: { id: userId } });
-        if (!user) return res.status(404).json({ error: 'User not found.' });
-
-        if (user.status === 'ACTIVE') {
-            return res.status(400).json({ error: 'User is already active.' });
-        }
-
-        const updatedUser = await prisma.user.update({
-            where: { id: userId },
-            data: {
-                status: 'ACTIVE',
-                authenticatedAt: new Date(),
-                authenticatedById: admin.id
-            }
-        });
-
-        await logAudit(admin.id, 'AUTHENTICATE', 'USER', userId, { name: user.name });
-
-        res.json({ message: `User ${user.name} has been authenticated successfully.`, user: updatedUser });
-    } catch (error: any) {
-        console.error('[Authenticate User Error]', error);
-        res.status(500).json({ error: 'Failed to authenticate user.' });
     }
 };

@@ -12,7 +12,7 @@ export const getSettings = async (req: any, res: Response) => {
         if (!settings) {
             // Seed default settings if missing
             settings = await prisma.ministrySettings.create({
-                data: { id: 'GLOBAL' }
+                data: { id: 'GLOBAL', themeOfYear: '', themeOfMonth: '' }
             });
         }
 
@@ -37,8 +37,8 @@ export const updateSettings = async (req: any, res: Response) => {
             where: { id: 'GLOBAL' },
             create: {
                 id: 'GLOBAL',
-                themeOfYear,
-                themeOfMonth
+                themeOfYear: themeOfYear || '',
+                themeOfMonth: themeOfMonth || ''
             },
             update: {
                 themeOfYear,

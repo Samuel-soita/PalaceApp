@@ -8,7 +8,7 @@ export const CreateProjectSchema = z.object({
         title: z.string({ required_error: 'Mission title is mandatory.' }).min(3).max(100),
         description: z.string().min(10).max(1000),
         departmentId: z.string().uuid(),
-        budget: z.number().positive(),
+        budget: z.number().nonnegative(),
         deadline: z.string().datetime(),
         category: z.enum(['INFRASTRUCTURE', 'OUTREACH', 'TECH', 'YOUTH', 'GENERAL']),
         pastorIds: z.array(z.string().uuid()).length(2, 'Exactly 2 pastors required'),
@@ -24,7 +24,7 @@ export const UpdateProjectSchema = z.object({
     body: z.object({
         title: z.string().min(3).max(100).optional(),
         description: z.string().min(10).max(1000).optional(),
-        budget: z.number().positive().optional(),
+        budget: z.number().nonnegative().optional(),
         status: z.enum(['PLANNED', 'PROPOSAL', 'UPCOMING', 'ACTIVE', 'COMPLETED', 'ON_HOLD', 'CANCELLED']).optional(),
         deadline: z.string().datetime().optional(),
         isMajor: z.boolean().optional()

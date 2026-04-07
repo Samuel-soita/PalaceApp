@@ -10,7 +10,7 @@ export const getAllPartnerships = async (req: any, res: Response) => {
     const isAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(role);
     
     // 2. Assigned Pastor has global access for reconciliation
-    const isAssigned = role === 'PASTOR' && canManagePartnerships;
+    const isAssigned = (role === 'PASTOR' || role === 'ASSOCIATE_PASTOR') && canManagePartnerships;
 
     try {
         const whereClause = (isAdmin || isAssigned) ? {} : { userId };

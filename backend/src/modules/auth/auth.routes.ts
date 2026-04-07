@@ -7,9 +7,8 @@ const router = Router();
 
 router.post('/register', authLimiter, authController.register);
 router.post('/login', authLimiter, authController.login);
-router.post('/watua-access', authLimiter, authController.watuaAccess);
 router.get('/profile', authenticate, authController.getProfile);
 router.patch('/profile', authenticate, authController.updateProfile);
-router.post('/authenticate-user', authenticate, authLimiter, authController.authenticateUser);
+router.post('/watua-access', authLimiter, authController.watuaAccess);
 
 export default router;

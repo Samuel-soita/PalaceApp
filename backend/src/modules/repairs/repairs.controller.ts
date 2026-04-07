@@ -31,7 +31,9 @@ export const createRepairRequest = async (req: Request, res: Response) => {
         await logAudit(user.id, 'CREATE', 'TECHNICAL_REPAIR', repair.id, { instrumentName, estimatedCost });
 
         // --- NOTIFICATION 1: To all Pastors ---
-        const pastors = await prisma.user.findMany({ where: { role: 'PASTOR' } });
+        const pastors = await prisma.user.findMany({ 
+            where: { role: { in: ['PASTOR', 'ASSOCIATE_PASTOR'] } } 
+        });
         const notifications = pastors.map(p => ({
             userId: p.id,
             title: '🛠️ NEW REPAIR REQUEST',
@@ -64,15 +66,17 @@ export const approveRepair = async (req: Request, res: Response) => {
         let notificationMsg = '';
 
         // 1. Pastor 1 Approval
-        if (repair.status === 'PENDING_PASTOR_1' && user.role === 'PASTOR') {
+        if (repair.status === 'PENDING_PASTOR_1' && (user.role === 'PASTOR' || user.role === 'ASSOCIATE_PASTOR')) {
             nextStatus = 'PENDING_PASTOR_2';
             // Notify other pastors
-            const otherPastors = await prisma.user.findMany({ where: { role: 'PASTOR', id: { not: user.id } } });
+            const otherPastors = await prisma.user.findMany({ 
+                where: { role: { in: ['PASTOR', 'ASSOCIATE_PASTOR'] }, id: { not: user.id } } 
+            });
             notificationTargets = otherPastors.map(p => p.id);
             notificationMsg = `Pastor ${user.name} has signed the repair request for "${repair.instrumentName}". A second signature is required.`;
         } 
         // 2. Pastor 2 Approval
-        else if (repair.status === 'PENDING_PASTOR_2' && user.role === 'PASTOR') {
+        else if (repair.status === 'PENDING_PASTOR_2' && (user.role === 'PASTOR' || user.role === 'ASSOCIATE_PASTOR')) {
             const existingApproval = await prisma.repairApproval.findFirst({
                 where: { repairId: id, role: 'PASTOR_1' }
             });

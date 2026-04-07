@@ -29,8 +29,8 @@ export async function generateNextMembershipNumber(role: string, targetYear: num
 
     let nextSeq: number;
 
-    if (role === 'DEPARTMENT_LEADER' || role === 'PASTOR' || role === 'SUPER_ADMIN' || role === 'WATUA') {
-        const leaders = existingUsers.filter(u => ['DEPARTMENT_LEADER', 'PASTOR', 'SUPER_ADMIN', 'WATUA'].includes(u.role));
+    if (['DEPARTMENT_LEADER', 'PASTOR', 'ASSOCIATE_PASTOR', 'SUPER_ADMIN', 'WATUA'].includes(role)) {
+        const leaders = existingUsers.filter(u => ['DEPARTMENT_LEADER', 'PASTOR', 'ASSOCIATE_PASTOR', 'SUPER_ADMIN', 'WATUA'].includes(u.role));
         const leaderSeqs = leaders.map(u => parseInt(u.membershipNumber.split('/')[0], 10));
         const maxLeaderSeq = leaderSeqs.length > 0 ? Math.max(...leaderSeqs) : 0;
         
@@ -39,7 +39,7 @@ export async function generateNextMembershipNumber(role: string, targetYear: num
             nextSeq++;
         }
     } else {
-        const members = existingUsers.filter(u => !['DEPARTMENT_LEADER', 'PASTOR', 'SUPER_ADMIN', 'WATUA'].includes(u.role));
+        const members = existingUsers.filter(u => !['DEPARTMENT_LEADER', 'PASTOR', 'ASSOCIATE_PASTOR', 'SUPER_ADMIN', 'WATUA'].includes(u.role));
         const memberSeqs = members.map(u => parseInt(u.membershipNumber.split('/')[0], 10));
         // Members start at 101
         const maxMemberSeq = memberSeqs.length > 0 ? Math.max(...memberSeqs) : 100;

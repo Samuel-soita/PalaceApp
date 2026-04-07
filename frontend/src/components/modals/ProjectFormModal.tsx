@@ -86,6 +86,12 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        
+        if (!formData.departmentId) {
+            alert("Please select a Department for this Project.");
+            return;
+        }
+
         if (project) {
             // Clean payload for UPDATE
             const { pastorIds, progress, ...cleanUpdate } = formData;

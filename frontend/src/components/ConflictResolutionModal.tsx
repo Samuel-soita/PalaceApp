@@ -41,7 +41,7 @@ export default function ConflictResolutionModal() {
                     payload: { ...conflict.action.payload, version: conflict.serverData.version, localVersion: conflict.serverData.version },
                     status: 'PENDING',
                     retryCount: 0,
-                    errorLog: [...conflict.action.errorLog, 'User chose FORCE_MERGE']
+                    errorLog: [...(conflict.action.errorLog || []), 'User chose FORCE_MERGE']
                 };
                 await db.syncQueue.put(updatedAction);
                 if (conflict.action.entity === 'EVENT') {

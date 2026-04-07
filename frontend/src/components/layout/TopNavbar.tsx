@@ -100,6 +100,11 @@ export default function TopNavbar() {
         return res.data;
     }, { enabled: user?.role === 'SUPER_ADMIN' || user?.role === 'WATUA', staleTime: 300000 });
 
+    const { data: settings } = useQuery(['ministrySettings'], async () => {
+        const res = await api.get('/settings');
+        return res.data;
+    }, { staleTime: 300000 });
+
     const unreadCount = (notifications || []).filter((n: any) => !n.read).length || 0;
 
     const isMember = user?.role === 'MEMBER';
@@ -347,6 +352,26 @@ export default function TopNavbar() {
                                 ? "PRAYER PALACE PORTAL" 
                                 : (user?.role === 'SUPER_ADMIN' ? "PALACE CONTROL PORTAL" : "EXECUTIVE PALACE PORTAL")}
                         </Typography>
+
+                        {/* Global Ministry Themes display */}
+                        {settings && (settings.themeOfYear || settings.themeOfMonth) && (
+                            <Box sx={{ display: { xs: 'none', lg: 'flex' }, mr: 4, gap: 1, alignItems: 'center' }}>
+                                {settings.themeOfYear && (
+                                    <Box sx={{ border: '1px solid rgba(255,255,255,0.1)', bgcolor: 'rgba(255,255,255,0.02)', px: 1.5, py: 0.5 }}>
+                                        <Typography variant="caption" sx={{ color: 'var(--cyan)', fontWeight: 900, letterSpacing: 1, textTransform: 'uppercase' }}>
+                                            {settings.themeOfYear}
+                                        </Typography>
+                                    </Box>
+                                )}
+                                {settings.themeOfMonth && (
+                                    <Box sx={{ border: '1px solid rgba(255,255,255,0.1)', bgcolor: 'rgba(255,255,255,0.02)', px: 1.5, py: 0.5 }}>
+                                        <Typography variant="caption" sx={{ color: '#ffcc00', fontWeight: 900, letterSpacing: 1, textTransform: 'uppercase' }}>
+                                            {settings.themeOfMonth}
+                                        </Typography>
+                                    </Box>
+                                )}
+                            </Box>
+                        )}
 
                         {/* Primary Horizontal Navigation */}
                         <Box sx={{ flexGrow: 1, display: { xs: 'none', md: 'flex' }, gap: 1 }}>

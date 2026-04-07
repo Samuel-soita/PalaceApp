@@ -49,7 +49,7 @@ export const OfflineQueue = {
      * Prevents higher authority data from being overwritten locally.
      */
     resolveDeltaSync(localState: LocalState | null, serverPayload: SyncPayload) {
-        return resolveConflict(localState, serverPayload, !navigator.onLine);
+        return resolveConflict(localState, serverPayload);
     }
 };
 

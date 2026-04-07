@@ -6,7 +6,7 @@ import * as featureFlagController from './feature-flag.controller.js';
 const router = express.Router();
 
 router.get('/', getSettings); // Public/Member can view
-router.patch('/', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR']), updateSettings); // Only authorized can update
+router.patch('/', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'WATUA']), updateSettings); // Only authorized can update
 router.post('/backup', authenticate, authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN']), triggerBackup);
 
 // Feature Flags

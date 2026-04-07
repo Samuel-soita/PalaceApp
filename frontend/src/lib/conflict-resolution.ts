@@ -28,19 +28,21 @@ export const ROLE_AUTHORITY: Record<Role, number> = {
 
 export interface SyncPayload {
     id: string;
-    model: string;
-    action: 'CREATE' | 'UPDATE' | 'DELETE';
-    data: any;
-    updatedAt: number;
+    version: number;
+    updatedAt: string; // ISO string
     actorRole: Role;
     actorId: string;
+    deviceId: string;
+    data: any;
 }
 
 export interface LocalState {
     id: string;
-    data: any;
-    lastUpdated: number;
+    version: number;
+    updatedAt: string; // ISO string
     lastActorRole: Role;
+    deviceId: string;
+    data: any;
     hasPendingOfflineEdit: boolean;
 }
 
@@ -51,24 +53,40 @@ export interface ResolutionResult {
 }
 
 /**
- * Executes a deterministic conflict resolution based on strict hierarchy.
- * SUPER_ADMIN > WATUA > SYSTEM_ADMIN > PASTOR > LEADER > MEMBER
+ * Executes a deterministic conflict resolution based on:
+ * 1. Semantic Versioning (LWW)
+ * 2. Strict Authority (Hierarchy)
+ * 3. Chronological (Timestamp)
  */
 export function resolveConflict(
     localState: LocalState | null,
-    serverPayload: SyncPayload,
-    isOffline: boolean = false
+    serverPayload: SyncPayload
 ): ResolutionResult {
 
     // 1. If no local state exists, Server wins immediately
     if (!localState) {
-        return { winner: 'SERVER', reason: 'No local state. Ingesting server payload.' };
+        return { winner: 'SERVER', reason: 'Identity vacuum: No local state. Ingesting server record.' };
     }
 
+    // 2. Semantic Versioning Tie-Breaker (Primary)
+    if (serverPayload.version > localState.version) {
+        return { 
+            winner: 'SERVER', 
+            reason: `Version Superiority: Server [v${serverPayload.version}] > Local [v${localState.version}]` 
+        };
+    }
+
+    if (localState.version > serverPayload.version) {
+        return { 
+            winner: 'LOCAL', 
+            reason: `Version Superiority: Local [v${localState.version}] > Server [v${serverPayload.version}]` 
+        };
+    }
+
+    // 3. Authority-Weighted Tie-Breaker (Secondary)
     const localAuthority = ROLE_AUTHORITY[localState.lastActorRole] || 0;
     const serverAuthority = ROLE_AUTHORITY[serverPayload.actorRole] || 0;
 
-    // 2. Strict Authority Override
     if (serverAuthority > localAuthority) {
         return { 
             winner: 'SERVER', 
@@ -83,26 +101,19 @@ export function resolveConflict(
         };
     }
 
-    // 3. Same Authority Tie-Breaker (Timestamp / Delta Sync)
-    // If we are currently offline and have a pending edit, we protect our local edit 
-    // until we reconnect and the server processes it.
-    if (localState.hasPendingOfflineEdit && isOffline) {
-        return { 
-            winner: 'LOCAL', 
-            reason: `Tie-Breaker: Preserving pending local edit during offline isolation.` 
-        };
-    }
+    // 4. Chronological Tie-Breaker (Tertiary)
+    const serverTime = new Date(serverPayload.updatedAt).getTime();
+    const localTime = new Date(localState.updatedAt).getTime();
 
-    // Default to the most recent timestamp if no pending local edit protects it
-    if (serverPayload.updatedAt > localState.lastUpdated) {
+    if (serverTime > localTime) {
         return { 
             winner: 'SERVER', 
-            reason: `Chronological Tie-Breaker: Server is more recent.` 
+            reason: `Chronological Tie-Breaker: Server record is more recent (${serverPayload.updatedAt})` 
         };
     }
 
     return { 
         winner: 'LOCAL', 
-        reason: `Chronological Tie-Breaker: Local is more recent or identical.` 
+        reason: `Preserving local state: Most recent or identical.` 
     };
 }
