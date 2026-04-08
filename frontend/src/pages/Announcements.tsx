@@ -28,7 +28,13 @@ export default function Announcements() {
     const [page, setPage] = useState(1);
     const limit = 12;
 
-    const announcements = useLiveQuery(() => db.announcements.orderBy('createdAt').reverse().toArray(), []) || [];
+    const announcements = useLiveQuery(
+        () => db.announcements.toArray().then(all =>
+            all.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+        ),
+        []
+    ) || [];
+
     const meta = { total: announcements.length, totalPages: Math.ceil((announcements.length || 1) / limit) };
 
     const filteredAnnouncements = announcements.filter((ann: any) => {
