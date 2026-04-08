@@ -28,7 +28,8 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
         departmentId: defaultDepartmentId || user?.departmentId || '',
         pastorIds: [] as string[],
         category: 'GENERAL' as 'INFRASTRUCTURE' | 'OUTREACH' | 'TECH' | 'YOUTH' | 'GENERAL',
-        deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+        deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        budgetSource: 'DEPARTMENT'
     });
 
     useEffect(() => {
@@ -43,7 +44,8 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                 departmentId: project.departmentId,
                 pastorIds: [],
                 category: project.category || 'GENERAL',
-                deadline: project.deadline || new Date().toISOString()
+                deadline: project.deadline || new Date().toISOString(),
+                budgetSource: project.budgetSource || 'DEPARTMENT'
             });
         } else {
             setFormData({
@@ -56,7 +58,8 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                 departmentId: defaultDepartmentId || user?.departmentId || '',
                 pastorIds: [],
                 category: 'GENERAL',
-                deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+                deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                budgetSource: 'DEPARTMENT'
             });
         }
     }, [project, open, user, defaultDepartmentId]);
@@ -92,16 +95,13 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
             return;
         }
 
-        if (project) {
-            // Clean payload for UPDATE
-            const { pastorIds, progress, ...cleanUpdate } = formData;
-            mutation.mutate({ ...cleanUpdate, id: project.id });
-        } else {
-            // Clean payload for CREATE
-            const { progress, ...cleanCreate } = formData;
-            mutation.mutate(cleanCreate);
-        }
+        const { pastorIds, ...cleanPayload } = formData;
+        const finalPayload = project ? cleanPayload : { ...cleanPayload, pastorIds };
+        
+        mutation.mutate(finalPayload);
     };
+
+    const isLocked = project?.status === 'APPROVED' && user?.role === 'DEPARTMENT_LEADER';
 
     return (
         <Dialog 
@@ -120,7 +120,7 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
         >
             <form onSubmit={handleSubmit}>
                 <DialogTitle sx={{ fontWeight: '950', fontSize: '1.5rem', letterSpacing: -1 }}>
-                    {project ? 'EDIT PROJECT' : 'INITIALIZE PROJECT'}
+                    {project ? (project.status === 'APPROVED' ? 'VIEW PROJECT (LOCKED)' : 'EDIT PROJECT') : 'INITIALIZE PROJECT'}
                 </DialogTitle>
                 <DialogContent>
                     <Box display="flex" flexDirection="column" gap={3} mt={1}>
@@ -140,15 +140,37 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                             value={formData.description}
                             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                         />
+                        
                         <Box display="flex" gap={2}>
                             <TextField
-                                label="Budget ($)"
+                                label="Budget (KES)"
                                 type="number"
                                 fullWidth
                                 required
                                 value={formData.budget}
                                 onChange={(e) => setFormData({ ...formData, budget: Number(e.target.value) })}
                             />
+                            <TextField
+                                label="Budget Source"
+                                select
+                                fullWidth
+                                value={formData.budgetSource}
+                                onChange={(e) => setFormData({ ...formData, budgetSource: e.target.value })}
+                            >
+                                <MenuItem value="DEPARTMENT">Department Funds</MenuItem>
+                                <MenuItem value="CHURCH">Church Central Funds</MenuItem>
+                            </TextField>
+                        </Box>
+
+                        {formData.budgetSource === 'DEPARTMENT' && (
+                            <Box sx={{ p: 1.5, bgcolor: 'rgba(255,152,0,0.05)', border: '1px solid rgba(255,152,0,0.2)', borderRadius: 1 }}>
+                                <Typography variant="caption" fontWeight="800" color="warning.main">
+                                    NOTE: Department funded operations require a minimum balance of 1,500 KES.
+                                </Typography>
+                            </Box>
+                        )}
+
+                        <Box display="flex" gap={2}>
                             <TextField
                                 label="Strategic Category"
                                 select
@@ -276,10 +298,11 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                 </DialogContent>
                 <DialogActions sx={{ p: 4, gap: 2 }}>
                     <Button onClick={onClose} sx={{ fontWeight: 900, color: 'text.secondary' }}>ABORT</Button>
+                    <Box sx={{ flexGrow: 1 }} />
                     <Button 
                         type="submit" 
                         variant="contained" 
-                        disabled={mutation.isLoading} 
+                        disabled={mutation.isLoading || isLocked} 
                         sx={{ 
                             borderRadius: 0, 
                             fontWeight: 900, 
@@ -291,6 +314,13 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                         {project ? 'SAVE CHANGES' : 'DEPLOY PROJECT'}
                     </Button>
                 </DialogActions>
+                {project?.status === 'APPROVED' && (
+                    <Box sx={{ pb: 3, px: 4, textAlign: 'center' }}>
+                        <Typography variant="caption" color="error" fontWeight="950">
+                            MISSION CLEARED BY COMMAND. EDITING RESTRICTED.
+                        </Typography>
+                    </Box>
+                )}
             </form>
         </Dialog>
     );

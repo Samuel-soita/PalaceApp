@@ -94,6 +94,7 @@ import PlanFormModal from '../components/modals/PlanFormModal';
 import AnnouncementFormModal from '../components/modals/AnnouncementFormModal';
 import DepartmentReportModal from '../components/modals/DepartmentReportModal';
 import PermissionEnginePanel from '../components/watua/PermissionEnginePanel';
+import SyncIndicator from '../components/SyncIndicator';
 import { PermissionService } from '../lib/PermissionService';
 
 interface User {
@@ -169,7 +170,7 @@ export default function WatuaDashboard() {
     const { user: currentUser } = useAuth();
     const [tab, setTab] = useState(0);
     
-    // 🏛️ LOCAL-FIRST REACTIVE DATA KERNEL
+    // 🏛️ LOCAL-FIRST REACTIVE DATA KERNEL (Dexie — Tactical Mirror)
     const users = useLiveQuery(() => db.users.toArray()) || [];
     const projects = useLiveQuery(() => db.projects.toArray()) || [];
     const events = useLiveQuery(() => db.events.toArray()) || [];
@@ -179,12 +180,25 @@ export default function WatuaDashboard() {
     const baptisms = useLiveQuery(() => db.baptisms.toArray()) || [];
     const dedications = useLiveQuery(() => db.children.toArray()) || [];
     const repairs = useLiveQuery(() => db.repairs.toArray()) || [];
-    const supportRequests = useLiveQuery(() => db.transactions.where('type').equals('PARTNERSHIP').toArray()) || []; // Mapping to Partnership support locally
+    const supportRequests = useLiveQuery(() => db.supportRequests.toArray()) || []; // ✅ Uses dedicated offline store
     const departments = useLiveQuery(() => db.departments.toArray()) || [];
-    const trash = useLiveQuery(() => db.syncQueue.where('status').equals('FAILED').toArray()) || []; // Failed syncs as "trash/conflict" items
+    const trash = useLiveQuery(() => db.syncQueue.where('status').equals('FAILED').toArray()) || [];
     const auditLogs = useLiveQuery(() => db.auditLogs.orderBy('timestamp').reverse().toArray()) || [];
     const deviceSettings = useLiveQuery(() => db.deviceSettings.get('current_device'));
-    const flags = [] as any[]; // Feature flags can be moved to local storage if needed
+    const flags = [] as any[];
+
+    // 📡 Network state — drives the offline mission banner
+    const [isOffline, setIsOffline] = useState(!navigator.onLine);
+    useEffect(() => {
+        const goOnline = () => setIsOffline(false);
+        const goOffline = () => setIsOffline(true);
+        window.addEventListener('online', goOnline);
+        window.addEventListener('offline', goOffline);
+        return () => {
+            window.removeEventListener('online', goOnline);
+            window.removeEventListener('offline', goOffline);
+        };
+    }, []);
 
     // 📊 REAL-TIME TELEMETRY (Calculated from Local Device DB)
     const stats = useMemo(() => ({
@@ -462,6 +476,27 @@ export default function WatuaDashboard() {
                     </Button>
                 </Box>
             </Box>
+
+            {/* 🛰️ OFFLINE MISSION MODE BANNER */}
+            {isOffline && (
+                <Alert
+                    severity="warning"
+                    variant="filled"
+                    icon={<Shield size={20} />}
+                    sx={{
+                        mb: 3,
+                        bgcolor: 'rgba(234, 88, 12, 0.15)',
+                        border: '1px solid rgba(234, 88, 12, 0.4)',
+                        color: '#fb923c',
+                        fontWeight: 900,
+                        letterSpacing: '0.08em',
+                        borderRadius: 0,
+                    }}
+                    action={<SyncIndicator />}
+                >
+                    ⚡ WATUA TERMINAL IN OFFLINE MISSION MODE — ALL DATA FROM TACTICAL LOCAL KERNEL. ADMIN ACTIONS WILL BE QUEUED FOR DISPATCH UPON RECONNECT.
+                </Alert>
+            )}
 
             {/* More Actions Menu */}
             <Menu

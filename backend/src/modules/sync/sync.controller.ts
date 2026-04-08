@@ -84,18 +84,21 @@ export const getDeltaSync = async (req: any, res: Response) => {
                     break;
 
                 case 'members':
+                    // Graceful Degradation: If not a leader/admin, return empty instead of 403
+                    // to keep the PWA sync loop healthy for missions.
                     if (!isAdmin && role !== 'DEPARTMENT_LEADER') {
-                        return res.status(403).json({ error: 'Forbidden: Insufficient visibility for personnel registry.' });
+                        result = []; 
+                    } else {
+                        result = await prisma.user.findMany({
+                            where: {
+                                AND: [
+                                    { OR: [{ updatedAt: { gt: timestamp } }, { deletedAt: { gt: timestamp } }] },
+                                    effectiveDeptId ? { departmentId: effectiveDeptId as string } : {}
+                                ]
+                            },
+                            select: { id: true, name: true, membershipNumber: true, role: true, departmentId: true, status: true, updatedAt: true, deletedAt: true }
+                        });
                     }
-                    result = await prisma.user.findMany({
-                        where: {
-                            AND: [
-                                { OR: [{ updatedAt: { gt: timestamp } }, { deletedAt: { gt: timestamp } }] },
-                                effectiveDeptId ? { departmentId: effectiveDeptId as string } : {}
-                            ]
-                        },
-                        select: { id: true, name: true, membershipNumber: true, role: true, departmentId: true, status: true, updatedAt: true, deletedAt: true }
-                    });
                     break;
 
                 case 'finance':
@@ -171,32 +174,35 @@ export const getDeltaSync = async (req: any, res: Response) => {
                     break;
 
                 case 'repairs':
-                    result = await prisma.technicalRepair.findMany({
+                    result = (prisma as any).technicalRepair ? await (prisma as any).technicalRepair.findMany({
                         where: isAdmin ? {
-                            updatedAt: { gt: timestamp }
+                            OR: [{ updatedAt: { gt: timestamp } }, { deletedAt: { gt: timestamp } }]
                         } : {
                             requesterId: userId,
-                            updatedAt: { gt: timestamp }
+                            OR: [{ updatedAt: { gt: timestamp } }, { deletedAt: { gt: timestamp } }]
                         },
-                        include: { department: true, requester: true, approvals: { include: { user: true } } },
+                        include: { department: true, requester: { select: { name: true, role: true } }, approvals: { include: { user: { select: { name: true, role: true } } } } },
                         orderBy: { updatedAt: 'desc' }
-                    });
+                    }) : [];
                     break;
 
                 case 'appointments':
-                    result = await prisma.appointment.findMany({
-                        where: isAdmin ? {
-                            updatedAt: { gt: timestamp }
+                    result = (prisma as any).appointment ? await (prisma as any).appointment.findMany({
+                        where: (role === 'SUPER_ADMIN') ? {
+                            OR: [{ updatedAt: { gt: timestamp } }, { deletedAt: { gt: timestamp } }]
                         } : {
                             OR: [
                                 { memberId: userId },
-                                { targetId: userId }
+                                { targetId: userId },
+                                { targetRole: 'SUPER_ADMIN' }
                             ],
-                            updatedAt: { gt: timestamp }
+                            AND: [
+                                { OR: [{ updatedAt: { gt: timestamp } }, { deletedAt: { gt: timestamp } }] }
+                            ]
                         },
-                        include: { member: true, target: true },
+                        include: { member: { select: { name: true, role: true } }, target: { select: { name: true, role: true } } },
                         orderBy: { updatedAt: 'desc' }
-                    });
+                    }) : [];
                     break;
 
                 case 'partnerships':
@@ -218,6 +224,46 @@ export const getDeltaSync = async (req: any, res: Response) => {
                         orderBy: { updatedAt: 'desc' }
                     });
                     break;
+                
+                case 'reports':
+                    result = await prisma.departmentReport.findMany({
+                        where: isAdmin ? {
+                            OR: [{ updatedAt: { gt: timestamp } }]
+                        } : {
+                            submittedById: userId,
+                            OR: [{ updatedAt: { gt: timestamp } }]
+                        },
+                        include: { department: true, submittedBy: { select: { name: true, role: true } } },
+                        orderBy: { updatedAt: 'desc' }
+                    });
+                    break;
+
+                case 'support_requests':
+                    result = await prisma.supportRequest.findMany({
+                        where: isAdmin ? {
+                            OR: [{ updatedAt: { gt: timestamp } }]
+                        } : {
+                            requesterId: userId,
+                            OR: [{ updatedAt: { gt: timestamp } }]
+                        },
+                        include: { event: true, requester: { select: { name: true, role: true } } },
+                        orderBy: { updatedAt: 'desc' }
+                    });
+                    break;
+
+                case 'audit_logs':
+                    // Critical Watua Oversight Stream
+                    if (role === 'WATUA' || role === 'SUPER_ADMIN') {
+                        result = await prisma.auditLog.findMany({
+                            where: { createdAt: { gt: timestamp } },
+                            include: { actor: { select: { name: true, role: true } } },
+                            orderBy: { createdAt: 'desc' },
+                            take: 100 // Limit for sync performance
+                        });
+                    } else {
+                        result = [];
+                    }
+                    break;
 
                 default:
                     return res.status(400).json({ error: `Module '${module}' is not a registered sync stream.` });
@@ -238,10 +284,17 @@ export const getDeltaSync = async (req: any, res: Response) => {
 
     } catch (error: any) {
         console.error('[DELTA_SYNC_CRITICAL_FAILURE]', error);
+        
+        // Map Prisma errors to readable messages
+        let errorMessage = 'Mission synchronization failed.';
+        if (error.code === 'P2002') errorMessage = 'Sync Conflict: Unique constraint failed.';
+        if (error.code === 'P2025') errorMessage = 'Record not found for synchronization.';
+        
         res.status(500).json({ 
-            error: 'Mission synchronization failed.', 
+            error: errorMessage, 
             details: error.message,
-            code: error.code || 'UNKNOWN'
+            code: error.code || 'UNKNOWN',
+            module: req.params.module
         });
     }
 };

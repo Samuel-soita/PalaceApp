@@ -26,19 +26,20 @@ import AnnouncementFormModal from '../components/modals/AnnouncementFormModal';
 import DevotionFormModal from '../components/modals/DevotionFormModal';
 import DepartmentReportModal from '../components/modals/DepartmentReportModal';
 import ThemeFormModal from '../components/modals/ThemeFormModal';
+import { ExecutiveTaskTrack } from '../components/dashboard/ExecutiveTaskTrack';
+import { MissionAchievementTrack } from '../components/dashboard/MissionAchievementTrack';
+import AppointmentManager from '../components/dashboard/AppointmentManager';
+import BaptismManager from '../components/dashboard/BaptismManager';
+import DedicationManager from '../components/dashboard/DedicationManager';
+import PartnershipManager from '../components/dashboard/PartnershipManager';
+import { useLocalFirstDashboard } from '../hooks/useLocalFirstDashboard';
 
 export default function BishopDashboard() {
     const { user } = useAuth();
     const queryClient = useQueryClient();
     
-    // --- Data Streams ---
-    const { data: syncData, isLoading: isSyncLoading } = useQuery(['dashboard-sync'], async () => {
-        const res = await api.get('/dashboard/sync');
-        return res.data;
-    }, {
-        enabled: !!user,
-        refetchInterval: 5000,
-    });
+    // --- Data Streams (Tactical Mirror) ---
+    const { data: syncData, isLoading: isSyncLoading } = useLocalFirstDashboard();
 
     const { data: departments } = useQuery(['departments'], async () => {
         const res = await api.get('/departments');
@@ -51,6 +52,10 @@ export default function BishopDashboard() {
     const [announcementModalOpen, setAnnouncementModalOpen] = useState(false);
     const [reportModalOpen, setReportModalOpen] = useState(false);
     const [themeModalOpen, setThemeModalOpen] = useState(false);
+    const [baptismsOpen, setBaptismsOpen] = useState(false);
+    const [dedicationManagerOpen, setDedicationManagerOpen] = useState(false);
+    const [appointmentManagerOpen, setAppointmentManagerOpen] = useState(false);
+    const [partnershipManagerOpen, setPartnershipManagerOpen] = useState(false);
     const [toast, setToast] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({
         open: false,
         message: '',
@@ -195,11 +200,33 @@ export default function BishopDashboard() {
                     <Box sx={{ textAlign: 'right' }}>
                         <Typography variant="subtitle2" fontWeight="900" sx={{ opacity: 0.5 }}>OPERATIONAL STATUS</Typography>
                         <Box display="flex" alignItems="center" gap={1} justifyContent="flex-end">
-                            <span className="status-glow" />
-                            <Typography variant="h6" fontWeight="1000" sx={{ color: '#00ff00' }}>ACTIVE OVERWATCH</Typography>
+                            <span className={syncData?.isOffline ? "status-glow-warn" : "status-glow"} />
+                            <Typography variant="h6" fontWeight="1000" sx={{ color: syncData?.isOffline ? 'orange' : '#00ff00' }}>
+                                {syncData?.isOffline ? 'LOCAL TACTICAL MODE' : 'ACTIVE OVERWATCH'}
+                            </Typography>
                         </Box>
                     </Box>
                 </Box>
+
+                {/* TACTICAL STATUS BAR */}
+                {syncData?.isOffline && (
+                    <Box sx={{ mb: 4 }}>
+                        <Alert 
+                            severity="warning" 
+                            variant="filled"
+                            icon={<ShieldCheck size={20} />}
+                            sx={{ 
+                                bgcolor: 'rgba(255, 152, 0, 0.2)', 
+                                border: '1px solid orange',
+                                color: 'orange',
+                                fontWeight: 800,
+                                borderRadius: 0
+                            }}
+                        >
+                            DASHBOARD OPERATING IN OFFLINE MISSION MODE — DISPATCHING DATA FROM TACTICAL LOCAL CACHE
+                        </Alert>
+                    </Box>
+                )}
 
                 <Grid container spacing={4}>
                     {/* TOP ANALYTICS STRIP */}
@@ -251,6 +278,29 @@ export default function BishopDashboard() {
                         </Card>
                     </Grid>
                 </Grid>
+
+                {/* ── Executive Governance Tracks ── */}
+                <Box sx={{ mt: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <Box>
+                        <Typography variant="caption" fontWeight="1000" sx={{ letterSpacing: 2, color: 'var(--cyan)', mb: 2, display: 'block' }}>
+                            EXECUTIVE APPOINTMENTS & SESSIONS
+                        </Typography>
+                        <ExecutiveTaskTrack 
+                            appointments={syncData?.appointments || []} 
+                            onAction={() => setAppointmentManagerOpen(true)} 
+                        />
+                    </Box>
+                    
+                    <Box>
+                        <Typography variant="caption" fontWeight="1000" sx={{ letterSpacing: 2, color: 'var(--primary)', mb: 2, display: 'block' }}>
+                            CONGREGATIONAL MISSION ACHIEVEMENTS
+                        </Typography>
+                        <MissionAchievementTrack 
+                            baptisms={syncData?.baptisms || []} 
+                            children={syncData?.children || []} 
+                        />
+                    </Box>
+                </Box>
 
                 {/* MISSION COMMAND HUB - Creation Center */}
                 <Box sx={{ mt: 4, mb: 4 }}>
@@ -510,6 +560,11 @@ export default function BishopDashboard() {
                 onSuccess={(msg) => setToast({ open: true, message: msg, severity: 'success' })}
                 onError={(msg) => setToast({ open: true, message: msg, severity: 'error' })}
             />
+
+            <BaptismManager open={baptismsOpen} onClose={() => setBaptismsOpen(false)} />
+            <DedicationManager open={dedicationManagerOpen} onClose={() => setDedicationManagerOpen(false)} />
+            <AppointmentManager open={appointmentManagerOpen} onClose={() => setAppointmentManagerOpen(false)} />
+            <PartnershipManager open={partnershipManagerOpen} onClose={() => setPartnershipManagerOpen(false)} />
             
             <Snackbar open={toast.open} autoHideDuration={4000} onClose={() => setToast({ ...toast, open: false })} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
                 <Alert onClose={() => setToast({ ...toast, open: false })} severity={toast.severity} variant="filled" sx={{ width: '100%', borderRadius: 2 }}>{toast.message}</Alert>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
     Modal, Backdrop, Fade, Box, Typography, TextField, Button, 
-    Stack, Avatar, InputAdornment 
+    Stack, Avatar, InputAdornment, MenuItem 
 } from '@mui/material';
 import { Settings, Wrench, DollarSign } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -18,6 +18,7 @@ export default function TechnicalRepairModal({ open, onClose, departmentId, onSu
     const [instrumentName, setInstrumentName] = useState('');
     const [problemDescription, setProblemDescription] = useState('');
     const [estimatedCost, setEstimatedCost] = useState<number>(0);
+    const [budgetSource, setBudgetSource] = useState('DEPARTMENT');
     const queryClient = useQueryClient();
 
     const mutation = useMutation(async (data: any) => {
@@ -30,11 +31,12 @@ export default function TechnicalRepairModal({ open, onClose, departmentId, onSu
             setInstrumentName('');
             setProblemDescription('');
             setEstimatedCost(0);
+            setBudgetSource('DEPARTMENT');
         }
     });
 
     const handleSubmit = () => {
-        mutation.mutate({ instrumentName, problemDescription, estimatedCost, departmentId });
+        mutation.mutate({ instrumentName, problemDescription, estimatedCost, budgetSource, departmentId });
     };
 
     return (
@@ -70,16 +72,38 @@ export default function TechnicalRepairModal({ open, onClose, departmentId, onSu
                             sx={{ '& .MuiOutlinedInput-root': { borderRadius: 0, color: '#fff', '& fieldset': { borderColor: 'rgba(255,77,77,0.3)' }, '&:hover fieldset': { borderColor: '#ff4d4d' } } }}
                         />
 
-                        <TextField
-                            fullWidth label="ESTIMATED COST (KES)"
-                            type="number"
-                            value={estimatedCost}
-                            onChange={(e) => setEstimatedCost(Number(e.target.value))}
-                            InputProps={{
-                                startAdornment: <InputAdornment position="start"><DollarSign size={16} color="#ff4d4d" /></InputAdornment>,
-                            }}
-                            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 0, color: '#fff', '& fieldset': { borderColor: 'rgba(255,77,77,0.3)' }, '&:hover fieldset': { borderColor: '#ff4d4d' } } }}
-                        />
+                        <Box display="flex" gap={2}>
+                            <TextField
+                                fullWidth label="ESTIMATED COST (KES)"
+                                type="number"
+                                value={estimatedCost}
+                                onChange={(e) => setEstimatedCost(Number(e.target.value))}
+                                InputProps={{
+                                    startAdornment: <InputAdornment position="start"><DollarSign size={16} color="#ff4d4d" /></InputAdornment>,
+                                }}
+                                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 0, color: '#fff', '& fieldset': { borderColor: 'rgba(255,77,77,0.3)' }, '&:hover fieldset': { borderColor: '#ff4d4d' } } }}
+                            />
+
+                            <TextField
+                                fullWidth label="BUDGET SOURCE"
+                                select
+                                value={budgetSource}
+                                onChange={(e) => setBudgetSource(e.target.value)}
+                                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 0, color: '#fff', '& fieldset': { borderColor: 'rgba(255,77,77,0.3)' }, '&:hover fieldset': { borderColor: '#ff4d4d' } } }}
+                                SelectProps={{ MenuProps: { PaperProps: { sx: { bgcolor: '#0a0a0a', border: '1px solid #ff4d4d' } } } }}
+                            >
+                                <MenuItem value="DEPARTMENT" sx={{ color: '#fff' }}>Department Funds</MenuItem>
+                                <MenuItem value="CHURCH" sx={{ color: '#fff' }}>Church Central Funds</MenuItem>
+                            </TextField>
+                        </Box>
+
+                        {budgetSource === 'DEPARTMENT' && (
+                            <Box sx={{ p: 1.5, bgcolor: 'rgba(255,77,77,0.05)', border: '1px solid rgba(255,77,77,0.2)' }}>
+                                <Typography variant="caption" fontWeight="800" sx={{ color: '#ff4d4d' }}>
+                                    NOTE: Department funded operations require a minimum balance of 1,500 KES.
+                                </Typography>
+                            </Box>
+                        )}
 
                         <TextField
                             fullWidth multiline rows={4}

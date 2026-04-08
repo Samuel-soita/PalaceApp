@@ -1,12 +1,13 @@
 import { Request, Response } from 'express';
+import { AuthRequest } from '../../middleware/auth.middleware.js';
 import prisma from '../../utils/prisma.js';
 import { logAction } from '../../utils/audit.service.js';
 import { findTargetDepartmentId } from '../../utils/department-mapper.js';
 import redis, { getCachedData, setCachedData, invalidateCache } from '../../utils/redis.js';
 
-export const registerChild = async (req: any, res: Response) => {
+export const registerChild = async (req: AuthRequest, res: Response) => {
     const { name, dob, gender, branch = 'HQ', isDedicated = false, dedicationCardNumber = null } = req.body;
-    const parentId = req.user.id;
+    const parentId = req.user!.id;
 
     if (!name || !dob || !gender) {
         return res.status(400).json({ error: 'Name, Date of Birth, and Gender are required.' });
@@ -80,10 +81,13 @@ export const registerChild = async (req: any, res: Response) => {
     }
 };
 
-export const getMyChildren = async (req: any, res: Response) => {
+export const getMyChildren = async (req: AuthRequest, res: Response) => {
     try {
         const children = await prisma.child.findMany({
-            where: { parentId: req.user.id },
+            where: { 
+                parentId: req.user!.id,
+                deletedAt: null // MISSION INTEGRITY: Exclude soft-deleted
+            },
             include: { department: true }
         });
         res.json(children);
@@ -92,9 +96,9 @@ export const getMyChildren = async (req: any, res: Response) => {
     }
 };
 
-export const getAllChildren = async (req: any, res: Response) => {
+export const getAllChildren = async (req: AuthRequest, res: Response) => {
     // Only high roles
-    if (!['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA', 'PASTOR', 'DEPARTMENT_LEADER'].includes(req.user.role)) {
+    if (!['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA', 'PASTOR', 'ASSOCIATE_PASTOR', 'DEPARTMENT_LEADER'].includes(req.user!.role)) {
         return res.status(403).json({ error: 'Unauthorized.' });
     }
 
@@ -108,15 +112,15 @@ export const getAllChildren = async (req: any, res: Response) => {
         // Skip cache for pastors to ensure they see real-time assignments
         if (cachedData && (req.user as any).role !== 'PASTOR') return res.json(cachedData);
 
-        const where: any = {};
+        const where: any = { deletedAt: null }; // GLOBAL EXCLUSION OF SOFT-DELETED
         
-        // 🔒 PASTORAL SCOPING: Only see assigned children OR unassigned pending dedications
-        if ((req.user as any).role === 'PASTOR' || (req.user as any).role === 'ASSOCIATE_PASTOR') {
+        // 🔒 PASTORAL SCOPING: Only see assigned children OR unassigned dedication pipeline
+        if (req.user!.role === 'PASTOR' || req.user!.role === 'ASSOCIATE_PASTOR') {
             where.OR = [
-                { assignedPastorId: (req.user as any).id },
+                { assignedPastorId: req.user!.id },
                 { 
                     assignedPastorId: null,
-                    workflowStatus: 'PENDING_DEDICATION'
+                    workflowStatus: { in: ['PENDING_DEDICATION', 'ADMIN_PAYMENT_VERIFICATION', 'BISHOP_RITE_PENDING'] }
                 }
             ];
         }

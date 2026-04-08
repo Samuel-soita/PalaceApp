@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { AuthRequest } from '../../middleware/auth.middleware.js';
 import prisma from '../../utils/prisma.js';
 import { logAction } from '../../utils/audit.service.js';
 import { hasPermission } from '../../utils/permissions.js';
@@ -10,9 +11,9 @@ import { WorkflowEngine } from '../../utils/WorkflowEngine.js';
  */
 
 // Member requests baptism
-export const requestBaptism = async (req: any, res: Response) => {
+export const requestBaptism = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user!.id;
         
         // Members can only have one active baptism request
         const existing = await prisma.baptism.findFirst({
@@ -32,7 +33,7 @@ export const requestBaptism = async (req: any, res: Response) => {
 
         await logAction({
             actorId: userId,
-            actorRole: req.user.role,
+            actorRole: req.user!.role,
             actionType: 'BAPTISM_REQUESTED',
             entityType: 'BAPTISM',
             entityId: baptism.id,
@@ -48,12 +49,12 @@ export const requestBaptism = async (req: any, res: Response) => {
 };
 
 // Admin/Pastor/Bishop updates status
-export const updateBaptismStatus = async (req: any, res: Response) => {
+export const updateBaptismStatus = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
         const { status, notes, recordedAt, plannedDate, plannedTime, baptismCardNumber, isPaid, paymentReference } = req.body;
-        const actorId = req.user.id;
-        const actorRole = req.user.role;
+        const actorId = req.user!.id;
+        const actorRole = req.user!.role;
 
         // Fetch current status to validate transition
         const current = await prisma.baptism.findUnique({ 
@@ -132,12 +133,13 @@ export const updateBaptismStatus = async (req: any, res: Response) => {
 };
 
 // View all baptisms (for admins/leaders) or own baptisms (for members)
-export const getBaptisms = async (req: any, res: Response) => {
+export const getBaptisms = async (req: AuthRequest, res: Response) => {
     try {
-        const { role, id: userId } = req.user;
+        const { role, id: userId } = req.user!;
         const isMember = role === 'MEMBER';
 
-        const whereClause = isMember ? { userId } : {};
+        const whereClause: any = isMember ? { userId } : {};
+        whereClause.deletedAt = null; // MISSION INTEGRITY
         
         const baptisms = await prisma.baptism.findMany({
             where: whereClause,
@@ -158,12 +160,12 @@ export const getBaptisms = async (req: any, res: Response) => {
  * New Statuses: PENDING_DEDICATION -> ADMIN_PAYMENT_VERIFICATION -> BISHOP_RITE_PENDING -> DEDICATED
  */
 
-export const updateChildDedicationStatus = async (req: any, res: Response) => {
+export const updateChildDedicationStatus = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
         const { workflowStatus, plannedDate, plannedTime, dedicationCardNumber, isDedicationPaid, dedicationPaymentReference } = req.body;
-        const actorId = req.user.id;
-        const actorRole = req.user.role;
+        const actorId = req.user!.id;
+        const actorRole = req.user!.role;
 
         const current = await prisma.child.findUnique({ 
             where: { id },

@@ -43,10 +43,12 @@ export class TelemetryEngine {
         }
 
         // 3. Count Failed Jobs
-        const failedJobs = await prisma.jobQueue.count({ where: { status: 'FAILED' } });
+        // 3. Count Failed Jobs
+        const failedJobs = (prisma as any).jobQueue?.count ? await (prisma as any).jobQueue.count({ where: { status: 'FAILED' } }) : 0;
 
         // 4. Count Pending WATUA actions
-        const pendingApproval = await prisma.watuaActionLog.count({ where: { executed: false } });
+        // 4. Count Pending WATUA actions
+        const pendingApproval = (prisma as any).watuaActionLog?.count ? await (prisma as any).watuaActionLog.count({ where: { executed: false } }) : 0;
 
         const metrics = {
             latency: parseFloat(latency.toFixed(2)),
@@ -60,17 +62,23 @@ export class TelemetryEngine {
             timestamp: new Date().toISOString()
         };
 
-        // 5. Fire to database for historical charting
-        await prisma.systemMetric.create({
-            data: {
-                latency: metrics.latency,
-                activeUsers: metrics.activeUsers,
-                errorCount: metrics.errorCount,
-                failedJobs: metrics.failedJobs,
-                wsConnections: metrics.wsConnections,
-                pendingApproval: metrics.pendingApproval
+        // 5. Fire to database for historical charting (failure-safe)
+        if ((prisma as any).systemMetric?.create) {
+            try {
+                await (prisma as any).systemMetric.create({
+                    data: {
+                        latency: metrics.latency,
+                        activeUsers: metrics.activeUsers,
+                        errorCount: metrics.errorCount,
+                        failedJobs: metrics.failedJobs,
+                        wsConnections: metrics.wsConnections,
+                        pendingApproval: metrics.pendingApproval
+                    }
+                });
+            } catch (err) {
+                console.warn('[TelemetryEngine] Failed to persist historical metrics:', err instanceof Error ? err.message : String(err));
             }
-        });
+        }
 
         // 6. Push via WebSockets to 'watua_dash' room
         emitToRoom('watua_dash', 'system_telemetry', metrics);

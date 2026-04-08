@@ -20,11 +20,12 @@ import { useRoutePreloader } from '../../hooks/useRoutePreloader';
 import SyncIndicator from '../SyncIndicator';
 import { usePWA } from '../../hooks/usePWA';
 import InstallAppModal from '../modals/InstallAppModal';
+import { db } from '../../lib/db';
 
 
 // Base items for admin roles
 const adminNavItems = [
-    { name: 'EXECUTIVE PALACE', href: '/', icon: LayoutDashboard },
+    { name: 'EXECUTIVE PALACE', href: '/executive', icon: LayoutDashboard },
     { name: 'Announcements', href: '/announcements', icon: Bell },
     { name: 'Events', href: '/calendar', icon: Calendar },
     { name: 'Support', href: '/support', icon: Coins },
@@ -69,7 +70,7 @@ export default function TopNavbar() {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Perform search
+    // Perform search (Tactical Local Fallback)
     useEffect(() => {
         const delaySearch = setTimeout(async () => {
             if (searchQuery.trim().length > 2) {
@@ -78,7 +79,17 @@ export default function TopNavbar() {
                     setSearchResults(res.data);
                     setSearchOpen(true);
                 } catch (error) {
-                    console.error("Search failed:", error);
+                    console.warn("[Palace-Sync] Network search failed, activating Tactical Local Search.");
+                    
+                    const q = searchQuery.toLowerCase();
+                    const [p, e, a] = await Promise.all([
+                        db.projects.filter((x: any) => x.title.toLowerCase().includes(q) || x.description?.toLowerCase().includes(q)).toArray(),
+                        db.events.filter((x: any) => x.title.toLowerCase().includes(q) || x.location?.toLowerCase().includes(q)).toArray(),
+                        db.announcements.filter((x: any) => x.title.toLowerCase().includes(q) || x.content?.toLowerCase().includes(q)).toArray()
+                    ]);
+
+                    setSearchResults({ projects: p, events: e, announcements: a });
+                    setSearchOpen(true);
                 }
             } else {
                 setSearchResults(null);
@@ -116,8 +127,8 @@ export default function TopNavbar() {
         ? memberNavItems 
         : (user?.role === 'SUPER_ADMIN' 
             ? [...adminNavItems, { name: 'MISSION COMMAND', href: '/bishop', icon: Shield }]
-            : (isPastor || isDeptLeader 
-                ? [{ name: 'EXECUTIVE PALACE', href: '/', icon: LayoutDashboard }]
+            : (user?.role === 'SUPER_ADMIN' || user?.role === 'SYSTEM_ADMIN' || user?.role === 'DEPARTMENT_LEADER'
+                ? [{ name: 'EXECUTIVE PALACE', href: '/executive', icon: LayoutDashboard }]
                 : adminNavItems));
 
     // Everything shows in the drawer
@@ -128,7 +139,7 @@ export default function TopNavbar() {
               { name: 'My Profile', href: '/profile', icon: UserCheck },
           ]
         : [
-              { name: isPastor ? 'PASTORAL PALACE' : 'EXECUTIVE PALACE', href: '/', icon: LayoutDashboard },
+            { name: isPastor ? 'PASTORAL PALACE' : 'EXECUTIVE PALACE', href: '/executive', icon: LayoutDashboard },
               ...(user?.role === 'SUPER_ADMIN' ? [{ name: 'MISSION COMMAND', href: '/bishop', icon: Shield }] : []),
               ...(isHighAdmin ? [
                   { name: 'Departments', href: '/departments', icon: Users },
@@ -137,7 +148,9 @@ export default function TopNavbar() {
                   { name: 'Plans', href: '/plans', icon: ClipboardList },
                   { name: 'Announcements', href: '/announcements', icon: Bell },
                   { name: 'Support Hub', href: '/support', icon: Coins }
-              ] : []),
+              ] : (isDeptLeader ? [
+                   { name: 'MASTER OPERATIONS TRACK', href: '/executive', icon: Shield }
+               ] : [])),
               { name: 'Register Child', href: '/register-child', icon: Baby },
           ];
 

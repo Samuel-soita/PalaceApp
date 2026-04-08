@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import * as process from 'node:process';
+import { seedPermissions } from '../src/utils/seed-permissions.js';
 
 const prisma = new PrismaClient();
 
@@ -54,6 +55,10 @@ function getDepartmentNameByDob(dob: Date, gender: string): string {
 async function main() {
     console.log('🚀 INITIALIZING GLOBAL MISSION INFRASTRUCTURE SEED...');
 
+    // 0. SEED PERMISSIONS FIRST
+    console.log('🧱 Bootstrapping Permission Engine...');
+    await seedPermissions();
+
     // 1. CLEAR DATA (REVERSED FK ORDER)
     console.log('🧹 Purging legacy records...');
     const tables = [
@@ -61,9 +66,10 @@ async function main() {
         'announcementApproval', 'eventApproval', 'projectApproval', 
         'planApproval', 'meetingApproval', 'devotionInteraction', 
         'auditLog', 'baptism', 'appointment', 'partnershipLedger', 'partnership', 
-        'account', 'projectUpdate', 'volunteer', 'child', 
+        'account', 'projectUpdate', 'child', 
         'announcement', 'event', 'project', 'plan', 'meeting', 
         'budgetContributor', 'budget',
+        'repairApproval', 'technicalRepair', 'watuaActionLog', 'departmentReport', 'jobQueue', 'permissionOverride',
         'user', 'department', 'devotion', 'affirmation', 'ministrySettings',
         'featureFlag'
     ];
@@ -77,8 +83,7 @@ async function main() {
         data: {
             id: 'GLOBAL',
             themeOfYear: 'YEAR OF DIVINE ESTABLISHMENT',
-            themeOfMonth: 'MONTH OF NEW BEGINNINGS',
-            churchBudget: 1500000
+            themeOfMonth: 'MONTH OF NEW BEGINNINGS'
         }
     });
 
@@ -190,19 +195,26 @@ async function main() {
         });
         assocPastors.push(ap);
 
-        // Seed Pastor Module Access (Randomly assign 2-3 modules)
-        const modules = ['MemberRegistration', 'ChildDedication', 'PartnershipManagement', 'DevotionPublishing', 'EventOversight'];
-        const assigned = modules.sort(() => 0.5 - Math.random()).slice(0, 3);
-        for (const mod of assigned) {
+        // Seed Pastor Module Access (Baseline + Randomly assign 2-3 extra modules)
+        const baselineModules = [
+            'Child Dedication Registry',
+            'Partnership Management',
+            'Event Oversight',
+            'DevotionPublishing',
+            'Project Oversight'
+        ];
+        
+        for (const mod of baselineModules) {
             await (prisma as any).pastorModuleAccess.create({
                 data: {
                     pastorId: ap.id,
                     moduleKey: mod,
-                    permissions: { read: true, write: true, approve: Math.random() > 0.5 }
+                    permissions: ['READ', 'WRITE', 'EXECUTE']
                 }
             });
         }
     }
+
 
     // LEADERS (50 Leaders distributed across departments)
     console.log('🛡️ Appointing 50 Departmental Leaders & Sub-Leaders...');
@@ -383,7 +395,7 @@ async function main() {
                 departmentId: d.id,
                 title: `2026 ${d.name} Tactical Roadmap`,
                 type: 'YEARLY',
-                description: `Strategic planning for the ${d.name} sector.`,
+                content: `Strategic planning for the ${d.name} sector.`,
                 approvalStatus: 'APPROVED'
             }
         });
@@ -588,6 +600,20 @@ async function main() {
     console.log(`- Devotions/Affirmations: ${await prisma.devotion.count()} (Target 400+)`);
     console.log(`- Children: ${await prisma.child.count()}`);
     console.log('⚡ Environment ready for production-level verification.');
+    
+    console.log('\n=============================================================');
+    console.log('  DASHBOARD LOGIN CREDENTIALS GUIDE (FULL APP CAPTURE)  ');
+    console.log('=============================================================');
+    console.log('To access the full app dashboards, use the following Membership Cards:');
+    console.log('');
+    console.log('🛡️  WATUA DASHBOARD          -> Membership Card: WATUA-001');
+    console.log('👑  BISHOP DASHBOARD         -> Membership Card: 001/001/2026');
+    console.log('📊  ADMIN / EXECUTIVE DASH   -> Membership Card: 005/001/2026');
+    console.log('📝  SECRETARY DASHBOARD      -> Membership Card: 003/001/2026');
+    console.log('✝️   PASTOR DASHBOARD         -> Membership Card: 101/001/2026');
+    console.log('💼  DEPARTMENT LEADER DASH   -> Membership Card: 201/001/2026');
+    console.log('👥  MEMBER PORTAL            -> Membership Card: 302/001/2026');
+    console.log('=============================================================\n');
 }
 
 main()

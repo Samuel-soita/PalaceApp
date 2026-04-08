@@ -48,9 +48,15 @@ export async function processSyncDaemon() {
                 }
             };
 
+            // Load user to check permissions
+            const userStr = localStorage.getItem('user');
+            const user = userStr ? JSON.parse(userStr) : null;
+            const isAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA', 'PASTOR'].includes(user?.role);
+            const isLeader = user?.role === 'DEPARTMENT_LEADER';
+
             const results = await Promise.all([
                 syncModule('/sync/events', db.events),
-                syncModule('/sync/members', db.users),
+                (isAdmin || isLeader) ? syncModule('/sync/members', db.users) : Promise.resolve(true),
                 syncModule('/departments', db.departments, true),
                 syncModule('/sync/projects', db.projects),
                 syncModule('/sync/plans', db.plans),
@@ -63,7 +69,10 @@ export async function processSyncDaemon() {
                 syncModule('/sync/finance', db.transactions),
                 syncModule('/sync/repairs', db.repairs),
                 syncModule('/sync/appointments', db.appointments),
-                syncModule('/sync/partnerships', db.partnerships)
+                syncModule('/sync/partnerships', db.partnerships),
+                syncModule('/sync/reports', db.reports),
+                syncModule('/sync/support_requests', db.supportRequests),
+                (user?.role === 'WATUA' || user?.role === 'SUPER_ADMIN') ? syncModule('/sync/audit_logs', db.auditLogs) : Promise.resolve(true)
             ]);
 
             // Only update sync timestamp if at least one core module succeeded
@@ -139,7 +148,10 @@ export async function processSyncDaemon() {
                     'APPOINTMENT': db.appointments,
                     'PARTNERSHIP': db.partnerships,
                     'PARTNERSHIP_LEDGER': db.partnershipLedgers,
-                    'AUDIT_LOG': db.auditLogs
+                    'AUDIT_LOG': db.auditLogs,
+                    'REPORT': db.reports,
+                    'SUPPORT_REQUEST': db.supportRequests,
+                    'USER': db.users // For promoting/demoting
                 };
 
                 const table = tableMap[job.entity];
@@ -190,7 +202,7 @@ export async function processSyncDaemon() {
                     window.dispatchEvent(new CustomEvent('pwa-conflict-detected', {
                         detail: { action: job, serverData: pushErr.response.data }
                     }));
-                } else if (status >= 500 || !status) {
+                } else if (status >= 500 || status === 429 || !status) {
                     // RETRYABLE ERROR
                     const nextRetryCount = job.retryCount + 1;
                     if (nextRetryCount < (job.maxRetries ?? 10)) {

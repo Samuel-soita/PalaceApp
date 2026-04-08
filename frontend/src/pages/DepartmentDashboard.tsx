@@ -7,7 +7,8 @@ import {
     Avatar, Skeleton, useMediaQuery, useTheme, Modal, Backdrop, Fade, Stack, Snackbar, Alert, Container
 } from '@mui/material';
 import {
-    Calendar, Briefcase, Sparkles, ThumbsUp, Smile, Heart, FileText, Bell, Megaphone, Star, BookOpen, Settings
+    Calendar, Briefcase, Sparkles, ThumbsUp, Smile, Heart, FileText, Bell, Megaphone, Star, BookOpen, Settings,
+    Baby, Droplet
 } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
@@ -23,6 +24,9 @@ import DepartmentReportModal from '../components/modals/DepartmentReportModal';
 import TechnicalRepairModal from '../components/modals/TechnicalRepairModal';
 import MissionReportsViewer from '../components/dashboard/MissionReportsViewer';
 import FinancialLedger from '../components/dashboard/FinancialLedger';
+import RequestBaptismModal from '../components/modals/RequestBaptismModal';
+import { useLocalFirstDashboard } from '../hooks/useLocalFirstDashboard';
+import SyncIndicator from '../components/SyncIndicator';
 
 export default function DepartmentDashboard() {
     const { id } = useParams();
@@ -59,6 +63,8 @@ export default function DepartmentDashboard() {
     const [reportModalOpen, setReportModalOpen] = useState(false);
     const [repairModalOpen, setRepairModalOpen] = useState(false);
     const [enrollModalOpen, setEnrollModalOpen] = useState(false);
+    const [baptismModalOpen, setBaptismModalOpen] = useState(false);
+    const [appointmentModalOpen, setAppointmentModalOpen] = useState(false);
     const [enrollAmount, setEnrollAmount] = useState<number>(700);
     const [toast, setToast] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({
         open: false, message: '', severity: 'info'
@@ -66,10 +72,8 @@ export default function DepartmentDashboard() {
 
     const isReady = !!effectiveId && effectiveId !== 'undefined';
 
-    const { data: syncData, isLoading: isSyncLoading } = useQuery(['dashboard-sync', effectiveId], async () => {
-        const res = await api.get('/dashboard/sync', { params: { departmentId: effectiveId } });
-        return res.data;
-    }, { enabled: isReady, refetchInterval: 10000 });
+    // --- Data Streams (Tactical Local Mirror) ---
+    const { data: syncData, isLoading: isSyncLoading } = useLocalFirstDashboard(effectiveId);
 
     const { data: devotion, isLoading: isDevotionLoading } = useQuery(['daily-devotion'], async () => {
         const res = await api.get('/devotions/daily');
@@ -92,6 +96,20 @@ export default function DepartmentDashboard() {
             },
             onError: (err: any) => {
                 setToast({ open: true, message: err.response?.data?.error || 'Enrollment failed.', severity: 'error' });
+            }
+        }
+    );
+
+    const createAppointmentMutation = useMutation(
+        async (data: { targetRole: string, type: string, reason: string, preferredDate: string, preferredTime: string }) => 
+            api.post('/appointments', data),
+        {
+            onSuccess: () => {
+                setAppointmentModalOpen(false);
+                setToast({ open: true, message: 'Appointment request submitted to the Administrator.', severity: 'success' });
+            },
+            onError: (err: any) => {
+                setToast({ open: true, message: err.response?.data?.error || 'Failed to submit request.', severity: 'error' });
             }
         }
     );
@@ -187,21 +205,59 @@ export default function DepartmentDashboard() {
                                 sx={{ bgcolor: 'rgba(255, 165, 0, 0.1)', color: 'orange', fontWeight: 950, borderRadius: 0, border: '1px solid rgba(255, 165, 0, 0.3)', '.MuiChip-icon': { color: 'orange' } }} 
                             />
                         )}
-                    </Box>
-
-                    <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
-                        <Chip 
-                            label={`YEAR: ${settings?.themeOfYear || 'YEAR OF DIVINE ESTABLISHMENT'}`} 
-                            size="small" 
-                            sx={{ bgcolor: 'rgba(79, 139, 255, 0.1)', color: 'var(--primary)', fontWeight: 900, borderRadius: 0 }} 
-                        />
-                        <Chip 
-                            label={`MONTH: ${settings?.themeOfMonth || 'MONTH OF NEW BEGINNINGS'}`} 
-                            size="small" 
-                            sx={{ bgcolor: 'rgba(0, 180, 216, 0.1)', color: 'var(--cyan)', fontWeight: 900, borderRadius: 0 }} 
-                        />
+                        {syncData?.isOffline && (
+                            <Chip 
+                                label="LOCAL TACTICAL MODE" 
+                                color="warning" 
+                                size="small" 
+                                sx={{ fontWeight: 900, borderRadius: 0, animation: 'pulse 2s infinite' }} 
+                            />
+                        )}
                     </Box>
                 </Box>
+
+                {/* TACTICAL STATUS BAR */}
+                {syncData?.isOffline && (
+                    <Box sx={{ mb: 4 }}>
+                        <Alert 
+                            severity="warning" 
+                            variant="filled"
+                            sx={{ 
+                                bgcolor: 'rgba(255, 152, 0, 0.2)', 
+                                border: '1px solid orange',
+                                color: 'orange',
+                                fontWeight: 800,
+                                borderRadius: 0
+                            }}
+                        >
+                            SECTORAL COMMAND OPERATING IN OFFLINE MISSION MODE — DATA DISPATCHED FROM LOCAL TACTICAL CACHE
+                        </Alert>
+                    </Box>
+                )}
+
+                <Box sx={{ mb: 4, display: 'flex', justifyContent: 'flex-end' }}>
+                    <SyncIndicator />
+                </Box>
+                
+                {/* 📊 MISSION TELEMETRY (Operational Status Counts) */}
+                <Grid container spacing={2} sx={{ mb: 4 }}>
+                    {[
+                        { label: 'PROJECTS', count: projects.length, color: 'var(--cyan)', icon: Briefcase },
+                        { label: 'EVENTS', count: events.length, color: 'var(--primary)', icon: Calendar },
+                        { label: 'PLANS', count: plans.length, color: 'var(--cyan)', icon: Star },
+                        { label: 'REPORTS', count: syncData?.reports?.length || 0, color: 'var(--primary)', icon: FileText },
+                        { label: 'PENDING BROADCASTS', count: announcements.filter((a: any) => a.status === 'PENDING').length, color: 'var(--orange)', icon: Megaphone },
+                        { label: 'REPAIR REQUESTS', count: syncData?.repairs?.length || 0, color: '#ff4d4d', icon: Settings },
+                    ].map((m, i) => (
+                        <Grid item xs={6} md={2} key={i}>
+                            <Card className="holographic-card" sx={{ textAlign: 'center', p: 1.5, border: '1px solid var(--glass-border)' }}>
+                                <m.icon size={16} color={m.color} style={{ marginBottom: 4 }} />
+                                <Typography variant="h5" fontWeight="1000" sx={{ mb: -0.5 }}>{m.count}</Typography>
+                                <Typography variant="caption" sx={{ fontWeight: 900, opacity: 0.6, fontSize: '0.6rem' }}>{m.label}</Typography>
+                            </Card>
+                        </Grid>
+                    ))}
+                </Grid>
                 
                 {/* 📊 SECTORAL STRENGTH - Removed from Frontend for Security Hardening */}
 
@@ -268,6 +324,32 @@ export default function DepartmentDashboard() {
                                 </CardContent>
                             </Card>
 
+                            {/* PERSONAL MISSIONS GRID */}
+                            <Box sx={{ mb: 2 }}>
+                                <Typography variant="caption" fontWeight="900" sx={{ letterSpacing: 2, color: 'primary.main', mb: 2, display: 'block', textAlign: 'center' }}>PERSONAL FAMILY MISSIONS</Typography>
+                                <Grid container spacing={2}>
+                                    {[
+                                        { label: 'REGISTER CHILD', icon: Baby, color: 'cyan', href: '/register-child' },
+                                        { label: 'BAPTISM REQ', icon: Droplet, color: 'info', onClick: () => setBaptismModalOpen(true) },
+                                        { label: 'MAKE APPOINTMENT', icon: Calendar, color: 'primary', onClick: () => setAppointmentModalOpen(true) },
+                                    ].map((action, i) => (
+                                        <Grid item xs={12} sm={4} key={i}>
+                                            <Button fullWidth component={action.href ? Link : 'button'} {...(action.href ? { to: action.href } : { onClick: action.onClick })}
+                                                className="holographic-card"
+                                                sx={{ 
+                                                    height: 90, display: 'flex', flexDirection: 'column', gap: 1, 
+                                                    border: '1px solid var(--glass-border)', borderRadius: 0, color: 'white',
+                                                    '&:hover': { bgcolor: 'rgba(0,255,255,0.05)', borderColor: 'var(--cyan)', transform: 'translateY(-2px)' }
+                                                }}
+                                            >
+                                                <action.icon size={20} color={`var(--${action.color})`} />
+                                                <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>{action.label}</Typography>
+                                            </Button>
+                                        </Grid>
+                                    ))}
+                                </Grid>
+                            </Box>
+
                             {/* TACTICAL PROGRESSION GRID */}
                             <Box>
                                 <Typography variant="caption" fontWeight="900" sx={{ letterSpacing: 2, color: 'var(--cyan)', mb: 2, display: 'block', textAlign: 'center' }}>TACTICAL MISSIONS</Typography>
@@ -325,6 +407,28 @@ export default function DepartmentDashboard() {
                     {/* RIGHT COLUMN (5): OPERATIONS & GLOBAL INTELLIGENCE */}
                     <Grid item xs={12} lg={5}>
                         <Stack spacing={4}>
+                            {/* PARTNER CTA - Apex Right Column Stack */}
+                            <Card className="holographic-card" sx={{ borderRadius: 0, border: '1px solid rgba(255, 165, 0, 0.4)', background: 'rgba(255, 165, 0, 0.05)' }}>
+                                <CardContent sx={{ p: 3 }}>
+                                    <Box display="flex" alignItems="center" gap={2} mb={1}>
+                                        <Avatar sx={{ bgcolor: 'orange', width: 32, height: 32 }}><Star size={16} /></Avatar>
+                                        <Typography variant="caption" fontWeight="900" sx={{ color: 'orange' }}>PARTNERSHIP VISION</Typography>
+                                    </Box>
+                                    <Typography variant="subtitle2" fontWeight="950" sx={{ mb: 1 }}>BECOME A PRAYER PALACE PARTNER</Typography>
+                                    <Typography variant="caption" sx={{ opacity: 0.6, fontStyle: 'italic', fontWeight: 700, display: 'block', mb: 2 }}>
+                                        &quot;Partnering with Prayer Palace Apostolic Ministry for Global impact by making sure the church Budget is met&quot;
+                                    </Typography>
+                                    <Button 
+                                        startIcon={<Star size={12} />} 
+                                        variant="outlined" 
+                                        fullWidth 
+                                        size="small" 
+                                        onClick={() => setEnrollModalOpen(true)}
+                                        sx={{ borderColor: 'orange', color: 'orange', fontWeight: 900, borderRadius: 0, fontSize: '0.65rem', '&:hover': { bgcolor: 'orange', color: 'black' } }}
+                                    > ENROLL IN PARTNERSHIP </Button>
+                                </CardContent>
+                            </Card>
+
                             {/* LATEST CHURCH INTEL - Unified Card Structure */}
                             <Card className="holographic-card" sx={{ p: 0, borderRadius: 0 }}>
                                 <CardContent sx={{ p: 3 }}>
@@ -335,11 +439,11 @@ export default function DepartmentDashboard() {
                                     <Stack spacing={2}>
                                         {(() => {
                                             const globalIntel = [
-                                                ...(announcements || []).filter((a: any) => a.isGlobal).map((a: any) => ({ ...a, intelType: 'CHURCH UPDATE', icon: Megaphone, color: 'cyan' })),
-                                                ...(events || []).filter((e: any) => e.isMajor).map((e: any) => ({ ...e, intelType: 'MAJOR EVENT', icon: Calendar, color: 'primary' })),
-                                                ...(projects || []).filter((p: any) => p.isMajor).map((p: any) => ({ ...p, intelType: 'STRATEGIC PROJECT', icon: Star, color: 'cyan' })),
-                                                ...(plans || []).filter((p: any) => p.isMajor).map((p: any) => ({ ...p, intelType: 'MINISTRY PLAN', icon: BookOpen, color: 'orange' })),
-                                            ].sort((a,b) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime()).slice(0, 10);
+                                                ...(announcements || []).map((a: any) => ({ ...a, intelType: a.departmentId ? 'DEPT BROADCAST' : 'CHURCH UPDATE', icon: Megaphone, color: a.status === 'PENDING' ? 'orange' : 'cyan' })),
+                                                ...(events || []).map((e: any) => ({ ...e, intelType: e.isMajor ? 'MAJOR EVENT' : 'DEPT EVENT', icon: Calendar, color: 'primary' })),
+                                                ...(projects || []).map((p: any) => ({ ...p, intelType: p.isMajor ? 'STRATEGIC PROJECT' : 'DEPT PROJECT', icon: Star, color: 'cyan' })),
+                                                ...(plans || []).map((p: any) => ({ ...p, intelType: 'MINISTRY PLAN', icon: BookOpen, color: 'orange' })),
+                                            ].sort((a,b) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime()).slice(0, 15);
 
                                             if (globalIntel.length === 0) return <Typography variant="caption" sx={{ textAlign: 'center', opacity: 0.3, py: 4, fontWeight: 900 }}>NO GLOBAL INTEL REPORTED</Typography>;
 
@@ -348,9 +452,11 @@ export default function DepartmentDashboard() {
                                                     <CardContent sx={{ p: 2 }}>
                                                         <Box display="flex" alignItems="center" gap={1} mb={0.5}>
                                                             <intel.icon size={12} color={`var(--${intel.color})`} />
-                                                            <Typography variant="caption" fontWeight="950" sx={{ color: `var(--${intel.color})` }}>{intel.intelType}</Typography>
+                                                            <Typography variant="caption" fontWeight="950" sx={{ color: `var(--${intel.color})` }}>
+                                                                {intel.intelType} {intel.status === 'PENDING' && '· PENDING'}
+                                                            </Typography>
                                                         </Box>
-                                                        <Typography variant="subtitle2" fontWeight="950" sx={{ lineHeight: 1.2 }}>{intel.title?.toUpperCase()}</Typography>
+                                                        <Typography variant="subtitle2" fontWeight="950" sx={{ lineHeight: 1.2, color: intel.status === 'PENDING' ? 'orange' : 'white' }}>{intel.title?.toUpperCase()}</Typography>
                                                         <Box display="flex" justifyContent="space-between" alignItems="center" mt={1}>
                                                             <Typography variant="caption" sx={{ opacity: 0.4, fontSize: '0.6rem', fontWeight: 700 }}>{intel.createdAt || intel.date ? new Date(intel.createdAt || intel.date).toLocaleDateString() : "N/A"}</Typography>
                                                             <Button size="small" sx={{ p: 0, minWidth: 0, color: 'var(--cyan)', fontWeight: 900, fontSize: '0.65rem', '&:hover': { color: 'white' } }}>DETAILS</Button>
@@ -386,28 +492,6 @@ export default function DepartmentDashboard() {
                                             color: 'orange', fontWeight: 900, '&:hover': { bgcolor: 'rgba(255,165,0,0.2)', transform: 'translateY(-2px)', borderColor: '#fff' } 
                                         }}
                                     > BROADCAST ALERT </Button>
-                                </CardContent>
-                            </Card>
-
-                            {/* PARTNER CTA - Right Column Sidebar as well */}
-                            <Card className="holographic-card" sx={{ borderRadius: 0, border: '1px solid rgba(255, 165, 0, 0.4)', background: 'rgba(255, 165, 0, 0.05)' }}>
-                                <CardContent sx={{ p: 3 }}>
-                                    <Box display="flex" alignItems="center" gap={2} mb={1}>
-                                        <Avatar sx={{ bgcolor: 'orange', width: 32, height: 32 }}><Star size={16} /></Avatar>
-                                        <Typography variant="caption" fontWeight="900" sx={{ color: 'orange' }}>PARTNERSHIP VISION</Typography>
-                                    </Box>
-                                    <Typography variant="subtitle2" fontWeight="950" sx={{ mb: 1 }}>BECOME A PRAYER PALACE PARTNER</Typography>
-                                    <Typography variant="caption" sx={{ opacity: 0.6, fontStyle: 'italic', fontWeight: 700, display: 'block', mb: 2 }}>
-                                        &quot;Partnering with Prayer Palace Apostolic Ministry for Global impact by making sure the church Budget is met&quot;
-                                    </Typography>
-                                    <Button 
-                                        startIcon={<Star size={12} />} 
-                                        variant="outlined" 
-                                        fullWidth 
-                                        size="small" 
-                                        onClick={() => setEnrollModalOpen(true)}
-                                        sx={{ borderColor: 'orange', color: 'orange', fontWeight: 900, borderRadius: 0, fontSize: '0.65rem', '&:hover': { bgcolor: 'orange', color: 'black' } }}
-                                    > ENROLL IN PARTNERSHIP </Button>
                                 </CardContent>
                             </Card>
 
@@ -505,7 +589,7 @@ export default function DepartmentDashboard() {
             >
                 <Fade in={enrollModalOpen}>
                     <Box tabIndex={-1} sx={{ 
-                        position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                        position: 'absolute', top: 80, right: 24,
                         width: { xs: '90%', sm: 400 },
                         bgcolor: '#0a0a0a', border: '1px solid orange',
                         p: 4, outline: 'none', boxShadow: '0 0 60px rgba(255, 165, 0, 0.3)',
@@ -552,6 +636,150 @@ export default function DepartmentDashboard() {
                                 sx={{ color: 'rgba(255,255,255,0.4)', fontWeight: 800, fontSize: '0.7rem' }}
                             > DISMISS FOR NOW </Button>
                         </Stack>
+                    </Box>
+                </Fade>
+            </Modal>
+
+            <RequestBaptismModal 
+                open={baptismModalOpen} 
+                onClose={() => setBaptismModalOpen(false)}
+                onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])}
+            />
+
+            <Modal
+                open={appointmentModalOpen}
+                onClose={() => setAppointmentModalOpen(false)}
+                closeAfterTransition
+                BackdropComponent={Backdrop}
+                BackdropProps={{ timeout: 500, sx: { backdropFilter: 'blur(10px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
+            >
+                <Fade in={appointmentModalOpen}>
+                    <Box sx={{ 
+                        position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                        width: { xs: '95%', sm: 500 },
+                        bgcolor: '#0a0a0a', border: '1px solid var(--primary)',
+                        p: 4, outline: 'none', boxShadow: '0 0 60px rgba(79, 139, 255, 0.2)',
+                        borderRadius: 0,
+                        maxHeight: '90vh',
+                        overflowY: 'auto'
+                    }}>
+                        <Box display="flex" alignItems="center" gap={2} mb={3}>
+                            <Avatar sx={{ bgcolor: 'var(--primary)', width: 48, height: 48 }}><Calendar size={24} /></Avatar>
+                            <Box>
+                                <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>MAKE AN APPOINTMENT</Typography>
+                                <Typography variant="caption" sx={{ color: 'var(--primary)', fontWeight: 900 }}>SPIRITUAL GUIDANCE & STRATEGIC MEETINGS</Typography>
+                            </Box>
+                        </Box>
+
+                        <form onSubmit={(e) => {
+                            e.preventDefault();
+                            const formData = new FormData(e.currentTarget);
+                            createAppointmentMutation.mutate({
+                                targetRole: formData.get('targetRole') as string,
+                                type: formData.get('type') as string,
+                                reason: formData.get('reason') as string,
+                                preferredDate: formData.get('preferredDate') as string,
+                                preferredTime: formData.get('preferredTime') as string,
+                            });
+                        }}>
+                            <Stack spacing={3}>
+                                <Box>
+                                    <Typography variant="caption" fontWeight="900" sx={{ mb: 1, display: 'block', opacity: 0.5 }}>WHO WOULD YOU LIKE TO SEE?</Typography>
+                                    <select 
+                                        name="targetRole"
+                                        required
+                                        style={{ 
+                                            width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)',
+                                            color: '#fff', padding: '12px', fontSize: '1rem', fontWeight: 800, outline: 'none'
+                                        }}
+                                    >
+                                        <option value="BISHOP" style={{ background: '#000' }}>THE BISHOP (HIGH LEVEL ADMIN)</option>
+                                        <option value="PASTOR" style={{ background: '#000' }}>PASTOR</option>
+                                        <option value="ASSOCIATE_PASTOR" style={{ background: '#000' }}>ASSOCIATE PASTOR</option>
+                                    </select>
+                                </Box>
+
+                                <Box>
+                                    <Typography variant="caption" fontWeight="900" sx={{ mb: 1, display: 'block', opacity: 0.5 }}>APPOINTMENT CATEGORY</Typography>
+                                    <select 
+                                        name="type"
+                                        required
+                                        style={{ 
+                                            width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)',
+                                            color: '#fff', padding: '12px', fontSize: '1rem', fontWeight: 800, outline: 'none'
+                                        }}
+                                    >
+                                        <option value="PRAYER" style={{ background: '#000' }}>PRAYER REQUEST</option>
+                                        <option value="COUNSELING" style={{ background: '#000' }}>SPIRITUAL COUNSELING</option>
+                                        <option value="DELIVERANCE" style={{ background: '#000' }}>DELIVERANCE SESSION</option>
+                                        <option value="MEETING" style={{ background: '#000' }}>GENERAL MEETING</option>
+                                    </select>
+                                </Box>
+
+                                <Box>
+                                    <Typography variant="caption" fontWeight="900" sx={{ mb: 1, display: 'block', opacity: 0.5 }}>PREFERRED DATE</Typography>
+                                    <input 
+                                        type="date" 
+                                        name="preferredDate"
+                                        required
+                                        min={new Date().toISOString().split('T')[0]}
+                                        style={{ 
+                                            width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)',
+                                            color: '#fff', padding: '12px', fontSize: '1rem', fontWeight: 800, outline: 'none'
+                                        }}
+                                    />
+                                </Box>
+
+                                <Box>
+                                    <Typography variant="caption" fontWeight="900" sx={{ mb: 1, display: 'block', opacity: 0.5 }}>PREFERRED TIME</Typography>
+                                    <input 
+                                        type="time" 
+                                        name="preferredTime"
+                                        required
+                                        style={{ 
+                                            width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)',
+                                            color: '#fff', padding: '12px', fontSize: '1rem', fontWeight: 800, outline: 'none'
+                                        }}
+                                    />
+                                </Box>
+
+                                <Box>
+                                    <Typography variant="caption" fontWeight="900" sx={{ mb: 1, display: 'block', opacity: 0.5 }}>REASON FOR APPOINTMENT</Typography>
+                                    <textarea 
+                                        name="reason"
+                                        required
+                                        rows={3}
+                                        placeholder="Briefly describe your request..."
+                                        style={{ 
+                                            width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)',
+                                            color: '#fff', padding: '12px', fontSize: '1rem', fontWeight: 600, outline: 'none', resize: 'none'
+                                        }}
+                                    />
+                                </Box>
+
+                                <Button 
+                                    type="submit"
+                                    variant="contained" 
+                                    fullWidth 
+                                    disabled={createAppointmentMutation.isLoading}
+                                    sx={{ 
+                                        bgcolor: 'var(--primary)', color: '#fff', fontWeight: 950, py: 1.5,
+                                        borderRadius: 0, '&:hover': { bgcolor: 'var(--primary-glow)' }
+                                    }}
+                                >
+                                    {createAppointmentMutation.isLoading ? 'SUBMITTING REQUEST...' : 'SUBMIT APPOINTMENT REQUEST'}
+                                </Button>
+
+                                <Button 
+                                    fullWidth 
+                                    variant="text" 
+                                    onClick={() => setAppointmentModalOpen(false)}
+                                    sx={{ color: 'rgba(255,255,255,0.4)', fontWeight: 800, fontSize: '0.7rem' }}
+                                >
+                                    BACK TO PORTAL
+                                </Button>
+                            </Stack>
+                        </form>
                     </Box>
                 </Fade>
             </Modal>

@@ -56,7 +56,11 @@ export const getAnnouncements = catchAsync(async (req: Request, res: Response) =
                     author: { select: { id: true, name: true } },
                     department: true,
                 },
-                orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
+                orderBy: [
+                    { eventDate: 'asc' }, // Sequential by event date (primary)
+                    { priority: 'desc' }, 
+                    { createdAt: 'desc' }
+                ] as any,
                 skip,
                 take,
             }),
@@ -89,13 +93,28 @@ export const getAllAnnouncements = catchAsync(async (req: Request, res: Response
 });
 
 export const createAnnouncement = catchAsync(async (req: AuthRequest, res: Response) => {
-    const { title, content, priority, expiry, departmentId, isGlobal, isMajor, pastorIds } = req.body;
+    const { title, content, priority, expiry, departmentId, isGlobal, isMajor, pastorIds, eventDate, eventTime, location } = req.body;
     const user = req.user!;
 
     if (!isGlobal && !isMajor && !departmentId) {
         throw new AppError('A department is required for non-global/major announcements.', 400);
     }
     
+    // ─── Tactical Conflict Management (Sequential Awareness) ───
+    if (eventDate && location) {
+        const conflicting = await prisma.announcement.findFirst({
+            where: {
+                eventDate: new Date(eventDate),
+                location: { equals: location, mode: 'insensitive' },
+                eventTime: eventTime || undefined,
+                status: { in: ['PENDING', 'PUBLISHED'] }
+            } as any
+        });
+        if (conflicting) {
+            throw new AppError(`TACTICAL CONFLICT: Another mission is already scheduled at ${location} for this date/time. Please sequence operations accordingly.`, 409);
+        }
+    }
+
     // Authorization Check for Department
     if (departmentId && user.role !== 'SUPER_ADMIN' && user.role !== 'SYSTEM_ADMIN' && user.role !== 'WATUA') {
          const isManaging = user.managedDepartments?.some((d: any) => d.id === departmentId) || user.departmentId === departmentId;
@@ -114,6 +133,9 @@ export const createAnnouncement = catchAsync(async (req: AuthRequest, res: Respo
                 isMajor: isMajor || false,
                 status: 'PENDING',
                 expiry: expiry ? new Date(expiry) : null,
+                eventDate: eventDate ? new Date(eventDate) : null,
+                eventTime: eventTime || null,
+                location: location || null,
                 authorId: user.id,
                 departmentId: departmentId || null,
             } as any,

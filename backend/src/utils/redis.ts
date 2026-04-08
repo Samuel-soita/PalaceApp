@@ -17,6 +17,11 @@ const pendingPromises = new Map<string, Promise<any>>();
  */
 export async function getOrSetCache<T>(key: string, fetchFn: () => Promise<T>, ttlSeconds: number = 300): Promise<T> {
     try {
+        // --- RESILIENT FALLBACK: Check connection before attempting get ---
+        if (redis.status !== 'ready') {
+            return await fetchFn();
+        }
+
         const cached = await redis.get(key);
         if (cached) {
             return JSON.parse(cached);

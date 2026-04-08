@@ -7,7 +7,8 @@ import {
     updateProject, 
     deleteProject, 
     addProjectUpdate,
-    approveProject
+    approveProject,
+    updateProjectStatus
 } from './projects.controller.js';
 import { authenticate, authorize, departmentGuard } from '../../middleware/auth.middleware.js';
 import { validate } from '../../middleware/validate.middleware.js';
@@ -44,6 +45,11 @@ router.post('/:id/updates',
 router.post('/:id/approve',
     authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'PASTOR']),
     approveProject
+);
+
+router.patch('/:id/status',
+    authorize(['WATUA', 'SUPER_ADMIN']), // Interventions usually locked to highest clearance
+    updateProjectStatus
 );
 
 // 🗑️ DESTRUCTIVE ACTIONS

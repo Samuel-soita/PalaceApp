@@ -29,6 +29,8 @@ import ProjectFormModal from '../components/modals/ProjectFormModal';
 import PlanFormModal from '../components/modals/PlanFormModal';
 import AnnouncementFormModal from '../components/modals/AnnouncementFormModal';
 import DepartmentReportModal from '../components/modals/DepartmentReportModal';
+import { useLocalFirstDashboard } from '../hooks/useLocalFirstDashboard';
+import SyncIndicator from '../components/SyncIndicator';
 
 
 // ─── Component ─────────────────────────────────────────────────────────────
@@ -36,13 +38,13 @@ import DepartmentReportModal from '../components/modals/DepartmentReportModal';
 export default function AdminDashboard() {
     const { user: authUser } = useAuth();
     const { hasPermission } = usePermission();
-    
+
     // Permission-based flags
     const canViewStats = hasPermission(PERMISSIONS.VIEW_GLOBAL_STATS);
     const canManageUsers = hasPermission(PERMISSIONS.MANAGE_USERS);
     const canApproveSpiritual = hasPermission(PERMISSIONS.APPROVE_BAPTISM);
     const canViewPersonnel = hasPermission(PERMISSIONS.VIEW_PERSONNEL);
-    
+
     const role = authUser?.role ?? '';
     const queryClient = useQueryClient();
 
@@ -57,7 +59,7 @@ export default function AdminDashboard() {
     const [planModalOpen, setPlanModalOpen] = useState(false);
     const [announcementModalOpen, setAnnouncementModalOpen] = useState(false);
     const [reportModalOpen, setReportModalOpen] = useState(false);
-    
+
     // ─── Edit States ────────────────────────────────────────────────────────
     const [editingProject, setEditingProject] = useState<any>(null);
     const [editingEvent, setEditingEvent] = useState<any>(null);
@@ -79,11 +81,8 @@ export default function AdminDashboard() {
     });
     const handleCloseToast = () => setToast(t => ({ ...t, open: false }));
 
-    // ─── Data Queries ────────────────────────────────────────────────────────
-    const { data: syncData, isLoading: isSyncLoading } = useQuery(['dashboard-sync'], async () => {
-        const res = await api.get('/dashboard/sync');
-        return res.data;
-    }, { enabled: !!authUser });
+    // ─── Data Queries (Tactical Mirror) ──────────────────────────────────────
+    const { data: syncData, isLoading: isSyncLoading } = useLocalFirstDashboard();
 
     const projects = syncData?.projects || [];
     const events = syncData?.events || [];
@@ -98,7 +97,7 @@ export default function AdminDashboard() {
 
     const pendingBaptisms = baptisms.filter((b: any) => b.status !== 'COMPLETED').length;
     const pendingDedications = children.filter((c: any) => c.workflowStatus !== 'DEDICATED').length;
-    
+
     // Fetch appointments for badge
     const { data: appointments = [] } = useQuery(['appointments-badge'], async () => {
         const res = await api.get('/appointments/all');
@@ -148,7 +147,7 @@ export default function AdminDashboard() {
     );
 
     const approveRenewalMutation = useMutation(
-        async ({ id, newMembershipNumber }: { id: string; newMembershipNumber: string }) => 
+        async ({ id, newMembershipNumber }: { id: string; newMembershipNumber: string }) =>
             api.post(`/users/${id}/card-renewal/approve`, { newMembershipNumber }),
         {
             onSuccess: () => {
@@ -188,10 +187,10 @@ export default function AdminDashboard() {
                 setToast({ open: true, message: 'Record decommissioned successfully.', severity: 'success' });
             },
             onError: (err: any) => {
-                setToast({ 
-                    open: true, 
-                    message: err.response?.data?.error || 'Failed to delete record.', 
-                    severity: 'error' 
+                setToast({
+                    open: true,
+                    message: err.response?.data?.error || 'Failed to delete record.',
+                    severity: 'error'
                 });
             }
         }
@@ -273,6 +272,26 @@ export default function AdminDashboard() {
                         : 'Church-wide intelligence feed — stay in sync with every plan, project, meeting and event.'}
                 </Typography>
             </Box>
+
+            {/* 🛰️ OFFLINE MISSION MODE BANNER */}
+            {syncData?.isOffline && (
+                <Alert
+                    severity="warning"
+                    variant="filled"
+                    sx={{
+                        mb: 3,
+                        bgcolor: 'rgba(234, 88, 12, 0.15)',
+                        border: '1px solid rgba(234, 88, 12, 0.4)',
+                        color: '#fb923c',
+                        fontWeight: 900,
+                        letterSpacing: '0.06em',
+                        borderRadius: 0,
+                    }}
+                    action={<SyncIndicator />}
+                >
+                    ⚡ EXECUTIVE PORTAL IN OFFLINE MISSION MODE — DISPLAYING LOCAL TACTICAL CACHE. MUTATIONS QUEUED FOR DISPATCH.
+                </Alert>
+            )}
 
             {/* ── Admin Quick-Action Terminal ── */}
             {canViewStats && !isRestrictedRole && (
@@ -378,22 +397,22 @@ export default function AdminDashboard() {
             {/* ── Department Filter ── */}
             {!isRestrictedRole && (
                 <Box display="flex" alignItems="center" gap={2} mb={3}>
-                <Filter size={14} color="var(--primary)" />
-                <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 1.5, color: 'primary.main' }}>FILTER BY SECTOR</Typography>
-                <FormControl size="small" sx={{ minWidth: 180 }}>
-                    <Select
-                        value={deptFilter}
-                        onChange={(e) => setDeptFilter(e.target.value)}
-                        displayEmpty
-                        sx={{ fontSize: '0.75rem', fontWeight: 800, bgcolor: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 2, '.MuiOutlinedInput-notchedOutline': { border: 'none' } }}
-                    >
-                        <MenuItem value="ALL"><em>All Sectors</em></MenuItem>
-                        {departments.map((d: any) => (
-                            <MenuItem key={d.id} value={d.id} sx={{ fontSize: '0.75rem', fontWeight: 700 }}>{d.name}</MenuItem>
-                        ))}
-                    </Select>
-                </FormControl>
-            </Box>
+                    <Filter size={14} color="var(--primary)" />
+                    <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 1.5, color: 'primary.main' }}>FILTER BY SECTOR</Typography>
+                    <FormControl size="small" sx={{ minWidth: 180 }}>
+                        <Select
+                            value={deptFilter}
+                            onChange={(e) => setDeptFilter(e.target.value)}
+                            displayEmpty
+                            sx={{ fontSize: '0.75rem', fontWeight: 800, bgcolor: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 2, '.MuiOutlinedInput-notchedOutline': { border: 'none' } }}
+                        >
+                            <MenuItem value="ALL"><em>All Sectors</em></MenuItem>
+                            {departments.map((d: any) => (
+                                <MenuItem key={d.id} value={d.id} sx={{ fontSize: '0.75rem', fontWeight: 700 }}>{d.name}</MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                </Box>
             )}
 
             {/* ── Operational Timeline ── */}
@@ -411,8 +430,8 @@ export default function AdminDashboard() {
                             </Box>
                             <Calendar size={18} className="text-secondary opacity-50" />
                         </Box>
-                        <OperationalTimeline 
-                            items={timelineItems} 
+                        <OperationalTimeline
+                            items={timelineItems}
                             onEdit={handleEdit}
                             onDelete={handleDelete}
                         />
@@ -420,8 +439,8 @@ export default function AdminDashboard() {
                 </Card>
             )}
 
-            {/* ── Broadcasts Track ── */}
-            {isOperationsExec && (
+            {/* ── Broadcasts Track (Hidden for Leaders) ── */}
+            {isOperationsExec && role !== 'DEPARTMENT_LEADER' && (
                 <Card className="holographic-card" sx={{ mb: 4 }}>
                     <CardContent sx={{ p: { xs: 2, md: 3 } }}>
                         <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
@@ -436,17 +455,17 @@ export default function AdminDashboard() {
                                 </Button>
                             )}
                         </Box>
-                        <BroadcastTrack 
-                            announcements={announcements} 
+                        <BroadcastTrack
+                            announcements={announcements}
                             onEdit={(a) => { setEditingAnnouncement(a); setAnnouncementModalOpen(true); }}
-                            onDelete={(a) => handleDelete({...a, type: 'ANNOUNCEMENT'})}
+                            onDelete={(a) => handleDelete({ ...a, type: 'ANNOUNCEMENT' })}
                         />
                     </CardContent>
                 </Card>
             )}
 
-            {/* ── Technical Repair Authorizations ── */}
-            {canViewStats && (
+            {/* ── Technical Repair Authorizations (Hidden for Leaders) ── */}
+            {canViewStats && role !== 'DEPARTMENT_LEADER' && (
                 <Card className="holographic-card" sx={{ mb: 4, borderLeft: '4px solid #ff4d4d' }}>
                     <CardContent sx={{ p: { xs: 2, md: 3 } }}>
                         <Box display="flex" alignItems="center" gap={1.5} mb={3}>
@@ -460,8 +479,8 @@ export default function AdminDashboard() {
                 </Card>
             )}
 
-            {/* ── Initiatives Track ── */}
-            {isOperationsExec && (
+            {/* ── Initiatives Track (Hidden for Leaders) ── */}
+            {isOperationsExec && role !== 'DEPARTMENT_LEADER' && (
                 <Card className="holographic-card">
                     <CardContent sx={{ p: { xs: 2, md: 3 } }}>
                         <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
@@ -476,10 +495,10 @@ export default function AdminDashboard() {
                                 </Button>
                             )}
                         </Box>
-                        <InitiativesTrack 
-                            projects={filterByDept(projects)} 
+                        <InitiativesTrack
+                            projects={filterByDept(projects)}
                             onEdit={(p) => { setEditingProject(p); setProjectModalOpen(true); }}
-                            onDelete={(p) => handleDelete({...p, type: 'PROJECT'})}
+                            onDelete={(p) => handleDelete({ ...p, type: 'PROJECT' })}
                         />
                     </CardContent>
                 </Card>
@@ -539,14 +558,14 @@ export default function AdminDashboard() {
                                                         </Box>
                                                     </Box>
                                                 </Box>
-                                                
+
                                                 <Box display="flex" alignItems="center" gap={1}>
                                                     {/* Partnership Toggle */}
                                                     <Tooltip title={u.isPartner ? "Partner Status: Active" : "Promote to Partner"}>
-                                                        <IconButton 
-                                                            size="small" 
+                                                        <IconButton
+                                                            size="small"
                                                             onClick={() => partnershipMutation.mutate({ id: u.id, currentStatus: u.isPartner })}
-                                                            sx={{ 
+                                                            sx={{
                                                                 color: u.isPartner ? 'orange' : 'rgba(255,255,255,0.1)',
                                                                 border: '1px solid',
                                                                 borderColor: u.isPartner ? 'orange' : 'rgba(255,255,255,0.05)',
@@ -559,30 +578,30 @@ export default function AdminDashboard() {
                                                     </Tooltip>
 
                                                     {/* Status Badge */}
-                                                    <Chip 
-                                                        label={u.status} 
-                                                        size="small" 
-                                                        sx={{ 
-                                                            height: 20, 
-                                                            fontSize: '0.6rem', 
+                                                    <Chip
+                                                        label={u.status}
+                                                        size="small"
+                                                        sx={{
+                                                            height: 20,
+                                                            fontSize: '0.6rem',
                                                             fontWeight: 900,
                                                             bgcolor: u.status === 'ACTIVE' ? 'rgba(76,175,80,0.1)' : 'rgba(255,152,0,0.1)',
                                                             color: u.status === 'ACTIVE' ? 'success.main' : 'warning.main',
                                                             border: '1px solid',
                                                             borderColor: u.status === 'ACTIVE' ? 'success.main' : 'warning.main'
-                                                        }} 
+                                                        }}
                                                     />
 
                                                     {/* Payment Checkbox (Custom toggle for small space) */}
                                                     {!u.deletionRequested && (
                                                         <Tooltip title={u.isCardPaid ? "Payment Verified" : "Verify Payment First"}>
-                                                            <Box 
+                                                            <Box
                                                                 onClick={() => markPaidMutation.mutate({ id: u.id, isPaid: !u.isCardPaid })}
-                                                                sx={{ 
+                                                                sx={{
                                                                     cursor: 'pointer',
-                                                                    display: 'flex', 
-                                                                    alignItems: 'center', 
-                                                                    gap: 0.5, 
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: 0.5,
                                                                     px: 1, py: 0.3,
                                                                     borderRadius: 1,
                                                                     bgcolor: u.isCardPaid ? 'rgba(76,175,80,0.1)' : 'rgba(255,255,255,0.05)',
@@ -602,9 +621,9 @@ export default function AdminDashboard() {
                                                     <Box display="flex" gap={0.5}>
                                                         {u.isCardReplacementRequested ? (
                                                             <Tooltip title="Approve Renewal">
-                                                                <IconButton 
-                                                                    size="small" 
-                                                                    color="warning" 
+                                                                <IconButton
+                                                                    size="small"
+                                                                    color="warning"
                                                                     onClick={() => {
                                                                         const newNo = prompt('Enter New Membership Number:', u.membershipNumber);
                                                                         if (newNo) approveRenewalMutation.mutate({ id: u.id, newMembershipNumber: newNo });
@@ -618,11 +637,11 @@ export default function AdminDashboard() {
                                                             <>
                                                                 <Tooltip title={u.deletionRequested ? "Confirm Deletion" : (u.status === 'ACTIVE' ? "Already Verified" : (u.isCardPaid ? "Activate" : "Payment Required"))}>
                                                                     <span>
-                                                                        <IconButton 
-                                                                            size="small" 
-                                                                            color={u.deletionRequested ? "error" : "success"} 
-                                                                            disabled={verifyMutation.isLoading || (!u.deletionRequested && (u.status === 'ACTIVE' || !u.isCardPaid))} 
-                                                                            onClick={() => verifyMutation.mutate({ id: u.id, status: 'ACTIVE', name: u.name })} 
+                                                                        <IconButton
+                                                                            size="small"
+                                                                            color={u.deletionRequested ? "error" : "success"}
+                                                                            disabled={verifyMutation.isLoading || (!u.deletionRequested && (u.status === 'ACTIVE' || !u.isCardPaid))}
+                                                                            onClick={() => verifyMutation.mutate({ id: u.id, status: 'ACTIVE', name: u.name })}
                                                                             sx={{ border: `1px solid ${u.deletionRequested ? 'rgba(244,67,54,0.25)' : 'rgba(76,175,80,0.25)'}` }}
                                                                         >
                                                                             {u.deletionRequested ? <Trash2 size={17} /> : <CheckCircle size={17} />}

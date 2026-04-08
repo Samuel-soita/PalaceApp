@@ -14,14 +14,23 @@ export const createRepairRequest = async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Only Technical/Sound members can initiate repairs.' });
         }
 
+        // ─── Universal Financial Safeguard (Mandatory 1,500 KES Floor) ───
+        const deptAccount = await prisma.account.findUnique({ where: { departmentId: departmentId || user.departmentId } });
+        const minRequired = 1500;
+        if (!deptAccount || deptAccount.balance < minRequired) {
+            return res.status(402).json({ error: `INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of ${minRequired} KES is required for all operations (Department or Church funded). Current balance: ${deptAccount?.balance || 0} KES.` });
+        }
+
         const repair = await prisma.technicalRepair.create({
             data: {
                 instrumentName,
                 problemDescription,
                 estimatedCost: Number(estimatedCost),
+                budgetSource: (req.body.budgetSource || 'DEPARTMENT') as any,
                 departmentId: departmentId || user.departmentId,
-                requesterId: user.id
-            },
+                requesterId: user.id,
+                status: 'PENDING_PASTOR_1'
+            } as any,
             include: {
                 department: { select: { name: true } },
                 requester: { select: { name: true } }
@@ -164,5 +173,61 @@ export const getRepairs = async (req: Request, res: Response) => {
         res.json(repairs);
     } catch (error: any) {
         res.status(500).json({ error: error.message || 'Failed to fetch repairs' });
+    }
+};
+
+export const updateRepair = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const user = (req as any).user;
+        const repair = await prisma.technicalRepair.findUnique({ where: { id } });
+
+        if (!repair) return res.status(404).json({ error: 'Repair not found' });
+
+        // Operational Lock
+        if (repair.status === 'APPROVED' && user.role === 'DEPARTMENT_LEADER') {
+            return res.status(403).json({ error: 'OPERATIONAL LOCK: Fully approved repairs are locked. Contact Admin for changes.' });
+        }
+
+        // ─── Universal Financial Safeguard on Update ───
+        const deptAccount = await prisma.account.findUnique({ where: { departmentId: repair.departmentId } });
+        if (!deptAccount || deptAccount.balance < 1500) {
+            return res.status(402).json({ error: 'INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of 1,500 KES is required for all operations.' });
+        }
+
+        const updated = await prisma.technicalRepair.update({
+            where: { id },
+            data: {
+                ...req.body,
+                estimatedCost: req.body.estimatedCost ? Number(req.body.estimatedCost) : repair.estimatedCost
+            }
+        });
+
+        res.json(updated);
+    } catch (error: any) {
+        res.status(400).json({ error: error.message || 'Update failed' });
+    }
+};
+
+export const deleteRepair = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const user = (req as any).user;
+        const repair = await prisma.technicalRepair.findUnique({ where: { id } });
+
+        if (!repair) return res.status(404).json({ error: 'Repair not found' });
+
+        if (user.role === 'DEPARTMENT_LEADER') {
+            if (repair.status !== 'TACKLED' && repair.status !== 'REJECTED') {
+                return res.status(403).json({ error: 'DELETION RESTRICTED: Repair requests can only be decommissioned after they are TACKLED.' });
+            }
+        } else if (repair.status === 'APPROVED' && user.role !== 'SUPER_ADMIN') {
+            return res.status(403).json({ error: 'High Authorization required to delete approved repairs.' });
+        }
+
+        await prisma.technicalRepair.delete({ where: { id } });
+        res.json({ message: 'Repair decommissioned.' });
+    } catch (error: any) {
+        res.status(400).json({ error: error.message || 'Delete failed' });
     }
 };
