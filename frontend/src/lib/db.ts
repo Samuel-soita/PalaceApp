@@ -435,8 +435,8 @@ export class PalaceLocalDatabase extends Dexie {
     constructor() {
         super('palace-local-first-db');
         
-        // 🚀 Version 14: Added Reports & Support Requests for Universal Integrity
-        this.version(14).stores({
+        // 🚀 Version 15: Indexed createdAt on key tables for reliable orderBy queries
+        this.version(15).stores({
             events: 'id, departmentId, date, syncStatus, deviceId, version',
             users: 'id, role, departmentId, status, idNumber, membershipNumber, syncStatus, deviceId, version',
             departments: 'id, name, syncStatus, deviceId, version',
@@ -445,8 +445,8 @@ export class PalaceLocalDatabase extends Dexie {
             rolePermissions: 'id, roleId, permissionId, syncStatus, deviceId, version',
             projects: 'id, departmentId, status, syncStatus, deviceId, version',
             plans: 'id, departmentId, status, syncStatus, deviceId, version',
-            announcements: 'id, departmentId, date, syncStatus, deviceId, version',
-            meetings: 'id, departmentId, date, syncStatus, deviceId, version',
+            announcements: 'id, departmentId, date, createdAt, syncStatus, deviceId, version',
+            meetings: 'id, departmentId, date, createdAt, syncStatus, deviceId, version',
             devotions: 'id, authorId, date, syncStatus, deviceId, version',
             messages: 'id, senderId, receiverId, timestamp, syncStatus, deviceId, version',
             baptisms: 'id, userId, status, syncStatus, deviceId, version',
