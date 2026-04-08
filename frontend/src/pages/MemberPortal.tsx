@@ -15,6 +15,10 @@ import api from '../lib/api-client';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { Link } from 'react-router-dom';
 import RequestBaptismModal from '../components/modals/RequestBaptismModal';
+import { useLocalFirstDashboard } from '../hooks/useLocalFirstDashboard';
+import { useOfflineMutation } from '../hooks/useOfflineMutation';
+import SyncIndicator from '../components/SyncIndicator';
+import { db } from '../lib/db';
 
 export default function MemberPortal() {
     const { user, updateUser } = useAuth();
@@ -30,15 +34,8 @@ export default function MemberPortal() {
         severity: 'info'
     });
 
-    // --- Data Streams ---
-    const { data: syncData, isLoading: isSyncLoading } = useQuery(['dashboard-sync'], async () => {
-        const res = await api.get('/dashboard/sync');
-        return res.data;
-    }, {
-        enabled: !!user,
-        refetchInterval: 5000, // 5s polling for real-time sync
-        staleTime: 3000
-    });
+    // --- Data Streams (Tactical Local Mirror) ---
+    const { data: syncData, isLoading: isSyncLoading } = useLocalFirstDashboard();
 
     const { data: devotion, isLoading: isDevotionLoading } = useQuery(['daily-devotion'], async () => {
         const res = await api.get('/devotions/daily');
@@ -51,20 +48,15 @@ export default function MemberPortal() {
         onSuccess: () => queryClient.invalidateQueries(['daily-devotion'])
     });
 
-    const createAppointmentMutation = useMutation(
-        async (data: { targetRole: string, type: string, reason: string, preferredDate: string, preferredTime: string }) => 
-            api.post('/appointments', data),
-        {
-            onSuccess: () => {
-                setAppointmentModalOpen(false);
-                setToast({ open: true, message: 'Appointment request submitted to the Administrator.', severity: 'success' });
-                queryClient.invalidateQueries(['my-appointments']);
-            },
-            onError: (err: any) => {
-                setToast({ open: true, message: err.response?.data?.error || 'Failed to submit request.', severity: 'error' });
-            }
+    const createAppointmentMutation = useOfflineMutation({
+        entity: 'APPOINTMENT',
+        table: 'appointments',
+        url: '/appointments',
+        onSuccess: () => {
+            setAppointmentModalOpen(false);
+            setToast({ open: true, message: 'Appointment request queued for dispatch.', severity: 'success' });
         }
-    );
+    });
 
     const enrollPartnershipMutation = useMutation(
         async (amount: number) => api.post('/users/partnership/enroll', { amount }),
@@ -81,18 +73,14 @@ export default function MemberPortal() {
         }
     );
 
-    const requestRenewalMutation = useMutation(
-        async () => api.post('/users/card-renewal/request'),
-        {
-            onSuccess: () => {
-                setToast({ open: true, message: 'Renewal request submitted. Processing...', severity: 'success' });
-                queryClient.invalidateQueries(['dashboard-sync']);
-            },
-            onError: (err: any) => {
-                setToast({ open: true, message: err.response?.data?.error || 'Failed to request renewal.', severity: 'error' });
-            }
+    const requestRenewalMutation = useOfflineMutation({
+        entity: 'USER',
+        table: 'users',
+        url: '/users/card-renewal/request',
+        onSuccess: () => {
+            setToast({ open: true, message: 'Renewal request queued.', severity: 'success' });
         }
-    );
+    });
 
     const announcements = syncData?.announcements || [];
     const events = syncData?.events || [];
@@ -199,10 +187,11 @@ export default function MemberPortal() {
                         const diffTime = expiry.getTime() - now.getTime();
                         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                         const isExpired = diffDays <= 0;
-                        const isGracePeriod = diffDays > -14 && diffDays <= 0;
-                        const canRenew = diffDays <= 21;
+                        const isGracePeriod = diffDays < 0 && diffDays >= -14;
+                        const isLockedOut = diffDays < -14;
 
-                        if (isExpired) {
+                        // 1. Lock-out phase (past 14 days grace period)
+                        if (isLockedOut) {
                             return (
                                 <Alert 
                                     severity="error" 
@@ -224,23 +213,21 @@ export default function MemberPortal() {
                                                 color="inherit" 
                                                 size="small" 
                                                 variant="outlined" 
-                                                onClick={() => requestRenewalMutation.mutate()}
+                                                onClick={() => requestRenewalMutation.mutate({})}
                                                 sx={{ fontWeight: 950, borderRadius: 0 }}
                                             >
-                                                REQUEST NEW CARD
+                                                REQUEST RENEWAL
                                             </Button>
                                         )
                                     }
                                 >
-                                    {isGracePeriod 
-                                        ? `DANGER: YOUR MEMBERSHIP CARD EXPIRED ON ${expiry.toLocaleDateString()}. GRACE PERIOD ENDS IN ${14 + diffDays} DAYS.`
-                                        : `CRITICAL: MEMBERSHIP CARD EXPIRED. PLEASE REQUEST A NEW CARD IMMEDIATELY TO RETAIN ACCESS.`
-                                    }
+                                    CRITICAL: MEMBERSHIP CARD EXPIRED ON {expiry.toLocaleDateString()}. GRACE PERIOD HAS ENDED. PLEASE RENEW IMMEDIATELY.
                                 </Alert>
                             );
                         }
 
-                        if (canRenew) {
+                        // 2. Grace Period phase (0 to 14 days post-expiry)
+                        if (isGracePeriod) {
                             return (
                                 <Alert 
                                     severity="warning" 
@@ -261,7 +248,7 @@ export default function MemberPortal() {
                                                 color="warning" 
                                                 size="small" 
                                                 variant="contained" 
-                                                onClick={() => requestRenewalMutation.mutate()}
+                                                onClick={() => requestRenewalMutation.mutate({})}
                                                 sx={{ fontWeight: 950, borderRadius: 0, bgcolor: 'orange', color: '#000' }}
                                             >
                                                 RENEW CARD NOW
@@ -269,15 +256,16 @@ export default function MemberPortal() {
                                         )
                                     }
                                 >
-                                    YOUR CARD EXPIRES IN {diffDays} DAYS. RENEWAL IS NOW OPEN.
+                                    DANGER: YOUR CARD EXPIRED ON {expiry.toLocaleDateString()}. YOU HAVE {14 + diffDays} DAYS REMAINING IN YOUR GRACE PERIOD TO RENEW.
                                 </Alert>
                             );
                         }
 
+                        // 3. Pre-Expiry phase (view only)
                         return (
                             <Box sx={{ mb: 4, p: 2, bgcolor: 'rgba(255,255,255,0.03)', border: '1px dashed rgba(255,255,255,0.1)', textAlign: 'center' }}>
                                 <Typography variant="caption" fontWeight="900" sx={{ opacity: 0.6 }}>
-                                    MEMBERSHIP ACTIVE UNTIL {expiry.toLocaleDateString()} | RENEWAL OPENS {new Date(expiry.getTime() - 21 * 24 * 60 * 60 * 1000).toLocaleDateString()}
+                                    MEMBERSHIP ACTIVE UNTIL {expiry.toLocaleDateString()}
                                 </Typography>
                             </Box>
                         );
@@ -592,6 +580,72 @@ export default function MemberPortal() {
                     {/* Right Column: Tactical Comms */}
                     <Grid item xs={12} lg={5}>
                         <Stack spacing={4}>
+                            {/* 💰 PARTNER INTELLIGENCE / CTA (Apex of Right Stack) */}
+                            <Card 
+                                sx={{ 
+                                    p: 0, 
+                                    borderRadius: 0, 
+                                    border: syncData?.isPartner ? '1px solid var(--primary-glow)' : '1px solid rgba(255, 165, 0, 0.4)',
+                                    background: syncData?.isPartner ? 'rgba(79, 139, 255, 0.05)' : 'rgba(255, 165, 0, 0.05)'
+                                }}
+                            >
+                                {syncData?.isPartner ? (
+                                    <CardContent sx={{ p: 2 }}>
+                                        <Box display="flex" alignItems="center" gap={2} mb={2}>
+                                            <Avatar sx={{ bgcolor: 'orange', width: 32, height: 32, boxShadow: '0 0 10px rgba(255,165,0,0.5)' }}><Star size={16} /></Avatar>
+                                            <Typography variant="caption" fontWeight="1000" sx={{ color: 'orange', letterSpacing: 1 }}>COVENANT PARTNERSHIP STATUS</Typography>
+                                        </Box>
+                                        
+                                        <Grid container spacing={1} mb={2}>
+                                            <Grid item xs={6}>
+                                                <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>COMMITTED</Typography>
+                                                <Typography variant="h6" fontWeight={950}>{(syncData?.partnership?.amount || 0).toLocaleString()} KES</Typography>
+                                            </Grid>
+                                            <Grid item xs={6}>
+                                                <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>PAID TO DATE</Typography>
+                                                <Typography variant="h6" fontWeight={950} color="success.main">{(syncData?.partnership?.paidAmount || 0).toLocaleString()} KES</Typography>
+                                            </Grid>
+                                            <Grid item xs={12}>
+                                                <Box sx={{ mt: 1, p: 1.5, bgcolor: 'rgba(255,0,0,0.05)', border: '1px solid rgba(255,0,0,0.1)', textAlign: 'center' }}>
+                                                    <Typography variant="caption" fontWeight={900} color="error" sx={{ display: 'block' }}>
+                                                        OUTSTANDING BALANCE: {(syncData?.partnership?.balance || 0).toLocaleString()} KES
+                                                    </Typography>
+                                                    <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 700, opacity: 0.7, mt: 0.5, display: 'block' }}>
+                                                        KINDLY PURPOSE TO COMPLETE YOUR PARTNERSHIP AMOUNT FOR THE CHURCH BUDGET
+                                                    </Typography>
+                                                </Box>
+                                            </Grid>
+                                        </Grid>
+
+                                        <Typography variant="caption" sx={{ opacity: 0.6, fontStyle: 'italic', fontWeight: 700 }}>
+                                        &quot;Partnering with Prayer Palace Apostolic Ministry for Global impact by making sure the church Budget is met&quot;
+                                        </Typography>
+                                    </CardContent>
+                                ) : (
+                                    <CardContent sx={{ p: 2 }}>
+                                        <Box display="flex" alignItems="center" gap={2} mb={1}>
+                                            <Avatar sx={{ bgcolor: 'orange', width: 32, height: 32 }}><Star size={16} /></Avatar>
+                                            <Typography variant="caption" fontWeight="900" sx={{ color: 'orange' }}>PARTNERSHIP VISION</Typography>
+                                        </Box>
+                                        <Typography variant="subtitle2" fontWeight="950" sx={{ mb: 1 }}>BECOME A PRAYER PALACE PARTNER</Typography>
+                                        <Typography variant="caption" sx={{ opacity: 0.7, display: 'block', mb: 2, lineHeight: 1.4 }}>
+                                            Fuel the mission. Enroll monthly to receive strategic financial intelligence. Renew with varying amounts as led.
+                                        </Typography>
+                                        <Button 
+                                            variant="outlined" 
+                                            fullWidth 
+                                            size="small" 
+                                            component={Link}
+                                            to="/"
+                                            onClick={(e) => { e.preventDefault(); setEnrollModalOpen(true); }}
+                                            sx={{ borderColor: 'orange', color: 'orange', fontWeight: 900, borderRadius: 0, fontSize: '0.65rem' }}
+                                        >
+                                            ENROLL IN PARTNERSHIP
+                                        </Button>
+                                    </CardContent>
+                                )}
+                            </Card>
+
                             <Card className="holographic-card" sx={{ p: 0, borderRadius: 0, mb: 4 }}>
                                 <CardContent sx={{ p: 3 }}>
                                     <Box display="flex" alignItems="center" gap={1.5} mb={3}>
@@ -633,72 +687,6 @@ export default function MemberPortal() {
                                     </Box>
 
                                     <Stack spacing={2}>
-                                        {/* 💰 PARTNER INTELLIGENCE / CTA */}
-                                        {/* 💰 PARTNER INTELLIGENCE / CTA */}
-                                        <Card 
-                                            sx={{ 
-                                                p: 0, 
-                                                borderRadius: 0, 
-                                                border: syncData?.isPartner ? '1px solid var(--primary-glow)' : '1px solid rgba(255, 165, 0, 0.4)',
-                                                background: syncData?.isPartner ? 'rgba(79, 139, 255, 0.05)' : 'rgba(255, 165, 0, 0.05)'
-                                            }}
-                                        >
-                                            {syncData?.isPartner ? (
-                                                <CardContent sx={{ p: 2 }}>
-                                                    <Box display="flex" alignItems="center" gap={2} mb={2}>
-                                                        <Avatar sx={{ bgcolor: 'orange', width: 32, height: 32, boxShadow: '0 0 10px rgba(255,165,0,0.5)' }}><Star size={16} /></Avatar>
-                                                        <Typography variant="caption" fontWeight="1000" sx={{ color: 'orange', letterSpacing: 1 }}>COVENANT PARTNERSHIP STATUS</Typography>
-                                                    </Box>
-                                                    
-                                                    <Grid container spacing={1} mb={2}>
-                                                        <Grid item xs={6}>
-                                                            <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>COMMITTED</Typography>
-                                                            <Typography variant="h6" fontWeight={950}>{(syncData?.partnership?.amount || 0).toLocaleString()} KES</Typography>
-                                                        </Grid>
-                                                        <Grid item xs={6}>
-                                                            <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>PAID TO DATE</Typography>
-                                                            <Typography variant="h6" fontWeight={950} color="success.main">{(syncData?.partnership?.paidAmount || 0).toLocaleString()} KES</Typography>
-                                                        </Grid>
-                                                        <Grid item xs={12}>
-                                                            <Box sx={{ mt: 1, p: 1.5, bgcolor: 'rgba(255,0,0,0.05)', border: '1px solid rgba(255,0,0,0.1)', textAlign: 'center' }}>
-                                                                <Typography variant="caption" fontWeight={900} color="error" sx={{ display: 'block' }}>
-                                                                    OUTSTANDING BALANCE: {(syncData?.partnership?.balance || 0).toLocaleString()} KES
-                                                                </Typography>
-                                                                <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 700, opacity: 0.7, mt: 0.5, display: 'block' }}>
-                                                                    KINDLY PURPOSE TO COMPLETE YOUR PARTNERSHIP AMOUNT FOR THE CHURCH BUDGET
-                                                                </Typography>
-                                                            </Box>
-                                                        </Grid>
-                                                    </Grid>
-
-                                                    <Typography variant="caption" sx={{ opacity: 0.6, fontStyle: 'italic', fontWeight: 700 }}>
-                                                    &quot;Partnering with Prayer Palace Apostolic Ministry for Global impact by making sure the church Budget is met&quot;
-                                                    </Typography>
-                                                </CardContent>
-                                            ) : (
-                                                <CardContent sx={{ p: 2 }}>
-                                                    <Box display="flex" alignItems="center" gap={2} mb={1}>
-                                                        <Avatar sx={{ bgcolor: 'orange', width: 32, height: 32 }}><Star size={16} /></Avatar>
-                                                        <Typography variant="caption" fontWeight="900" sx={{ color: 'orange' }}>PARTNERSHIP VISION</Typography>
-                                                    </Box>
-                                                    <Typography variant="subtitle2" fontWeight="950" sx={{ mb: 1 }}>BECOME A PRAYER PALACE PARTNER</Typography>
-                                                    <Typography variant="caption" sx={{ opacity: 0.7, display: 'block', mb: 2, lineHeight: 1.4 }}>
-                                                        Fuel the mission. Enroll monthly to receive strategic financial intelligence. Renew with varying amounts as led.
-                                                    </Typography>
-                                                    <Button 
-                                                        variant="outlined" 
-                                                        fullWidth 
-                                                        size="small" 
-                                                        component={Link}
-                                                        to="/"
-                                                        onClick={(e) => { e.preventDefault(); setEnrollModalOpen(true); }}
-                                                        sx={{ borderColor: 'orange', color: 'orange', fontWeight: 900, borderRadius: 0, fontSize: '0.65rem' }}
-                                                    >
-                                                        ENROLL IN PARTNERSHIP
-                                                    </Button>
-                                                </CardContent>
-                                            )}
-                                        </Card>
 
                                         {(() => {
                                             const globalIntel = [
@@ -809,7 +797,7 @@ export default function MemberPortal() {
             >
                 <Fade in={enrollModalOpen}>
                     <Box sx={{ 
-                        position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                        position: 'absolute', top: 80, right: 24,
                         width: { xs: '90%', sm: 400 },
                         bgcolor: '#0a0a0a', border: '1px solid orange',
                         p: 4, outline: 'none', boxShadow: '0 0 60px rgba(255, 165, 0, 0.3)',

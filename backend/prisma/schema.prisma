@@ -198,6 +198,7 @@ model Event {
   location          String
   departmentId      String
   budgetNeeded      Float            @default(0)
+  budgetSource      String           @default("DEPARTMENT") // DEPARTMENT, CHURCH
   volunteersNeeded  Int              @default(0)
   eventType         String           @default("DEPARTMENT_EVENT")
   status            String           @default("PLANNED")
@@ -267,6 +268,9 @@ model Announcement {
   isGlobal                               Boolean                @default(false)
   status                                 String                 @default("PENDING")
   expiry                                 DateTime?
+  eventDate                              DateTime?
+  eventTime                              String?
+  location                               String?
   authorId                               String
   departmentId                           String?
   createdAt                              DateTime               @default(now())
@@ -300,6 +304,7 @@ model Project {
   status            String            @default("PLANNED")
   category          String            @default("NEW_PROJECT") // HOST_PROJECT, NEW_PROJECT, INITIATIVE
   budget            Float             @default(0)
+  budgetSource      String            @default("DEPARTMENT") // DEPARTMENT, CHURCH
   progress          Int               @default(0)
   whatsappGroupLink String?
   approvalStatus    String            @default("PENDING_APPROVAL")
@@ -330,8 +335,10 @@ model Plan {
   departmentId   String
   type           String         // STRATEGIC, MONTHLY, QUARTERLY, BIANNUAL, YEARLY
   title          String
-  description    String
-  approvalStatus String         @default("PENDING_APPROVAL")
+  content       String         @default("")
+  budgetSource   String         @default("DEPARTMENT") // DEPARTMENT, CHURCH
+  approvalStatus String         @default("PENDING_APPROVAL") // PENDING_APPROVAL, APPROVED, REJECTED
+  status         String         @default("PLANNED")         // PLANNED, ACTIVE, COMPLETED/TACKLED
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   isMajor        Boolean        @default(false)
@@ -624,6 +631,9 @@ model Appointment {
   adminNotes    String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  deletedBy     String?
+  deletedReason String?
   version       Int       @default(0)
   member        User      @relation("MemberAppointments", fields: [memberId], references: [id])
   target        User?     @relation("TargetAppointments", fields: [targetId], references: [id])
@@ -631,6 +641,8 @@ model Appointment {
   @@index([memberId])
   @@index([targetId])
   @@index([status])
+  @@index([deletedAt])
+  @@index([updatedAt])
 }
 
 model Role {
@@ -787,10 +799,15 @@ model TechnicalRepair {
   instrumentName     String
   problemDescription String
   estimatedCost      Float
-  status             String   @default("PENDING_PASTOR_1") // PENDING_PASTOR_1, PENDING_PASTOR_2, PENDING_ADMIN, PENDING_BISHOP, APPROVED, REJECTED
+  budgetSource       String   @default("DEPARTMENT") // DEPARTMENT, CHURCH
+  status             String   @default("PENDING_PASTOR_1") // PENDING_PASTOR_1, PENDING_PASTOR_2, PENDING_ADMIN, PENDING_BISHOP, APPROVED, TACKLED, REJECTED
   requesterId        String
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+  deletedAt          DateTime?
+  deletedBy          String?
+  deletedReason      String?
+  version            Int      @default(0)
   
   department         Department @relation(fields: [departmentId], references: [id])
   requester          User       @relation("RepairRequester", fields: [requesterId], references: [id])
@@ -798,6 +815,8 @@ model TechnicalRepair {
 
   @@index([departmentId])
   @@index([status])
+  @@index([deletedAt])
+  @@index([updatedAt])
 }
 
 model RepairApproval {

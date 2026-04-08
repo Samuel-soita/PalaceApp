@@ -14,20 +14,39 @@ const SOFT_DELETABLE_MODELS = [
     'Transaction', 'Baptism', 'Partnership', 'PartnershipLedger', 'Budget', 'Devotion'
 ];
 
+/**
+ * 🕵️ PRESENCE-AWARE SHIELD
+ * Recursively checks if 'deletedAt' is already explicitly targeted in the query.
+ * This allows the Sync Engine to find decommissioned records without
+ * being overridden by the global safety filter.
+ */
+const hasDeletedAt = (where: any): boolean => {
+    if (!where || typeof where !== 'object') return false;
+    if ('deletedAt' in where) return true;
+    if (where.AND && Array.isArray(where.AND) && where.AND.some(hasDeletedAt)) return true;
+    if (where.OR && Array.isArray(where.OR) && where.OR.some(hasDeletedAt)) return true;
+    if (where.NOT && (Array.isArray(where.NOT) ? where.NOT.some(hasDeletedAt) : hasDeletedAt(where.NOT))) return true;
+    return false;
+};
+
 export const prisma = basePrisma.$extends({
   query: {
     $allModels: {
       async findMany({ model, args, query }) {
           if (model && SOFT_DELETABLE_MODELS.includes(model)) {
               if (!args) args = {};
-              args.where = { ...args.where, deletedAt: null };
+              if (!hasDeletedAt(args.where)) {
+                  args.where = { ...args.where, deletedAt: null };
+              }
           }
           return query(args);
       },
       async findFirst({ model, args, query }) {
           if (model && SOFT_DELETABLE_MODELS.includes(model)) {
               if (!args) args = {};
-              args.where = { ...args.where, deletedAt: null };
+              if (!hasDeletedAt(args.where)) {
+                  args.where = { ...args.where, deletedAt: null };
+              }
           }
           return query(args);
       },

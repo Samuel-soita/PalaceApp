@@ -29,6 +29,8 @@ import MissionReportsViewer from '../components/dashboard/MissionReportsViewer';
 import DepartmentReportModal from '../components/modals/DepartmentReportModal';
 import { OperationalTimeline } from '../components/dashboard/OperationalTimeline';
 import { BroadcastTrack } from '../components/dashboard/BroadcastTrack';
+import { useLocalFirstDashboard } from '../hooks/useLocalFirstDashboard';
+import SyncIndicator from '../components/SyncIndicator';
 
 export default function PastorsDashboard() {
     const { user, updateUser } = useAuth();
@@ -72,15 +74,8 @@ export default function PastorsDashboard() {
     const [editingPlan, setEditingPlan] = useState<any>(null);
     const [editingAnnouncement, setEditingAnnouncement] = useState<any>(null);
 
-    // --- Data Streams ---
-    const { data: syncData, isLoading: isSyncLoading } = useQuery(['dashboard-sync'], async () => {
-        const res = await api.get('/dashboard/sync');
-        return res.data;
-    }, {
-        enabled: !!user,
-        refetchInterval: 5000,
-        staleTime: 3000
-    });
+    // --- Data Streams (Tactical Mirror) ---
+    const { data: syncData, isLoading: isSyncLoading } = useLocalFirstDashboard();
 
     const { data: devotion, isLoading: isDevotionLoading } = useQuery(['daily-devotion'], async () => {
         const res = await api.get('/devotions/daily');
@@ -221,6 +216,17 @@ export default function PastorsDashboard() {
                             WELCOME, <span style={{ color: 'var(--cyan)' }}>{user?.name?.toUpperCase()}</span>
                         </Typography>
                         <Chip label={user?.role?.replace('_', ' ')} size="small" sx={{ bgcolor: 'rgba(0, 255, 255, 0.1)', color: 'var(--cyan)', fontWeight: 900, borderRadius: 0 }} />
+                        
+                        {/* OFFLINE STATUS INDICATOR */}
+                        {syncData?.isOffline && (
+                            <Chip 
+                                label="LOCAL TACTICAL MODE" 
+                                color="warning" 
+                                size="small" 
+                                sx={{ fontWeight: 900, borderRadius: 0, animation: 'pulse 2s infinite' }} 
+                            />
+                        )}
+
                         {syncData?.isPartner && (
                             <Chip
                                 icon={<Star size={12} />}
@@ -250,14 +256,26 @@ export default function PastorsDashboard() {
                         {/* Interactive Devotion */}
                         <Card sx={{ mb: 4, bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: 4 }}>
                             <CardContent sx={{ p: 4 }}>
-                                <Box display="flex" alignItems="center" gap={2}>
-                                    <Sparkles size={24} color="var(--cyan)" />
-                                    <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>MINISTERIAL DEVOTION</Typography>
+                                <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2}>
+                                    <Box display="flex" alignItems="center" gap={2}>
+                                        <Sparkles size={24} color="var(--cyan)" />
+                                        <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>MINISTERIAL DEVOTION</Typography>
+                                    </Box>
+                                    {user?.pastorModules?.some(m => m.moduleName === 'DevotionPublishing') && (
+                                        <Button 
+                                            size="small" 
+                                            variant="outlined" 
+                                            onClick={() => setDevotionModalOpen(true)}
+                                            sx={{ color: 'var(--cyan)', borderColor: 'var(--cyan-glow)', fontWeight: 900 }}
+                                        >
+                                            {devotion ? 'UPDATE DEVOTION' : 'POST DEVOTION'}
+                                        </Button>
+                                    )}
                                 </Box>
                                 <Chip
                                     label={devotion?.themeOfMonth?.toUpperCase() || syncData?.ministrySettings?.themeOfMonth?.toUpperCase()}
                                     size="small" variant="outlined"
-                                    sx={{ color: 'var(--cyan)', borderColor: 'var(--cyan-glow)', fontWeight: 900 }}
+                                    sx={{ color: 'var(--cyan)', borderColor: 'var(--cyan-glow)', fontWeight: 900, mb: 2 }}
                                 />
 
                                 {isDevotionLoading ? <LinearProgress /> : (
@@ -342,72 +360,6 @@ export default function PastorsDashboard() {
                                 </Box>
 
                                 <Stack spacing={2}>
-                                    {/* 💰 PARTNER INTELLIGENCE / CTA */}
-                                    <Card
-                                        sx={{
-                                            p: 0,
-                                            borderRadius: 0,
-                                            border: syncData?.isPartner ? '1px solid var(--primary-glow)' : '1px solid rgba(255, 165, 0, 0.4)',
-                                            background: syncData?.isPartner ? 'rgba(79, 139, 255, 0.05)' : 'rgba(255, 165, 0, 0.05)'
-                                        }}
-                                    >
-                                        {syncData?.isPartner ? (
-                                            <CardContent sx={{ p: 2 }}>
-                                                <Box display="flex" alignItems="center" gap={2} mb={2}>
-                                                    <Avatar sx={{ bgcolor: 'orange', width: 32, height: 32, boxShadow: '0 0 10px rgba(255,165,0,0.5)' }}><Star size={16} /></Avatar>
-                                                    <Typography variant="caption" fontWeight="1000" sx={{ color: 'orange', letterSpacing: 1 }}>COVENANT PARTNERSHIP STATUS</Typography>
-                                                </Box>
-
-                                                <Grid container spacing={1} mb={2}>
-                                                    <Grid item xs={6}>
-                                                        <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>COMMITTED</Typography>
-                                                        <Typography variant="h6" fontWeight={950}>{(syncData?.partnership?.amount || 0).toLocaleString()} KES</Typography>
-                                                    </Grid>
-                                                    <Grid item xs={6}>
-                                                        <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>PAID TO DATE</Typography>
-                                                        <Typography variant="h6" fontWeight={950} color="success.main">{(syncData?.partnership?.paidAmount || 0).toLocaleString()} KES</Typography>
-                                                    </Grid>
-                                                    <Grid item xs={12}>
-                                                        <Box sx={{ mt: 1, p: 1.5, bgcolor: 'rgba(255,0,0,0.05)', border: '1px solid rgba(255,0,0,0.1)', textAlign: 'center' }}>
-                                                            <Typography variant="caption" fontWeight={900} color="error" sx={{ display: 'block' }}>
-                                                                OUTSTANDING BALANCE: {(syncData?.partnership?.balance || 0).toLocaleString()} KES
-                                                            </Typography>
-                                                            <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 700, opacity: 0.7, mt: 0.5, display: 'block' }}>
-                                                                KINDLY PURPOSE TO COMPLETE YOUR PARTNERSHIP AMOUNT FOR THE CHURCH BUDGET
-                                                            </Typography>
-                                                        </Box>
-                                                    </Grid>
-                                                </Grid>
-
-                                                <Typography variant="caption" sx={{ opacity: 0.6, fontStyle: 'italic', fontWeight: 700 }}>
-                                                    &quot;Partnering with Prayer Palace Apostolic Ministry for Global impact by making sure the church Budget is met&quot;
-                                                </Typography>
-                                            </CardContent>
-                                        ) : (
-                                            <CardContent sx={{ p: 2 }}>
-                                                <Box display="flex" alignItems="center" gap={2} mb={1}>
-                                                    <Avatar sx={{ bgcolor: 'orange', width: 32, height: 32 }}><Star size={16} /></Avatar>
-                                                    <Typography variant="caption" fontWeight="900" sx={{ color: 'orange' }}>PARTNERSHIP VISION</Typography>
-                                                </Box>
-                                                <Typography variant="subtitle2" fontWeight="950" sx={{ mb: 1 }}>BECOME A PRAYER PALACE PARTNER</Typography>
-                                                <Typography variant="caption" sx={{ opacity: 0.7, display: 'block', mb: 2, lineHeight: 1.4 }}>
-                                                    Fuel the mission. Enroll monthly to receive strategic financial intelligence. Renew with varying amounts as led.
-                                                </Typography>
-                                                <Button
-                                                    variant="outlined"
-                                                    fullWidth
-                                                    size="small"
-                                                    component={Link}
-                                                    to="/"
-                                                    onClick={(e) => { e.preventDefault(); setEnrollModalOpen(true); }}
-                                                    sx={{ borderColor: 'orange', color: 'orange', fontWeight: 900, borderRadius: 0, fontSize: '0.65rem' }}
-                                                >
-                                                    ENROLL IN PARTNERSHIP
-                                                </Button>
-                                            </CardContent>
-                                        )}
-                                    </Card>
-
                                     {(() => {
                                         const globalIntel = [
                                             ...(syncData?.announcements || []).filter((a: any) => a.isGlobal).map((a: any) => ({ ...a, intelType: 'CHURCH UPDATE', icon: Megaphone, color: 'cyan' })),
@@ -463,6 +415,72 @@ export default function PastorsDashboard() {
                     {/* Right Column (6): Pastoral Command & Tactical Mission */}
                     <Grid item xs={12} lg={6}>
                         <Stack spacing={4}>
+                            {/* 💰 PARTNER INTELLIGENCE / CTA (Apex of Right Stack) */}
+                            <Card
+                                sx={{
+                                    p: 0,
+                                    borderRadius: 0,
+                                    border: syncData?.isPartner ? '1px solid var(--primary-glow)' : '1px solid rgba(255, 165, 0, 0.4)',
+                                    background: syncData?.isPartner ? 'rgba(79, 139, 255, 0.05)' : 'rgba(255, 165, 0, 0.05)'
+                                }}
+                            >
+                                {syncData?.isPartner ? (
+                                    <CardContent sx={{ p: 2 }}>
+                                        <Box display="flex" alignItems="center" gap={2} mb={2}>
+                                            <Avatar sx={{ bgcolor: 'orange', width: 32, height: 32, boxShadow: '0 0 10px rgba(255,165,0,0.5)' }}><Star size={16} /></Avatar>
+                                            <Typography variant="caption" fontWeight="1000" sx={{ color: 'orange', letterSpacing: 1 }}>COVENANT PARTNERSHIP STATUS</Typography>
+                                        </Box>
+
+                                        <Grid container spacing={1} mb={2}>
+                                            <Grid item xs={6}>
+                                                <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>COMMITTED</Typography>
+                                                <Typography variant="h6" fontWeight={950}>{(syncData?.partnership?.amount || 0).toLocaleString()} KES</Typography>
+                                            </Grid>
+                                            <Grid item xs={6}>
+                                                <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 800 }}>PAID TO DATE</Typography>
+                                                <Typography variant="h6" fontWeight={950} color="success.main">{(syncData?.partnership?.paidAmount || 0).toLocaleString()} KES</Typography>
+                                            </Grid>
+                                            <Grid item xs={12}>
+                                                <Box sx={{ mt: 1, p: 1.5, bgcolor: 'rgba(255,0,0,0.05)', border: '1px solid rgba(255,0,0,0.1)', textAlign: 'center' }}>
+                                                    <Typography variant="caption" fontWeight={900} color="error" sx={{ display: 'block' }}>
+                                                        OUTSTANDING BALANCE: {(syncData?.partnership?.balance || 0).toLocaleString()} KES
+                                                    </Typography>
+                                                    <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 700, opacity: 0.7, mt: 0.5, display: 'block' }}>
+                                                        KINDLY PURPOSE TO COMPLETE YOUR PARTNERSHIP AMOUNT FOR THE CHURCH BUDGET
+                                                    </Typography>
+                                                </Box>
+                                            </Grid>
+                                        </Grid>
+
+                                        <Typography variant="caption" sx={{ opacity: 0.6, fontStyle: 'italic', fontWeight: 700 }}>
+                                            &quot;Partnering with Prayer Palace Apostolic Ministry for Global impact by making sure the church Budget is met&quot;
+                                        </Typography>
+                                    </CardContent>
+                                ) : (
+                                    <CardContent sx={{ p: 2 }}>
+                                        <Box display="flex" alignItems="center" gap={2} mb={1}>
+                                            <Avatar sx={{ bgcolor: 'orange', width: 32, height: 32 }}><Star size={16} /></Avatar>
+                                            <Typography variant="caption" fontWeight="900" sx={{ color: 'orange' }}>PARTNERSHIP VISION</Typography>
+                                        </Box>
+                                        <Typography variant="subtitle2" fontWeight="950" sx={{ mb: 1 }}>BECOME A PRAYER PALACE PARTNER</Typography>
+                                        <Typography variant="caption" sx={{ opacity: 0.7, display: 'block', mb: 2, lineHeight: 1.4 }}>
+                                            Fuel the mission. Enroll monthly to receive strategic financial intelligence. Renew with varying amounts as led.
+                                        </Typography>
+                                        <Button
+                                            variant="outlined"
+                                            fullWidth
+                                            size="small"
+                                            component={Link}
+                                            to="/"
+                                            onClick={(e) => { e.preventDefault(); setEnrollModalOpen(true); }}
+                                            sx={{ borderColor: 'orange', color: 'orange', fontWeight: 900, borderRadius: 0, fontSize: '0.65rem', '&:hover': { bgcolor: 'orange', color: 'black' } }}
+                                        >
+                                            ENROLL IN PARTNERSHIP
+                                        </Button>
+                                    </CardContent>
+                                )}
+                            </Card>
+
                             {/* Mission Action Terminal (Pastoral Tools) */}
                             <Card className="pastor-live-card" sx={{ bgcolor: 'rgba(255,255,255,0.03)', border: '2px solid var(--cyan)', borderRadius: 4 }}>
                                 <CardContent sx={{ p: 3 }}>
@@ -630,8 +648,8 @@ export default function PastorsDashboard() {
                 BackdropProps={{ timeout: 500, sx: { backdropFilter: 'blur(12px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
             >
                 <Fade in={enrollModalOpen}>
-                    <Box tabIndex={-1} sx={{
-                        position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                    <Box tabIndex={-1} sx={{ 
+                        position: 'absolute', top: 80, right: 24,
                         width: { xs: '90%', sm: 400 },
                         bgcolor: '#0a0a0a', border: '1px solid orange',
                         p: 4, outline: 'none', boxShadow: '0 0 60px rgba(255, 165, 0, 0.3)',

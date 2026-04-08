@@ -5,7 +5,9 @@ export const logAudit = (
     action: string,
     entityType: string,
     entityId: string,
-    details?: any
+    details?: any,
+    ipAddress?: string,
+    userAgent?: string
 ) => {
     // --- PRODUCTION SCALABILITY: NON-BLOCKING AUDIT ---
     setImmediate(async () => {
@@ -17,7 +19,9 @@ export const logAudit = (
                     actionType: action,
                     entityType,
                     entityId,
-                    metadata: details || {}
+                    metadata: details || {},
+                    ipAddress,
+                    userAgent
                 }
             });
         } catch (error) {

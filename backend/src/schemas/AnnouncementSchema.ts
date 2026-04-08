@@ -9,7 +9,10 @@ export const CreateAnnouncementSchema = z.object({
         departmentId: z.string().uuid().optional().nullable(),
         isGlobal: z.boolean().optional(),
         isMajor: z.boolean().optional(),
-        pastorIds: z.array(z.string().uuid()).optional()
+        pastorIds: z.array(z.string().uuid()).optional(),
+        eventDate: z.string().datetime().optional().nullable(),
+        eventTime: z.string().optional().nullable(),
+        location: z.string().optional().nullable()
     }).strict()
 });
 
@@ -22,6 +25,9 @@ export const UpdateAnnouncementSchema = z.object({
         departmentId: z.string().uuid().optional().nullable(),
         isGlobal: z.boolean().optional(),
         isMajor: z.boolean().optional(),
-        status: z.enum(['PENDING', 'PUBLISHED', 'ARCHIVED', 'REJECTED']).optional()
+        status: z.enum(['PENDING', 'PUBLISHED', 'ARCHIVED', 'REJECTED']).optional(),
+        eventDate: z.string().datetime().optional().nullable(),
+        eventTime: z.string().optional().nullable(),
+        location: z.string().optional().nullable()
     }).strict()
 });

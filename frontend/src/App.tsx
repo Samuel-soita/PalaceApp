@@ -95,8 +95,8 @@ function BishopGuard({ children }: { children: React.ReactNode }) {
 
 function ExecutiveGuard({ children }: { children: React.ReactNode }) {
     const { user } = useAuth();
-    // Universal Override: System Ops + Bishop + Watua
-    const isExecutive = ['SYSTEM_ADMIN', 'SECRETARY', 'SUPER_ADMIN', 'WATUA'].includes(user?.role || '');
+    // Universal Override: System Ops + Bishop + Watua + Dept Leaders (Restricted View)
+    const isExecutive = ['SYSTEM_ADMIN', 'SECRETARY', 'SUPER_ADMIN', 'WATUA', 'DEPARTMENT_LEADER'].includes(user?.role || '');
     if (isExecutive) return <>{children}</>;
     
     return <Navigate to="/" replace />;
@@ -125,17 +125,24 @@ import { PermissionService } from './lib/PermissionService';
 import { DeviceService } from './lib/DeviceService';
 
 function App() {
+    const { user } = useAuth();
+
     useEffect(() => {
         const initKernel = async () => {
             // 🔐 1. Initialize Device Identity
             await DeviceService.getDeviceId();
             
-            // 🛡️ 2. Sync Permission Engine with Cloud Source of Truth
-            await PermissionService.syncWithCloud();
+            // 🛡️ 2. Sync Permission Engine with Cloud Source of Truth (Authorized roles only)
+            const isAuthorizedForPermissions = ['SUPER_ADMIN', 'WATUA'].includes(user?.role || '');
+            if (isAuthorizedForPermissions) {
+                await PermissionService.syncWithCloud();
+            }
         };
 
-        initKernel();
-    }, []);
+        if (user) {
+            initKernel();
+        }
+    }, [user]);
 
     return (
         <Suspense fallback={<LoadingFallback />}>

@@ -56,7 +56,10 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 allPartnerships,
                 globalMetrics,
                 auditLogs,
-                departmentMembers
+                departmentMembers,
+                repairs,
+                reports,
+                appointments
             ] = await Promise.all([
                 prisma.project.findMany({ 
                     where: getWhere(), 
@@ -86,7 +89,12 @@ export const getDashboardSync = async (req: any, res: Response) => {
                     orderBy: { date: 'asc' },
                 }),
                 prisma.announcement.findMany({ 
-                    where: getWhere('isGlobal'), 
+                    where: isAdmin ? (effectiveDeptId ? { departmentId: effectiveDeptId } : {}) : {
+                        OR: [
+                            { departmentId: userDeptId }, // All department announcements (Leader will see pending here)
+                            { isGlobal: true, status: 'APPROVED' } // Approved global ones
+                        ]
+                    }, 
                     take: 50, 
                     orderBy: { createdAt: 'desc' },
                 }),
@@ -160,7 +168,34 @@ export const getDashboardSync = async (req: any, res: Response) => {
                     where: { departmentId: effectiveDeptId as string },
                     include: { children: true },
                     orderBy: { name: 'asc' }
-                }) : Promise.resolve([])
+                }) : Promise.resolve([]),
+                // ─── MISSION TELEMETRY HARDENING ───
+                (prisma as any).technicalRepair ? prisma.technicalRepair.findMany({
+                    where: isAdmin ? (effectiveDeptId ? { departmentId: effectiveDeptId } : {}) : { departmentId: userDeptId },
+                    take: 20,
+                    orderBy: { createdAt: 'desc' }
+                }).catch(() => []) : Promise.resolve([]),
+                (prisma as any).departmentReport ? prisma.departmentReport.findMany({
+                    where: isAdmin ? (effectiveDeptId ? { departmentId: effectiveDeptId } : {}) : { departmentId: userDeptId },
+                    take: 20,
+                    orderBy: { createdAt: 'desc' }
+                }).catch(() => []) : Promise.resolve([]),
+                // ─── APPOINTMENT AGGREGATION ───
+                prisma.appointment.findMany({
+                    where: {
+                        deletedAt: null, // MISSION INTEGRITY
+                        ...(isAdmin ? {
+                            OR: [
+                                { targetId: userId },
+                                { targetRole: 'SUPER_ADMIN' },
+                                { status: 'PENDING' }
+                            ]
+                        } : { memberId: userId })
+                    },
+                    take: 50,
+                    include: { member: { select: { name: true } }, target: { select: { name: true } } },
+                    orderBy: { preferredDate: 'asc' }
+                })
             ]);
 
             // --- AUTO DEPARTMENT MAPPING ---
@@ -208,7 +243,10 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 allPartnerships,
                 globalMetrics,
                 auditLogs,
-                departmentMembers
+                departmentMembers,
+                repairs,
+                reports,
+                appointments
             };
         }, 10); // High-frequency cache for real-time situational awareness
 

@@ -407,10 +407,28 @@ export const executeIntervention = catchAsync(async (req: AuthRequest, res: Resp
         default: throw new AppError('Invalid intervention code.', 400);
     }
 
-    const [current, user] = await prisma.$transaction([
-        prisma.user.findUnique({ where: { id } }),
-        prisma.user.update({ where: { id }, data: updateData })
-    ]);
+    const [current, user] = await prisma.$transaction(async (tx) => {
+        const curr = await tx.user.findUnique({ where: { id } });
+        const updated = await tx.user.update({ where: { id }, data: updateData });
+
+        if (action === 'MAKE_PASTOR' || action === 'MAKE_ASSOCIATE_PASTOR') {
+            const baselineModules = [
+                'Child Dedication Registry',
+                'Partnership Management',
+                'Event Oversight',
+                'DevotionPublishing',
+                'Project Oversight'
+            ];
+            for (const mod of baselineModules) {
+                await (tx as any).pastorModuleAccess.upsert({
+                    where: { pastorId_moduleKey: { pastorId: id, moduleKey: mod } },
+                    update: {},
+                    create: { pastorId: id, moduleKey: mod, permissions: ['READ', 'WRITE', 'EXECUTE'] }
+                });
+            }
+        }
+        return [curr, updated];
+    });
 
     await logAction({
         actorId: actor.id,

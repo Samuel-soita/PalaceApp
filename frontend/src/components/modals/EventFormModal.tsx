@@ -7,6 +7,7 @@ import {
 import { useQuery, useMutation } from '@tanstack/react-query';
 import api from '../../lib/api-client';
 import { useAuth } from '../../contexts/AuthContext';
+import { useOfflineMutation } from '../../hooks/useOfflineMutation';
 
 interface EventFormModalProps {
     open: boolean;
@@ -30,7 +31,8 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
         status: 'PLANNED',
         eventType: 'DEPARTMENT_EVENT',
         isMajor: false,
-        pastorIds: [] as string[]
+        pastorIds: [] as string[],
+        budgetSource: 'DEPARTMENT' // Default to department
     });
 
     useEffect(() => {
@@ -47,7 +49,8 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
                 status: event.status,
                 eventType: event.eventType,
                 isMajor: event.isMajor || false,
-                pastorIds: []
+                pastorIds: [],
+                budgetSource: event.budgetSource || 'DEPARTMENT'
             });
         } else {
             setFormData({
@@ -62,7 +65,8 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
                 status: 'PLANNED',
                 eventType: 'DEPARTMENT_EVENT',
                 isMajor: false,
-                pastorIds: []
+                pastorIds: [],
+                budgetSource: 'DEPARTMENT'
             });
         }
     }, [event, open, user, defaultDepartmentId]);
@@ -78,17 +82,15 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
         return userData.filter((u: any) => u.role === 'PASTOR');
     }, { enabled: open && !event });
 
-    const mutation = useMutation(
-        (data: any) => event 
-            ? api.patch(`/events/${event.id}`, data) 
-            : api.post('/events', data),
-        {
-            onSuccess: () => {
-                onSuccess();
-                onClose();
-            }
+    const mutation = useOfflineMutation({
+        entity: 'EVENT',
+        table: 'events',
+        url: '/events',
+        onSuccess: () => {
+            onSuccess();
+            onClose();
         }
-    );
+    });
 
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [uploading, setUploading] = useState(false);
@@ -133,8 +135,9 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
         const isoDate = new Date(`${formData.date}T${formData.time || '00:00'}:00`).toISOString();
         
         // Construct payload (status and date/time are now correctly handled by schema)
+        const { pastorIds, ...restFormData } = formData;
         const cleanPayload = { 
-            ...formData, 
+            ...(event ? restFormData : formData), 
             date: isoDate, 
             attachmentUrl 
         };
@@ -143,6 +146,8 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
         setUploading(false);
         setSelectedFile(null);
     };
+
+    const isLocked = event?.status === 'APPROVED' && user?.role === 'DEPARTMENT_LEADER';
 
     return (
         <Dialog 
@@ -161,7 +166,7 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
         >
             <form onSubmit={handleSubmit}>
                 <DialogTitle sx={{ fontWeight: 950, fontSize: '1.5rem', letterSpacing: -1 }}>
-                    {event ? 'EDIT EVENT' : 'INITIATE EVENT'}
+                    {event ? (event.status === 'APPROVED' ? 'VIEW EVENT (LOCKED)' : 'EDIT EVENT') : 'INITIATE EVENT'}
                 </DialogTitle>
                 <DialogContent>
                     <Box display="flex" flexDirection="column" gap={3} mt={1}>
@@ -224,12 +229,33 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
                         />
                         <Box display="flex" gap={2}>
                             <TextField
-                                label="Budget ($)"
+                                label="Budget (KES)"
                                 type="number"
                                 fullWidth
                                 value={formData.budgetNeeded}
                                 onChange={(e) => setFormData({ ...formData, budgetNeeded: Number(e.target.value) })}
                             />
+                            <TextField
+                                label="Budget Source"
+                                select
+                                fullWidth
+                                value={formData.budgetSource}
+                                onChange={(e) => setFormData({ ...formData, budgetSource: e.target.value })}
+                            >
+                                <MenuItem value="DEPARTMENT">Department Funds</MenuItem>
+                                <MenuItem value="CHURCH">Church Central Funds</MenuItem>
+                            </TextField>
+                        </Box>
+
+                        {formData.budgetSource === 'DEPARTMENT' && (
+                            <Box sx={{ p: 1.5, bgcolor: 'rgba(255,152,0,0.05)', border: '1px solid rgba(255,152,0,0.2)', borderRadius: 1 }}>
+                                <Typography variant="caption" fontWeight="800" color="warning.main">
+                                    NOTE: Department funded operations require a minimum balance of 1,500 KES.
+                                </Typography>
+                            </Box>
+                        )}
+
+                        <Box display="flex" gap={2}>
                             <TextField
                                 label="Status"
                                 select
@@ -339,7 +365,7 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
                     <Button 
                         type="submit" 
                         variant="contained" 
-                        disabled={mutation.isLoading || uploading} 
+                        disabled={mutation.isLoading || uploading || isLocked} 
                         sx={{ 
                             borderRadius: 0, 
                             fontWeight: 900, 
@@ -350,6 +376,11 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
                     >
                         {uploading ? 'UPLOADING...' : (event ? 'SAVE CHANGES' : 'DEPLOY EVENT')}
                     </Button>
+                    {event?.status === 'APPROVED' && (
+                        <Typography variant="caption" color="error" fontWeight="950" sx={{ mt: 1, display: 'block', textAlign: 'center', width: '100%' }}>
+                            MISSION CLEARED BY COMMAND. EDITING RESTRICTED.
+                        </Typography>
+                    )}
                 </DialogActions>
             </form>
         </Dialog>

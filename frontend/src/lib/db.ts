@@ -426,14 +426,17 @@ export class PalaceLocalDatabase extends Dexie {
     auditLogs!: Table<AuditLog, string>;
     deviceSettings!: Table<DeviceSettings, string>;
     localCredentials!: Table<LocalCredential, string>;
+    settings!: Table<any, string>;
+    affirmations!: Table<any, string>;
+    reports!: Table<any, string>;
+    supportRequests!: Table<any, string>;
     syncQueue!: Table<SyncJob, string>;
 
     constructor() {
         super('palace-local-first-db');
         
-        // Ensure version increases if you change stores
-        // 🚀 Version 12: Indexing Transactions by Type for Dashboard Telemetry
-        this.version(12).stores({
+        // 🚀 Version 14: Added Reports & Support Requests for Universal Integrity
+        this.version(14).stores({
             events: 'id, departmentId, date, syncStatus, deviceId, version',
             users: 'id, role, departmentId, status, idNumber, membershipNumber, syncStatus, deviceId, version',
             departments: 'id, name, syncStatus, deviceId, version',
@@ -457,6 +460,10 @@ export class PalaceLocalDatabase extends Dexie {
             auditLogs: 'id, action, targetId, performedBy, deviceId, timestamp, syncStatus',
             deviceSettings: 'id, deviceId',
             localCredentials: 'id, hashedPin',
+            settings: 'id',
+            affirmations: 'id',
+            reports: 'id, departmentId, type, syncStatus',
+            supportRequests: 'id, requesterId, eventId, status, syncStatus',
             syncQueue: 'id, timestamp, status, deviceId'
         });
     }

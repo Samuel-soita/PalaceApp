@@ -21,10 +21,13 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
     const [formData, setFormData] = useState({
         title: '',
         type: 'MONTHLY',
-        description: '',
+        content: '',
         isMajor: false,
         departmentId: defaultDepartmentId || user?.departmentId || '',
-        pastorIds: [] as string[]
+        pastorIds: [] as string[],
+        budgetNeeded: 0,
+        budgetSource: 'DEPARTMENT',
+        status: 'PLANNED'
     });
 
     useEffect(() => {
@@ -32,19 +35,25 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
             setFormData({
                 title: plan.title,
                 type: plan.type,
-                description: plan.description,
+                content: plan.content || plan.description || '',
                 isMajor: plan.isMajor || false,
                 departmentId: plan.departmentId,
-                pastorIds: []
+                pastorIds: [],
+                budgetNeeded: plan.budgetNeeded || 0,
+                budgetSource: plan.budgetSource || 'DEPARTMENT',
+                status: plan.status || 'PLANNED'
             });
         } else {
             setFormData({
                 title: '',
                 type: 'MONTHLY',
-                description: '',
+                content: '',
                 isMajor: false,
                 departmentId: defaultDepartmentId || user?.departmentId || '',
-                pastorIds: []
+                pastorIds: [],
+                budgetNeeded: 0,
+                budgetSource: 'DEPARTMENT',
+                status: 'PLANNED'
             });
         }
     }, [plan, open, user, defaultDepartmentId]);
@@ -77,7 +86,9 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
             alert("Please select a Department for this Plan.");
             return;
         }
-        mutation.mutate(formData);
+        const { pastorIds, ...restFormData } = formData;
+        const submitPayload = plan ? restFormData : formData;
+        mutation.mutate(submitPayload);
     };
 
     return (
@@ -97,7 +108,7 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
         >
             <form onSubmit={handleSubmit}>
                 <DialogTitle sx={{ fontWeight: '950', fontSize: '1.5rem', letterSpacing: -1 }}>
-                    {plan ? 'EDIT STRATEGIC PLAN' : 'INITIATE STRATEGIC PLAN'}
+                    {plan ? (plan.status === 'APPROVED' ? 'VIEW STRATEGY (LOCKED)' : 'EDIT STRATEGIC PLAN') : 'INITIATE STRATEGIC PLAN'}
                 </DialogTitle>
                 <DialogContent>
                     <Box display="flex" flexDirection="column" gap={3} mt={1}>
@@ -119,15 +130,43 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
                             <MenuItem value="YEARLY">Yearly</MenuItem>
                         </TextField>
                         <TextField
-                            label="Strategic Description"
+                            label="Strategic Content"
                             multiline
                             rows={4}
                             fullWidth
                             required
-                            value={formData.description}
-                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                            value={formData.content}
+                            onChange={(e) => setFormData({ ...formData, content: e.target.value })}
                         />
                         
+                        <Box display="flex" gap={2}>
+                            <TextField
+                                label="Budget (KES)"
+                                type="number"
+                                fullWidth
+                                value={formData.budgetNeeded}
+                                onChange={(e) => setFormData({ ...formData, budgetNeeded: Number(e.target.value) })}
+                            />
+                            <TextField
+                                label="Budget Source"
+                                select
+                                fullWidth
+                                value={formData.budgetSource}
+                                onChange={(e) => setFormData({ ...formData, budgetSource: e.target.value })}
+                            >
+                                <MenuItem value="DEPARTMENT">Department Funds</MenuItem>
+                                <MenuItem value="CHURCH">Church Central Funds</MenuItem>
+                            </TextField>
+                        </Box>
+
+                        {formData.budgetSource === 'DEPARTMENT' && (
+                            <Box sx={{ p: 1.5, bgcolor: 'rgba(255,152,0,0.05)', border: '1px solid rgba(255,152,0,0.2)', borderRadius: 1 }}>
+                                <Typography variant="caption" fontWeight="800" color="warning.main">
+                                    NOTE: Department funded operations require a minimum balance of 1,500 KES.
+                                </Typography>
+                            </Box>
+                        )}
+
                         <Box display="flex" alignItems="center" bgcolor="rgba(255,255,255,0.05)" p={2} borderRadius={2} border="1px dashed rgba(255,255,255,0.1)">
                             <Box flex={1}>
                                 <Typography variant="subtitle2" fontWeight="bold">CHURCH-WIDE STRATEGY</Typography>
@@ -184,7 +223,7 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
                     <Button 
                         type="submit" 
                         variant="contained" 
-                        disabled={mutation.isLoading} 
+                        disabled={mutation.isLoading || (plan?.status === 'APPROVED' && user?.role === 'DEPARTMENT_LEADER')} 
                         sx={{ 
                             borderRadius: 0, 
                             fontWeight: 900, 
@@ -195,6 +234,11 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
                     >
                         {plan ? 'SAVE CHANGES' : 'DEPLOY STRATEGY'}
                     </Button>
+                    {plan?.status === 'APPROVED' && user?.role === 'DEPARTMENT_LEADER' && (
+                        <Typography variant="caption" color="error" fontWeight="950" sx={{ mt: 1, display: 'block', textAlign: 'center', width: '100%' }}>
+                            MISSION CLEARED BY COMMAND. EDITING RESTRICTED.
+                        </Typography>
+                    )}
                 </DialogActions>
             </form>
         </Dialog>

@@ -52,6 +52,11 @@ export default function AnnouncementBanner() {
                         <Typography variant="body2" sx={{ fontWeight: 500, opacity: 0.9 }}>
                             {ann.content}
                         </Typography>
+                        {(ann.eventDate || ann.location) && (
+                            <Typography variant="caption" sx={{ fontWeight: 800, opacity: 0.7, color: 'var(--cyan)', borderLeft: '1px solid rgba(255,255,255,0.2)', pl: 1.5, ml: 0.5 }}>
+                                [ TACTICAL INTEL: {ann.eventDate ? new Date(ann.eventDate).toLocaleDateString() : ''} {ann.eventTime ? `| ${ann.eventTime}` : ''} {ann.location ? `| SEC: ${ann.location}` : ''} ]
+                            </Typography>
+                        )}
                     </Box>
                 ))}
             </div>
