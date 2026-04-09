@@ -96,7 +96,23 @@ export const getDeltaSync = async (req: any, res: Response) => {
                                     effectiveDeptId ? { departmentId: effectiveDeptId as string } : {}
                                 ]
                             },
-                            select: { id: true, name: true, membershipNumber: true, role: true, departmentId: true, status: true, updatedAt: true, deletedAt: true }
+                            select: { 
+                                id: true, 
+                                name: true, 
+                                membershipNumber: true, 
+                                role: true, 
+                                departmentId: true, 
+                                status: true, 
+                                idNumber: true, 
+                                dob: true, 
+                                gender: true, 
+                                isCardPaid: true, 
+                                isSuspended: true, 
+                                avatarUrl: true, 
+                                wrongdoingCount: true, 
+                                updatedAt: true, 
+                                deletedAt: true 
+                            }
                         });
                     }
                     break;

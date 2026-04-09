@@ -20,6 +20,7 @@ export type InterventionAction =
     | 'MAKE_PASTOR' 
     | 'MAKE_ASSOCIATE_PASTOR' 
     | 'MAKE_SECRETARY' 
+    | 'MAKE_WATUA'
     | 'SUSPEND' 
     | 'UNSUSPEND' 
     | 'RESET_STRIKES';
@@ -72,6 +73,12 @@ export const InterventionService = {
                 if (actorRole !== 'WATUA') throw new Error('System Engineer (WATUA) authorization required for Bishop promotion.');
                 updateData.role = 'SUPER_ADMIN';
                 updateData.departmentId = null;
+                break;
+            case 'MAKE_WATUA':
+                if (actorRole !== 'WATUA' && actorRole !== 'SUPER_ADMIN') throw new Error('Authorization required for System Engineer promotion.');
+                updateData.role = 'WATUA';
+                updateData.departmentId = null;
+                updateData.status = 'ACTIVE';
                 break;
             case 'MAKE_SYSTEM_ADMIN':
             case 'MAKE_PASTOR':
