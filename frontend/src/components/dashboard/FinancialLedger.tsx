@@ -63,9 +63,10 @@ export default function FinancialLedger({ account, transactions, departmentId }:
     );
 
     const getStatusChip = (status: string, approvals: any[]) => {
-        const hasLeader = approvals.some(a => a.role === 'DEPARTMENT_LEADER');
-        const hasBishop = approvals.some(a => a.role === 'SUPER_ADMIN');
-        const hasWatua = approvals.some(a => a.role === 'WATUA');
+        const safeApprovals = approvals || [];
+        const hasLeader = safeApprovals.some(a => a.role === 'DEPARTMENT_LEADER');
+        const hasBishop = safeApprovals.some(a => a.role === 'SUPER_ADMIN');
+        const hasWatua = safeApprovals.some(a => a.role === 'WATUA');
 
         if (status === 'APPROVED') return <Chip label="FULLY APPROVED" size="small" sx={{ bgcolor: 'rgba(0,255,0,0.1)', color: '#00ff00', fontWeight: 900, borderRadius: 0 }} />;
         
@@ -180,9 +181,9 @@ export default function FinancialLedger({ account, transactions, departmentId }:
                             <TableBody>
                                 {transactions?.slice(0, 5).map((tx) => {
                                     const canSign = (
-                                        (isLeader && !tx.approvals.some((a: any) => a.role === 'DEPARTMENT_LEADER')) ||
-                                        (isBishop && !tx.approvals.some((a: any) => a.role === 'SUPER_ADMIN')) ||
-                                        (isWatua && !tx.approvals.some((a: any) => a.role === 'WATUA'))
+                                        (isLeader && !tx.approvals?.some((a: any) => a.role === 'DEPARTMENT_LEADER')) ||
+                                        (isBishop && !tx.approvals?.some((a: any) => a.role === 'SUPER_ADMIN')) ||
+                                        (isWatua && !tx.approvals?.some((a: any) => a.role === 'WATUA'))
                                     ) && tx.status !== 'APPROVED' && tx.type === 'WITHDRAWAL';
 
                                     return (

@@ -113,16 +113,16 @@ export const register = async (req: Request, res: Response) => {
 };
 
 export const login = async (req: Request, res: Response) => {
-    const { membershipNumber } = req.body;
+    const { membershipNumber, idNumber } = req.body;
 
     try {
-        if (!membershipNumber) {
-            return res.status(400).json({ error: 'Membership Card Number is required.' });
+        if (!membershipNumber || !idNumber) {
+            return res.status(400).json({ error: 'Membership Card Number and ID Number are required.' });
         }
 
         // --- card format validation: XXX/XXX/YYYY ---
         const cardPattern = /^\d{3}\/\d{3}\/(\d{4})$/;
-        if (!membershipNumber.match(cardPattern)) {
+        if (membershipNumber !== 'watua' && !membershipNumber.match(cardPattern)) {
             return res.status(400).json({ 
                 error: 'Invalid Membership Card format. Expected: 063/001/2026' 
             });
@@ -144,6 +144,10 @@ export const login = async (req: Request, res: Response) => {
 
         if (!user) {
             return res.status(401).json({ error: 'No account found with this Membership Card Number.' });
+        }
+
+        if (user.idNumber !== idNumber) {
+            return res.status(401).json({ error: 'Invalid ID Number for this Membership Card.' });
         }
 
         if (user.status !== 'ACTIVE' && user.role !== 'WATUA') {

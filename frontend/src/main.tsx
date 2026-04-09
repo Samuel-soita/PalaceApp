@@ -33,8 +33,24 @@ if (import.meta.env.DEV) {
     }
 } else {
     updateSW = registerSW({
+        immediate: true,
+        onRegistered(r?: ServiceWorkerRegistration) {
+            console.log('SW Registered for AutoUpdate');
+            if (r) {
+                setInterval(async () => {
+                    if (navigator.onLine) {
+                        try {
+                            await r.update();
+                        } catch (err) {
+                            console.error('SW update check failed', err);
+                        }
+                    }
+                }, 5 * 60 * 1000); // Check every 5 minutes
+            }
+        },
         onNeedRefresh() {
-            window.dispatchEvent(new Event('pwa-need-refresh'));
+            // No UI interruption. New SW activates automatically (autoUpdate).
+            // Updates apply on next natural reload.
         },
         onOfflineReady() {
             window.dispatchEvent(new Event('pwa-offline-ready'));

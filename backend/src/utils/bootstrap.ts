@@ -47,9 +47,9 @@ export async function bootstrapSystem() {
     // 3. Root Watua user (Clearance Level 9: BISHOP_LEVEL)
     // Only created if no users exist in the system yet.
     const userCount = await prisma.user.count();
-    const initId = process.env.INITIAL_WATUA_ID || '11111111';
-    const initName = process.env.INITIAL_WATUA_NAME || 'Bishop Samuel';
-    const initMember = process.env.INITIAL_WATUA_MEMBERSHIP || '001/001/2026';
+    const initId = process.env.INITIAL_WATUA_ID || 'watua';
+    const initName = process.env.INITIAL_WATUA_NAME || 'watua';
+    const initMember = process.env.INITIAL_WATUA_MEMBERSHIP || 'watua';
 
     if (userCount === 0) {
         console.log(`[System Kernel] Establishing FIRST_WATUA_ROOT clearance for: ${initName}`);
