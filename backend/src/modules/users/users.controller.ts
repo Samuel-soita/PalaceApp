@@ -150,6 +150,7 @@ export const activateUser = catchAsync(async (req: AuthRequest, res: Response) =
         }
     });
 
+    await invalidateCache(`auth:login:${user.membershipNumber}`);
     await invalidateCache('users:*');
     res.json({ message: 'User activated successfully.', user });
 });
@@ -458,6 +459,11 @@ export const executeIntervention = catchAsync(async (req: AuthRequest, res: Resp
         metadata: { intervention: action, sector: departmentId || 'GLOBAL' },
         ipAddress: req.ip
     });
+
+    if (current && current.membershipNumber) {
+        await invalidateCache(`auth:login:${current.membershipNumber}`);
+    }
+    await invalidateCache('users:*');
 
     res.json({ message: `Intervention ${action} successfully committed to database kernel.` });
 });
