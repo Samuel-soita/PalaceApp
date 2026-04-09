@@ -12,18 +12,21 @@ export class TelemetryEngine {
     static ignite() {
         console.log('[System Kernel] Igniting Telemetry Engine...');
         
-        setInterval(async () => {
-            if (this.isRunning) return;
-            this.isRunning = true;
+        // --- STARTUP SAFETY: Wait for Master Bootstrap to settle before pulsing ---
+        setTimeout(() => {
+            setInterval(async () => {
+                if (this.isRunning) return;
+                this.isRunning = true;
 
-            try {
-                await this.broadcastMetrics();
-            } catch (err) {
-                console.error('[TelemetryEngine ERROR]', err);
-            } finally {
-                this.isRunning = false;
-            }
-        }, 15000); // 15-second pulse for Production Stability
+                try {
+                    await this.broadcastMetrics();
+                } catch (err) {
+                    console.error('[TelemetryEngine ERROR]', err);
+                } finally {
+                    this.isRunning = false;
+                }
+            }, 15000); // 15-second pulse for Production Stability
+        }, 2000); 
     }
 
     static incrementError() {
