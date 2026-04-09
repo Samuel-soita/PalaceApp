@@ -82,6 +82,7 @@ export async function getOrSetCache<T>(key: string, fetchFn: () => Promise<T>, t
 
 export async function getCachedData(key: string): Promise<any | null> {
     try {
+        if (redis.status !== 'ready') return null;
         const data = await redis.get(key);
         return data ? JSON.parse(data) : null;
     } catch (error) {
@@ -92,6 +93,7 @@ export async function getCachedData(key: string): Promise<any | null> {
 
 export async function setCachedData(key: string, data: any, ttlSeconds: number = 300) {
     try {
+        if (redis.status !== 'ready') return;
         await redis.setex(key, ttlSeconds, JSON.stringify(data));
     } catch (error) {
         console.error(`[Redis Set Error] ${key}:`, error);
@@ -103,6 +105,8 @@ export async function setCachedData(key: string, data: any, ttlSeconds: number =
  */
 export async function invalidateCache(pattern: string) {
     try {
+        if (redis.status !== 'ready') return;
+
         if (pattern.includes('*')) {
             const keys = await redis.keys(pattern);
             if (keys.length > 0) {
