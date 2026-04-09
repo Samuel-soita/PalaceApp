@@ -720,6 +720,9 @@ export default function WatuaDashboard() {
                                                     <IconButton sx={{ color: '#00d4ff' }} onClick={() => handleAction(user.id, 'MAKE_SYSTEM_ADMIN')} title="Appoint Church Admin (SYSTEM_ADMIN)">
                                                         <Briefcase size={18} />
                                                     </IconButton>
+                                                    <IconButton sx={{ color: '#c175ff' }} onClick={() => handleAction(user.id, 'MAKE_WATUA')} title="Verify as Watua (SYSTEM_ENGINEER)">
+                                                        <Settings size={18} />
+                                                    </IconButton>
                                                     <IconButton sx={{ color: '#94a3b8' }} onClick={() => handleAction(user.id, 'MAKE_SECRETARY')} title="Appoint Secretary">
                                                         <PenTool size={18} />
                                                     </IconButton>
