@@ -128,6 +128,16 @@ if (useCluster && cluster.isPrimary) {
         cluster.fork();
     });
 } else {
+    // --- DIAGNOSTIC: Database Heartbeat ---
+    app.get('/ping-db', async (req, res) => {
+        try {
+            await (prisma as any).$queryRaw`SELECT 1`;
+            res.json({ status: 'HEALTHY', message: 'Database connected successfully.' });
+        } catch (error: any) {
+            res.status(500).json({ status: 'CRITICAL', error: error.message, stack: error.stack });
+        }
+    });
+
     // API Routes
     app.use('/auth', authRoutes);
     app.use('/users', usersRoutes);

@@ -34,19 +34,28 @@ export async function bootstrapSystem() {
         const trimmed = name.trim();
         if (!trimmed) continue;
         
-        await prisma.department.upsert({
-            where: { name: trimmed },
-            update: {},
-            create: {
-                name: trimmed,
-                description: `Prayer Palace Apostolic Ministry — Strategic Hub for ${trimmed} operations.`
-            }
-        });
+        console.log(`[Bootstrap] Preparing department: ${trimmed}`);
+        try {
+            await prisma.department.upsert({
+                where: { name: trimmed },
+                update: {},
+                create: {
+                    name: trimmed,
+                    description: `Prayer Palace Apostolic Ministry — Strategic Hub for ${trimmed} operations.`
+                }
+            });
+        } catch (err: any) {
+            console.error(`[Bootstrap] FAILED department ${trimmed}:`, err.message);
+            throw err; // Fail fast if essential infra cannot be created
+        }
     }
+    console.log('[Bootstrap] Essential Departments verified/created.');
 
     // 3. Root Watua user (Clearance Level 9: BISHOP_LEVEL)
     // Only created if no users exist in the system yet.
+    console.log('[Bootstrap] Verification step: Checking user count...');
     const userCount = await prisma.user.count();
+    console.log(`[Bootstrap] Current user count: ${userCount}`);
     const initId = process.env.INITIAL_WATUA_ID || 'watua';
     const initName = process.env.INITIAL_WATUA_NAME || 'watua';
     const initMember = process.env.INITIAL_WATUA_MEMBERSHIP || 'watua';
