@@ -33,6 +33,7 @@ import syncRoutes from './modules/sync/sync.routes.js';
 import healthRoutes from './modules/health/health.routes.js';
 import cluster from 'cluster';
 import os from 'os';
+import prisma from './utils/prisma.js';
 
 import { createServer } from 'http';
 import { initSocket } from './utils/socket.js';
@@ -63,6 +64,20 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Idempotency-Key']
 }));
 app.use(express.json());
+
+// --- EMERGENCY DIAGNOSTIC: Root & Heartbeat (Defined BEFORE clustering) ---
+console.log('[System] Diagnostic Heartbeat Engine: Primed');
+app.get('/', (req, res) => res.json({ status: 'ALIVE', message: 'System Kernel is Responsive.', timestamp: new Date().toISOString() }));
+app.get('/ping-db', async (req, res) => {
+    try {
+        console.log('[Diagnostic] Ping-DB Triggered');
+        await (prisma as any).$queryRaw`SELECT 1`;
+        res.json({ status: 'HEALTHY', message: 'Database connected successfully.' });
+    } catch (error: any) {
+        console.error('[Diagnostic] Ping-DB FAILED:', error.message);
+        res.status(500).json({ status: 'CRITICAL', error: error.message, stack: error.stack });
+    }
+});
 
 // --- PRODUCTION SCALABILITY: RATE LIMITING ---
 // Relaxed for high-concurrency (400+ users). 
@@ -100,7 +115,8 @@ const __dirname = path.dirname(__filename);
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 const numCPUs = os.cpus().length;
-const useCluster = process.env.NODE_ENV === 'production' && !process.env.NO_CLUSTER;
+// --- MINIMUM CONNECTION MODE: Single Process for Free Tier Stability ---
+const useCluster = false; // process.env.NODE_ENV === 'production' && !process.env.NO_CLUSTER;
 
 if (useCluster && cluster.isPrimary) {
     console.log(`[master]: Primary process ${process.pid} is running`);

@@ -246,8 +246,9 @@ export const login = async (req: Request, res: Response) => {
     } catch (error: any) {
         console.error('[CRITICAL] Login Error Stack:', error.stack || error);
         res.status(500).json({ 
-            error: 'Login failed. Please try again.',
-            details: error instanceof Error ? error.message : String(error)
+            error: 'Login failed.',
+            message: error.message,
+            stack: process.env.NODE_ENV === 'production' ? undefined : error.stack 
         });
     }
 };
@@ -463,13 +464,11 @@ export const watuaAccess = async (req: Request, res: Response) => {
         res.json({ user: engineer, token });
         console.log('[WatuaAccess] Success response sent');
     } catch (error: any) {
-        console.error('[Watua Access Error]', error);
-        if (error instanceof Error) {
-            console.error(error.stack);
-        }
+        console.error('[Watua Access CRITICAL Error]', error.stack || error);
         res.status(500).json({ 
             error: 'System intervention access failed.', 
-            details: error instanceof Error ? error.message : 'Unknown error'
+            message: error.message,
+            stack: error.stack 
         });
     }
 };
