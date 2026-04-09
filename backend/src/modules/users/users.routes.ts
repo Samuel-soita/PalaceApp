@@ -30,9 +30,9 @@ router.use(authenticate);
 
 // 👤 CORE USER MANAGEMENT
 router.get('/', moduleGuard('MemberRegistration'), getUsers);
-router.get('/pending', authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR']), moduleGuard('MemberRegistration'), getPendingUsers);
-router.patch('/:id/status', authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR']), mutationLimiter, moduleGuard('MemberRegistration'), activateUser);
-router.patch('/:id/mark-paid', authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY']), markCardAsPaid);
+router.get('/pending', authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'WATUA']), moduleGuard('MemberRegistration'), getPendingUsers);
+router.patch('/:id/status', authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'WATUA', 'SECRETARY']), mutationLimiter, moduleGuard('MemberRegistration'), activateUser);
+router.patch('/:id/mark-paid', authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA']), markCardAsPaid);
 router.get('/search-members', searchUsers);
 
 // 🎁 PARTNERSHIP & CARD SERVICES
