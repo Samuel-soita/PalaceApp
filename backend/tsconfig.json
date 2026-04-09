@@ -11,12 +11,11 @@
     "forceConsistentCasingInFileNames": true,
     "verbatimModuleSyntax": false,
     "typeRoots": [
-      "./node_modules/@types",
-      "../../node_modules/@types"
+      "./node_modules/@types"
     ],
     "paths": {
       "@prisma/client": [
-        "../../node_modules/@prisma/client"
+        "./node_modules/@prisma/client"
       ]
     },
     "baseUrl": "."
