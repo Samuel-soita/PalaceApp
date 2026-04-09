@@ -1,13 +1,30 @@
 import { Redis } from 'ioredis';
 
-const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-const redis = new Redis(redisUrl, {
-    maxRetriesPerRequest: 3,
-    retryStrategy: (times: number) => Math.min(times * 50, 2000),
-});
+let redis: Redis;
 
-redis.on('error', (err: any) => console.error('[Redis Error]', err));
-redis.on('connect', () => console.log('[Redis] Connected to Cache Layer'));
+if (process.env.REDIS_URL) {
+    redis = new Redis(process.env.REDIS_URL, {
+        maxRetriesPerRequest: 3,
+        retryStrategy: (times: number) => Math.min(times * 50, 2000),
+    });
+
+    redis.on('error', (err: any) => {
+        console.error('[Redis Error]', err);
+    });
+
+    redis.on('connect', () => console.log('[Redis] Connected to Cache Layer'));
+} else {
+    // Dummy Redis-like object for environments without Redis
+    console.warn('[Redis] No REDIS_URL provided. Cache layer disabled.');
+    redis = {
+        status: 'disconnected',
+        on: () => {},
+        get: async () => null,
+        setex: async () => {},
+        del: async () => {},
+        keys: async () => [],
+    } as any;
+}
 
 const pendingPromises = new Map<string, Promise<any>>();
 

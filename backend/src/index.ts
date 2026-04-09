@@ -44,6 +44,7 @@ import compression from 'compression';
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 1); // Trust Render Proxy for rate-limiting
 const httpServer = createServer(app);
 const port = process.env.PORT || 4000;
 
@@ -103,9 +104,22 @@ const useCluster = process.env.NODE_ENV === 'production' && !process.env.NO_CLUS
 
 if (useCluster && cluster.isPrimary) {
     console.log(`[master]: Primary process ${process.pid} is running`);
+    
+    // --- MASTER-ONLY INITIALIZATION: Self-Healing System Bootstrap ---
+    // We prepare the database once before any workers start to prevent collisions
+    try {
+        await bootstrapSystem();
+        console.log('[master]: System Bootstrap successful.');
+    } catch (error) {
+        console.error('[master]: System Bootstrap failed critical mission:', error);
+    }
+
     BackgroundJobWorker.ignite();
     TelemetryEngine.ignite();
-    for (let i = 0; i < numCPUs; i++) {
+    
+    // Cap workers at 2 for stability on limited DB plans (Aiven Free)
+    const workerCount = Math.min(numCPUs, 2);
+    for (let i = 0; i < workerCount; i++) {
         cluster.fork();
     }
     cluster.on('exit', (worker, code, signal) => {
@@ -199,15 +213,14 @@ if (useCluster && cluster.isPrimary) {
     httpServer.listen(PORT, async () => {
         console.log(`[worker]: Worker ${process.pid} started. API running at http://localhost:${PORT}`);
         
-        // --- HYBRID INITIALIZATION: Self-Healing System Bootstrap ---
-        try {
-            await bootstrapSystem();
-            console.log('[worker]: System Bootstrap successful.');
-        } catch (error) {
-            console.error('[worker]: System Bootstrap failed critical mission:', error);
-        }
-
         if (!useCluster) {
+            // --- HYBRID INITIALIZATION: Self-Healing System Bootstrap ---
+            try {
+                await bootstrapSystem();
+                console.log('[worker]: System Bootstrap successful.');
+            } catch (error) {
+                console.error('[worker]: System Bootstrap failed critical mission:', error);
+            }
             BackgroundJobWorker.ignite();
             TelemetryEngine.ignite();
         }
