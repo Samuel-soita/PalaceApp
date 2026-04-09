@@ -93,7 +93,7 @@ export default function Messages() {
 
     useEffect(() => {
         if (!user) return;
-        const newSocket = io(import.meta.env.VITE_API_URL || 'http://localhost:4000');
+        const newSocket = io(import.meta.env.VITE_API_URL || '');
         setSocket(newSocket);
 
         newSocket.on('receive_message', (message: Message) => {

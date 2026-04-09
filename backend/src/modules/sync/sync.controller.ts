@@ -17,13 +17,13 @@ export const getDeltaSync = async (req: any, res: Response) => {
         const effectiveDeptId = (isAdmin && departmentId) ? departmentId : (isAdmin ? null : userDeptId);
 
         // Helper for standard scoping
-        const getStandardWhere = (options: { majField?: string | null, supportsDept?: boolean } = {}) => {
-            const { majField = 'isMajor', supportsDept = true } = options;
+        const getStandardWhere = (options: { majField?: string | null, supportsDept?: boolean, supportsSoftDelete?: boolean } = {}) => {
+            const { majField = 'isMajor', supportsDept = true, supportsSoftDelete = true } = options;
             
             const base: any = { 
                 OR: [
                     { updatedAt: { gt: timestamp } },
-                    { deletedAt: { gt: timestamp } }
+                    ...(supportsSoftDelete ? [{ deletedAt: { gt: timestamp } }] : [])
                 ]
             };
             
@@ -228,10 +228,10 @@ export const getDeltaSync = async (req: any, res: Response) => {
                 case 'reports':
                     result = await prisma.departmentReport.findMany({
                         where: isAdmin ? {
-                            OR: [{ updatedAt: { gt: timestamp } }]
+                            updatedAt: { gt: timestamp }
                         } : {
                             submittedById: userId,
-                            OR: [{ updatedAt: { gt: timestamp } }]
+                            updatedAt: { gt: timestamp }
                         },
                         include: { department: true, submittedBy: { select: { name: true, role: true } } },
                         orderBy: { updatedAt: 'desc' }
@@ -241,10 +241,10 @@ export const getDeltaSync = async (req: any, res: Response) => {
                 case 'support_requests':
                     result = await prisma.supportRequest.findMany({
                         where: isAdmin ? {
-                            OR: [{ updatedAt: { gt: timestamp } }]
+                            updatedAt: { gt: timestamp }
                         } : {
                             requesterId: userId,
-                            OR: [{ updatedAt: { gt: timestamp } }]
+                            updatedAt: { gt: timestamp }
                         },
                         include: { event: true, requester: { select: { name: true, role: true } } },
                         orderBy: { updatedAt: 'desc' }
@@ -269,7 +269,12 @@ export const getDeltaSync = async (req: any, res: Response) => {
                     return res.status(400).json({ error: `Module '${module}' is not a registered sync stream.` });
             }
         } catch (queryError: any) {
-            console.error(`[MODULE_QUERY_FAILURE] ${module}:`, queryError);
+            console.error(`[MODULE_QUERY_FAILURE] ${module}:`, {
+                message: queryError.message,
+                code: queryError.code,
+                meta: queryError.meta,
+                stack: queryError.stack
+            });
             throw queryError; // Re-throw to be caught by main handler
         }
 
@@ -283,16 +288,22 @@ export const getDeltaSync = async (req: any, res: Response) => {
         });
 
     } catch (error: any) {
-        console.error('[DELTA_SYNC_CRITICAL_FAILURE]', error);
+        console.error('[DELTA_SYNC_CRITICAL_FAILURE]', {
+            module: req.params.module,
+            userId: req.user?.id,
+            error: error.message,
+            stack: error.stack
+        });
         
         // Map Prisma errors to readable messages
-        let errorMessage = 'Mission synchronization failed.';
+        let errorMessage = `Mission synchronization failed for ${req.params.module}.`;
         if (error.code === 'P2002') errorMessage = 'Sync Conflict: Unique constraint failed.';
         if (error.code === 'P2025') errorMessage = 'Record not found for synchronization.';
         
         res.status(500).json({ 
             error: errorMessage, 
             details: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
             code: error.code || 'UNKNOWN',
             module: req.params.module
         });

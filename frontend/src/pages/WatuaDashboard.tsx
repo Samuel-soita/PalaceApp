@@ -84,7 +84,8 @@ import {
     RotateCcw,
     Droplets,
     Baby,
-    Wrench
+    Wrench,
+    LogOut
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import DashboardLayout from '../components/layout/DashboardLayout';
@@ -167,7 +168,7 @@ interface Diagnostics {
 }
 
 export default function WatuaDashboard() {
-    const { user: currentUser } = useAuth();
+    const { user: currentUser, logout } = useAuth();
     const [tab, setTab] = useState(0);
     
     // 🏛️ LOCAL-FIRST REACTIVE DATA KERNEL (Dexie — Tactical Mirror)
@@ -473,6 +474,23 @@ export default function WatuaDashboard() {
                         sx={{ borderColor: 'rgba(193, 117, 255, 0.3)' }}
                     >
                         Reboot Terminal
+                    </Button>
+                    <Button
+                        startIcon={<LogOut size={18} />}
+                        onClick={() => {
+                            if (window.confirm('OMNIPOTENT EXIT: Secure terminal session and decommissioning active node?')) {
+                                logout();
+                            }
+                        }}
+                        variant="contained"
+                        sx={{ 
+                            bgcolor: 'rgba(239, 68, 68, 0.2)', 
+                            border: '1px solid #ef4444',
+                            color: '#ef4444',
+                            '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.4)' }
+                        }}
+                    >
+                        Exit Terminal
                     </Button>
                 </Box>
             </Box>
@@ -1478,6 +1496,19 @@ export default function WatuaDashboard() {
                                 { label: 'STRATEGIC PLAN', icon: Target, color: '#ffcc00', onClick: () => setPlanModalOpen(true) },
                                 { label: 'SUBMIT REPORT', icon: FileText, color: '#22c55e', onClick: () => setReportModalOpen(true) },
                                 { label: 'SYSTEM ALERT', icon: AlertTriangle, color: '#ff4d4d', onClick: () => setAnnouncementModalOpen(true) },
+                                { 
+                                    label: 'NUCLEAR FLUSH', 
+                                    icon: Trash2, 
+                                    color: '#ef4444', 
+                                    onClick: async () => {
+                                        if (window.confirm('🚧 OMNIPOTENT WIPE: Delete all local tactical cache and mirrored data? This will force a full resync.')) {
+                                            await db.delete();
+                                            localStorage.clear();
+                                            sessionStorage.clear();
+                                            window.location.reload();
+                                        }
+                                    } 
+                                },
                             ].map((action, i) => (
                                 <Grid item xs={12} sm={6} md={4} key={i}>
                                     <Button

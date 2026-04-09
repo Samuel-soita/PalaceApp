@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "prisma generate --schema ./prisma/schema.prisma && tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "prisma generate && tsc",
     "lint": "eslint . --ext .ts",
     "type-check": "tsc --noEmit",
     "start": "node dist/index.js",
@@ -52,6 +52,6 @@
     "@typescript-eslint/parser": "^6.1.0"
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/bootstrap.ts"
   }
 }

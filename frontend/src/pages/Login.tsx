@@ -3,10 +3,11 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../lib/api-client';
 import { Button, TextField, Card, CardContent, Typography, Box, Alert, Divider, CircularProgress } from '@mui/material';
-import { CreditCard, Church } from 'lucide-react';
+import { CreditCard, Church, User } from 'lucide-react';
 
 export default function Login() {
     const [membershipNumber, setMembershipNumber] = useState('');
+    const [idNumber, setIdNumber] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
@@ -50,7 +51,7 @@ export default function Login() {
         setLoading(true);
         setError('');
         try {
-            const res = await api.post('/auth/login', { membershipNumber });
+            const res = await api.post('/auth/login', { membershipNumber, idNumber });
             const data = res.data;
             login(data);
 
@@ -148,7 +149,22 @@ export default function Login() {
                             InputProps={{
                                 startAdornment: <CreditCard size={18} style={{ marginRight: 8, opacity: 0.5 }} />
                             }}
-                            helperText="Your card number is your unique access key."
+                            helperText="Your card number."
+                        />
+
+                        <TextField
+                            fullWidth
+                            label="National ID Number"
+                            value={idNumber}
+                            onChange={e => setIdNumber(e.target.value)}
+                            margin="normal"
+                            required
+                            type="password"
+                            placeholder="Enter your ID Number"
+                            InputProps={{
+                                startAdornment: <User size={18} style={{ marginRight: 8, opacity: 0.5 }} />
+                            }}
+                            helperText="Used to verify your identity securely."
                         />
 
                         <Button
