@@ -44,6 +44,7 @@ import compression from 'compression';
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 1); // Trust Render Proxy for rate-limiting
 const httpServer = createServer(app);
 const port = process.env.PORT || 4000;
 
@@ -105,7 +106,10 @@ if (useCluster && cluster.isPrimary) {
     console.log(`[master]: Primary process ${process.pid} is running`);
     BackgroundJobWorker.ignite();
     TelemetryEngine.ignite();
-    for (let i = 0; i < numCPUs; i++) {
+    
+    // Cap workers at 2 for stability on limited DB plans (Aiven Free)
+    const workerCount = Math.min(numCPUs, 2);
+    for (let i = 0; i < workerCount; i++) {
         cluster.fork();
     }
     cluster.on('exit', (worker, code, signal) => {

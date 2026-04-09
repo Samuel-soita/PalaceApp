@@ -1,12 +1,25 @@
 import { Redis } from 'ioredis';
 
+if (!process.env.REDIS_URL) {
+    console.warn('[Redis] No REDIS_URL provided. Cache layer will operate in pass-through mode.');
+}
+
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 const redis = new Redis(redisUrl, {
     maxRetriesPerRequest: 3,
-    retryStrategy: (times: number) => Math.min(times * 50, 2000),
+    retryStrategy: (times: number) => {
+        // Stop retrying if there's no URL to prevent log spam
+        if (!process.env.REDIS_URL) return null; 
+        return Math.min(times * 50, 2000);
+    },
 });
 
-redis.on('error', (err: any) => console.error('[Redis Error]', err));
+redis.on('error', (err: any) => {
+    // Only log errors if we actually expected a connection
+    if (process.env.REDIS_URL) {
+        console.error('[Redis Error]', err);
+    }
+});
 redis.on('connect', () => console.log('[Redis] Connected to Cache Layer'));
 
 const pendingPromises = new Map<string, Promise<any>>();

@@ -23,7 +23,7 @@ export class TelemetryEngine {
             } finally {
                 this.isRunning = false;
             }
-        }, 5000); // 5-second pulse for real-time Live Dashboard
+        }, 15000); // 15-second pulse for Production Stability
     }
 
     static incrementError() {
