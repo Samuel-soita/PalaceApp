@@ -100,7 +100,8 @@ const __dirname = path.dirname(__filename);
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 const numCPUs = os.cpus().length;
-const useCluster = process.env.NODE_ENV === 'production' && !process.env.NO_CLUSTER;
+// --- MINIMUM CONNECTION MODE: Single Process for Free Tier Stability ---
+const useCluster = false; // process.env.NODE_ENV === 'production' && !process.env.NO_CLUSTER;
 
 if (useCluster && cluster.isPrimary) {
     console.log(`[master]: Primary process ${process.pid} is running`);

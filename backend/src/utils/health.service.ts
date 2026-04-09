@@ -25,7 +25,7 @@ export class TelemetryEngine {
                 } finally {
                     this.isRunning = false;
                 }
-            }, 15000); // 15-second pulse for Production Stability
+            }, 60000); // 60-second pulse for Minimum Connection Mode Stability
         }, 2000); 
     }
 
