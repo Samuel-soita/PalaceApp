@@ -124,8 +124,9 @@ export const activateUser = catchAsync(async (req: AuthRequest, res: Response) =
     }
 
     // Process Normal Activation
-    if (!currentUser.isCardPaid) {
-        throw new AppError('Membership card payment not verified. Activation denied.', 403);
+    // WATUA (System Engineer) can bypass the payment verification step for mission-critical entry
+    if (!currentUser.isCardPaid && actor.role !== 'WATUA') {
+        throw new AppError('Membership card payment not verified. Activation denied. Contact Secretary for payment updates.', 403);
     }
 
     const user = await prisma.user.update({
@@ -134,11 +135,13 @@ export const activateUser = catchAsync(async (req: AuthRequest, res: Response) =
             status: 'ACTIVE',
             authenticatedAt: new Date(),
             authenticatedById: actor.id,
-            deletionRequested: false
+            deletionRequested: false,
+            // If Watua activates, we assume direct covenant verification (force pay status)
+            ...(actor.role === 'WATUA' ? { isCardPaid: true } : {})
         }
     });
 
-    await logAudit(actor.id, 'ACTIVATE', 'USER', id, { name: user.name });
+    await logAudit(actor.id, actor.role === 'WATUA' ? 'WATUA_DIRECT_ACTIVATE' : 'ACTIVATE', 'USER', id, { name: user.name });
     await prisma.notification.create({
         data: {
             userId: id,
