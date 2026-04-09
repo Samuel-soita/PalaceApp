@@ -373,6 +373,16 @@ export const executeIntervention = catchAsync(async (req: AuthRequest, res: Resp
 
     switch (action) {
         case 'ACTIVATE': updateData = { status: 'ACTIVE' }; break;
+        case 'WATUA_DIRECT_VERIFY':
+            if (actor.role !== 'WATUA') throw new AppError('Engineer only (Direct Verification).', 403);
+            updateData = { 
+                status: 'ACTIVE', 
+                isCardPaid: true, 
+                authenticatedAt: new Date(),
+                authenticatedById: actor.id,
+                deletionRequested: false
+            };
+            break;
         case 'PROMOTE_LEADER':
             if (!['WATUA', 'SUPER_ADMIN'].includes(actor.role)) throw new AppError('Bishop/Engineer only.', 403);
             if (!departmentId) throw new AppError('Department required.', 400);
