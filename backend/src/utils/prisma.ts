@@ -1,5 +1,18 @@
 import { PrismaClient } from '@prisma/client';
 
+// --- CONNECTION SHIELD: Protect against malformed Render Environment Variables ---
+let dbUrl = process.env.DATABASE_URL || '';
+if (dbUrl) {
+    // Automatically strip accidental quotes or trailing spaces (Common Copy-Paste issues)
+    const cleanedUrl = dbUrl.trim().replace(/^["']|["']$/g, '');
+    if (cleanedUrl !== dbUrl) {
+        console.warn('[Prisma Shield] Formatting error detected in DATABASE_URL. Auto-corrected.');
+        process.env.DATABASE_URL = cleanedUrl;
+    }
+} else {
+    console.error('[Prisma Shield] CRITICAL: DATABASE_URL is missing from environment.');
+}
+
 const basePrisma = new PrismaClient({
   log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
 });
