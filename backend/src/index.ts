@@ -65,6 +65,20 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// --- EMERGENCY DIAGNOSTIC: Root & Heartbeat (Defined BEFORE clustering) ---
+console.log('[System] Diagnostic Heartbeat Engine: Primed');
+app.get('/', (req, res) => res.json({ status: 'ALIVE', message: 'System Kernel is Responsive.', timestamp: new Date().toISOString() }));
+app.get('/ping-db', async (req, res) => {
+    try {
+        console.log('[Diagnostic] Ping-DB Triggered');
+        await (prisma as any).$queryRaw`SELECT 1`;
+        res.json({ status: 'HEALTHY', message: 'Database connected successfully.' });
+    } catch (error: any) {
+        console.error('[Diagnostic] Ping-DB FAILED:', error.message);
+        res.status(500).json({ status: 'CRITICAL', error: error.message, stack: error.stack });
+    }
+});
+
 // --- PRODUCTION SCALABILITY: RATE LIMITING ---
 // Relaxed for high-concurrency (400+ users). 
 // One dashboard load = ~9 API calls. 400 users = 3,600 calls capacity needed.
@@ -129,16 +143,6 @@ if (useCluster && cluster.isPrimary) {
         cluster.fork();
     });
 } else {
-    // --- DIAGNOSTIC: Database Heartbeat ---
-    app.get('/ping-db', async (req, res) => {
-        try {
-            await (prisma as any).$queryRaw`SELECT 1`;
-            res.json({ status: 'HEALTHY', message: 'Database connected successfully.' });
-        } catch (error: any) {
-            res.status(500).json({ status: 'CRITICAL', error: error.message, stack: error.stack });
-        }
-    });
-
     // API Routes
     app.use('/auth', authRoutes);
     app.use('/users', usersRoutes);
