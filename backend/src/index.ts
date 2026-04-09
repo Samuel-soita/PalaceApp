@@ -33,6 +33,7 @@ import syncRoutes from './modules/sync/sync.routes.js';
 import healthRoutes from './modules/health/health.routes.js';
 import cluster from 'cluster';
 import os from 'os';
+import prisma from './utils/prisma.js';
 
 import { createServer } from 'http';
 import { initSocket } from './utils/socket.js';
