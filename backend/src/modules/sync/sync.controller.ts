@@ -93,7 +93,12 @@ export const getDeltaSync = async (req: any, res: Response) => {
                             where: {
                                 AND: [
                                     { OR: [{ updatedAt: { gt: timestamp } }, { deletedAt: { gt: timestamp } }] },
-                                    effectiveDeptId ? { departmentId: effectiveDeptId as string } : {}
+                                    {
+                                        OR: [
+                                            effectiveDeptId ? { departmentId: effectiveDeptId as string } : {},
+                                            { role: { in: ['PASTOR', 'ASSOCIATE_PASTOR'] } }
+                                        ]
+                                    }
                                 ]
                             },
                             select: { 

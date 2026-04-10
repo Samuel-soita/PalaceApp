@@ -7,6 +7,7 @@ import {
 import { UserPlus, Baby, ArrowLeft, Plus, ShieldCheck, Heart } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api-client';
+import { db } from '../lib/db';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { Stack } from '@mui/material';
 
@@ -42,21 +43,47 @@ export default function ChildRegistration() {
         setError('');
         setLoading(true);
 
-        const localId = `TEMP-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
-        setDedicationNumber(localId);
+        const localId = crypto.randomUUID();
+        const trackingId = `TEMP-${localId.slice(0, 8).toUpperCase()}`;
+        setDedicationNumber(trackingId);
 
         try {
-            const res = await api.post('/children', { 
-                name, dob, gender, branch, 
-                isDedicated, dedicationCardNumber,
-                localId // Pass to sync engine via api-client
+            // 🚀 Tactical Offline Save
+            await db.children.put({
+                id: localId,
+                name,
+                dob: new Date(dob).toISOString(),
+                gender,
+                isDedicated,
+                isDedicationPaid: false,
+                dedicationCardNumber,
+                dedicationNumber: trackingId,
+                workflowStatus: 'PENDING_DEDICATION',
+                parentId: 'ME', // Sync engine will replace with actual currentUser.id on server
+                syncStatus: 'PENDING',
+                deviceId: localStorage.getItem('device_id') || 'UNKNOWN',
+                lastModifiedBy: 'ME',
+                version: 0,
+                createdAt: new Date().toISOString()
             });
 
-            if (res.data._queued) {
-                console.log('[Palace-Portal] Mission queued offline:', localId);
-            } else {
-                setDedicationNumber(res.data.child.dedicationNumber);
-            }
+            // 📡 Queue for Global Sync
+            await db.syncQueue.put({
+                id: crypto.randomUUID(),
+                timestamp: Date.now(),
+                entity: 'CHILD',
+                method: 'POST',
+                url: '/children',
+                payload: { 
+                    name, dob, gender, branch, 
+                    isDedicated, dedicationCardNumber,
+                    localId 
+                },
+                status: 'PENDING',
+                retryCount: 0,
+                errorLog: []
+            });
+
             setSuccess(true);
             // Reset form
             setName('');
@@ -65,7 +92,8 @@ export default function ChildRegistration() {
             setIsDedicated(false);
             setDedicationCardNumber('');
         } catch (err: any) {
-            setError(err.response?.data?.error || 'Failed to register child. Please try again.');
+            setError('Failed to log mission locally. Kernel error.');
+            console.error(err);
         } finally {
             setLoading(false);
         }
