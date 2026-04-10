@@ -4,7 +4,9 @@ import {
     MenuItem, Button, Typography, Checkbox, RadioGroup, FormControlLabel, Radio, FormControl, FormLabel,
     InputLabel, Select, Chip, ListItemText
 } from '@mui/material';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../../lib/db';
 import { Shield, Users, CheckCircle } from 'lucide-react';
 import api from '../../lib/api-client';
 import { useAuth } from '../../contexts/AuthContext';
@@ -29,11 +31,7 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
         pastorIds: [] as string[]
     });
 
-    const { data: pastors } = useQuery(['pastors'], async () => {
-        const res = await api.get('/users?role=PASTOR');
-        const userData = Array.isArray(res.data) ? res.data : (res.data?.data || []);
-        return userData.filter((u: any) => u.role === 'PASTOR');
-    }, { enabled: open && !announcement });
+    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
     useEffect(() => {
         if (announcement) {
@@ -59,10 +57,7 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
         }
     }, [announcement, open, user, defaultDepartmentId]);
 
-    const { data: departments } = useQuery(['departments'], async () => {
-        const res = await api.get('/departments');
-        return res.data;
-    }, { enabled: open && user?.role === 'SUPER_ADMIN' });
+    const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
 
     const mutation = useMutation(
         (data: any) => announcement 

@@ -37,7 +37,7 @@ export default function Meetings() {
     const meta = { total: meetings.length, totalPages: Math.ceil((meetings.length || 1) / limit) };
 
     const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
-    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
+    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
     const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
         const actionId = id || crypto.randomUUID();
