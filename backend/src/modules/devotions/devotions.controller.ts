@@ -90,23 +90,32 @@ export const createDevotion = async (req: Request, res: Response) => {
             }
         }
 
+        const devotionDate = new Date(date || new Date());
+        devotionDate.setHours(0, 0, 0, 0);
+
         const devotion = await prisma.devotion.create({
             data: {
                 title,
                 content,
                 themeOfMonth,
                 themeOfYear,
-                date: new Date(date || new Date())
+                date: devotionDate
             }
         });
 
         // 🧠 NLP-LITE: AFFIRMATION EXTRACTION
         const affirmationText = extractAffirmationFromContent(content);
         
-        const affirmation = await prisma.affirmation.create({
-            data: {
+        // Use UPSERT for Affirmation to prevent 500 on unique constraint failure
+        const affirmation = await prisma.affirmation.upsert({
+            where: { date: devotionDate },
+            update: {
                 content: affirmationText,
-                date: devotion.date,
+                devotionId: devotion.id
+            },
+            create: {
+                content: affirmationText,
+                date: devotionDate,
                 devotionId: devotion.id
             }
         });

@@ -38,6 +38,15 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 return { OR: [{ departmentId: userDeptId }, { [majField]: true }] };
             };
 
+            const wrap = async (name: string, promise: Promise<any>) => {
+                try {
+                    return await promise;
+                } catch (err: any) {
+                    console.error(`[Dashboard-Sync-Fault] ${name} query failed:`, err.message);
+                    return Array.isArray(await promise.catch(() => [])) ? [] : null;
+                }
+            };
+
             const [
                 projects,
                 events,
@@ -61,22 +70,22 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 reports,
                 appointments
             ] = await Promise.all([
-                prisma.project.findMany({ 
+                wrap('projects', prisma.project.findMany({ 
                     where: getWhere(), 
                     take: 50, 
                     orderBy: { createdAt: 'desc' },
-                }),
-                prisma.event.findMany({ 
+                })),
+                wrap('events', prisma.event.findMany({ 
                     where: getWhere(), 
                     take: 50, 
                     orderBy: { date: 'asc' },
-                }),
-                prisma.plan.findMany({ 
+                })),
+                wrap('plans', prisma.plan.findMany({ 
                     where: getWhere(), 
                     take: 50, 
                     orderBy: { createdAt: 'desc' },
-                }),
-                prisma.meeting.findMany({ 
+                })),
+                wrap('meetings', prisma.meeting.findMany({ 
                     where: isAdmin 
                         ? (effectiveDeptId ? { departmentId: effectiveDeptId } : {}) 
                         : { 
@@ -87,31 +96,31 @@ export const getDashboardSync = async (req: any, res: Response) => {
                         }, 
                     take: 50, 
                     orderBy: { date: 'asc' },
-                }),
-                prisma.announcement.findMany({ 
+                })),
+                wrap('announcements', prisma.announcement.findMany({ 
                     where: isAdmin ? (effectiveDeptId ? { departmentId: effectiveDeptId } : {}) : {
                         OR: [
-                            { departmentId: userDeptId }, // All department announcements (Leader will see pending here)
-                            { isGlobal: true, status: 'APPROVED' } // Approved global ones
+                            { departmentId: userDeptId },
+                            { isGlobal: true, status: 'APPROVED' }
                         ]
                     }, 
                     take: 50, 
                     orderBy: { createdAt: 'desc' },
-                }),
-                prisma.department.findMany({ select: { id: true, name: true } }),
-                isAdmin ? prisma.user.findMany({ 
+                })),
+                wrap('departments', prisma.department.findMany({ select: { id: true, name: true } })),
+                wrap('pendingUsers', isAdmin ? prisma.user.findMany({ 
                     where: { OR: [{ status: 'PENDING' }, { isCardReplacementRequested: true }, { deletionRequested: true }] },
                     take: 100,
                     orderBy: { createdAt: 'desc' },
-                }) : Promise.resolve([]),
-                (isAdmin || isLeader) 
+                }) : Promise.resolve([])),
+                wrap('baptisms', (isAdmin || isLeader) 
                     ? prisma.baptism.findMany({ 
                         include: { user: { select: { name: true } } } 
                     })
                     : prisma.baptism.findMany({ 
                         where: { userId },
-                    }),
-                (isAdmin || isLeader)
+                    })),
+                wrap('children', (isAdmin || isLeader)
                     ? prisma.child.findMany({ 
                         take: 50,
                         include: { department: { select: { name: true } } }
@@ -119,11 +128,11 @@ export const getDashboardSync = async (req: any, res: Response) => {
                     : prisma.child.findMany({ 
                         where: { parentId: userId },
                         include: { department: { select: { name: true } } }
-                    }),
-                (prisma as any).ministrySettings ? (prisma as any).ministrySettings.findUnique({ where: { id: 'GLOBAL' } }) : Promise.resolve(null),
-                (prisma as any).affirmation ? (prisma as any).affirmation.findFirst({ where: { date: new Date(new Date().setHours(0,0,0,0)) } }) : Promise.resolve(null),
-                prisma.partnership.findFirst({ where: { userId, status: 'ACTIVE' } }),
-                (isAdmin || isLeader) 
+                    })),
+                wrap('ministrySettings', (prisma as any).ministrySettings ? (prisma as any).ministrySettings.findUnique({ where: { id: 'GLOBAL' } }) : Promise.resolve(null)),
+                wrap('affirmation', (prisma as any).affirmation ? (prisma as any).affirmation.findFirst({ where: { date: new Date(new Date().setHours(0,0,0,0)) } }) : Promise.resolve(null)),
+                wrap('partnership', prisma.partnership.findFirst({ where: { userId, status: 'ACTIVE' } })),
+                wrap('account', (isAdmin || isLeader) 
                     ? (effectiveDeptId 
                         ? prisma.account.findUnique({ where: { departmentId: effectiveDeptId } })
                         : (isAdmin 
@@ -134,21 +143,21 @@ export const getDashboardSync = async (req: any, res: Response) => {
                                 totalExpenditure: agg._sum.totalExpenditure || 0 
                             }))
                             : Promise.resolve(null))) 
-                    : Promise.resolve(null),
-                (isAdmin || isLeader) ? (prisma.transaction as any).findMany({ 
+                    : Promise.resolve(null)),
+                wrap('transactions', (isAdmin || isLeader) ? (prisma.transaction as any).findMany({ 
                     where: effectiveDeptId 
                         ? { account: { departmentId: effectiveDeptId } } 
-                        : (isAdmin ? {} : { id: 'none' }), // Admins see all if no dept, others see none
+                        : (isAdmin ? {} : { id: 'none' }),
                     take: 75,
                     orderBy: { createdAt: 'desc' },
                     include: { approvals: true, requester: { select: { name: true } } }
-                }) : Promise.resolve([]),
-                isAdmin ? prisma.partnership.findMany({
+                }) : Promise.resolve([])),
+                wrap('allPartnerships', isAdmin ? prisma.partnership.findMany({
                     take: 50,
                     orderBy: { createdAt: 'desc' },
                     include: { user: { select: { name: true, membershipNumber: true } } }
-                }) : Promise.resolve([]),
-                isAdmin ? Promise.all([
+                }) : Promise.resolve([])),
+                wrap('globalMetrics', isAdmin ? Promise.all([
                     prisma.user.count(),
                     prisma.user.count({ where: { isPartner: true } }),
                     prisma.transaction.aggregate({ where: { status: 'PENDING_BISHOP_APPROVAL' }, _count: true }),
@@ -158,32 +167,30 @@ export const getDashboardSync = async (req: any, res: Response) => {
                     totalPartners,
                     pendingApprovals: pendingApprovals._count,
                     pendingDedications
-                })) : Promise.resolve(null),
-                isAdmin ? prisma.auditLog.findMany({
+                })) : Promise.resolve(null)),
+                wrap('auditLogs', isAdmin ? prisma.auditLog.findMany({
                     take: 20,
                     orderBy: { createdAt: 'desc' },
                     include: { actor: { select: { name: true } } }
-                }) : Promise.resolve([]),
-                effectiveDeptId ? prisma.user.findMany({
+                }) : Promise.resolve([])),
+                wrap('departmentMembers', effectiveDeptId ? prisma.user.findMany({
                     where: { departmentId: effectiveDeptId as string },
                     include: { children: true },
                     orderBy: { name: 'asc' }
-                }) : Promise.resolve([]),
-                // ─── MISSION TELEMETRY HARDENING ───
-                (prisma as any).technicalRepair ? prisma.technicalRepair.findMany({
+                }) : Promise.resolve([])),
+                wrap('repairs', (prisma as any).technicalRepair ? (prisma as any).technicalRepair.findMany({
                     where: isAdmin ? (effectiveDeptId ? { departmentId: effectiveDeptId } : {}) : { departmentId: userDeptId },
                     take: 20,
                     orderBy: { createdAt: 'desc' }
-                }).catch(() => []) : Promise.resolve([]),
-                (prisma as any).departmentReport ? prisma.departmentReport.findMany({
+                }) : Promise.resolve([])),
+                wrap('reports', (prisma as any).departmentReport ? (prisma as any).departmentReport.findMany({
                     where: isAdmin ? (effectiveDeptId ? { departmentId: effectiveDeptId } : {}) : { departmentId: userDeptId },
                     take: 20,
                     orderBy: { createdAt: 'desc' }
-                }).catch(() => []) : Promise.resolve([]),
-                // ─── APPOINTMENT AGGREGATION ───
-                prisma.appointment.findMany({
+                }) : Promise.resolve([])),
+                wrap('appointments', prisma.appointment.findMany({
                     where: {
-                        deletedAt: null, // MISSION INTEGRITY
+                        deletedAt: null,
                         ...(isAdmin ? {
                             OR: [
                                 { targetId: userId },
@@ -195,7 +202,7 @@ export const getDashboardSync = async (req: any, res: Response) => {
                     take: 50,
                     include: { member: { select: { name: true } }, target: { select: { name: true } } },
                     orderBy: { preferredDate: 'asc' }
-                })
+                }))
             ]);
 
             // --- AUTO DEPARTMENT MAPPING ---
