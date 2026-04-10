@@ -54,7 +54,7 @@ export default function Plans() {
     const userDepartments = departments?.filter((d: any) => isUserManagingDepartment(user, d.id)) || [];
     const showDepartmentSelect = isGlobalAdmin || userDepartments.length > 1;
 
-    const pastors = useLiveQuery(() => db.users.where('role').anyOf(['PASTOR', 'ASSOCIATE_PASTOR']).toArray(), []) || [];
+    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
     const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
         const actionId = id || crypto.randomUUID();
