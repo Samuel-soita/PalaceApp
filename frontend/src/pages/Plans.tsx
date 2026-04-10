@@ -54,7 +54,7 @@ export default function Plans() {
     const userDepartments = departments?.filter((d: any) => isUserManagingDepartment(user, d.id)) || [];
     const showDepartmentSelect = isGlobalAdmin || userDepartments.length > 1;
 
-    const pastors = useLiveQuery(() => db.users.where('role').equals('PASTOR').toArray(), []) || [];
+    const pastors = useLiveQuery(() => db.users.where('role').anyOf(['PASTOR', 'ASSOCIATE_PASTOR']).toArray(), []) || [];
 
     const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
         const actionId = id || crypto.randomUUID();
@@ -320,7 +320,7 @@ export default function Plans() {
                                         {pastors?.map((pastor: any) => (
                                             <MenuItem key={pastor.id} value={pastor.id}>
                                                 <Checkbox checked={formData.pastorIds.indexOf(pastor.id) > -1} />
-                                                <ListItemText primary={pastor.name} secondary="Pastor" />
+                                                <ListItemText primary={pastor.name} secondary={pastor.role.replace('_', ' ')} />
                                             </MenuItem>
                                         ))}
                                     </Select>

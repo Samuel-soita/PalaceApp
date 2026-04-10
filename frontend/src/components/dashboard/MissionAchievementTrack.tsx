@@ -12,10 +12,10 @@ interface Achievement {
 
 interface MissionAchievementTrackProps {
     baptisms: any[];
-    children: any[];
+    childRecords: any[];
 }
 
-export const MissionAchievementTrack = ({ baptisms, children }: MissionAchievementTrackProps) => {
+export const MissionAchievementTrack = ({ baptisms, childRecords }: MissionAchievementTrackProps) => {
     const completedBaptisms = baptisms
         .filter((b: any) => b.status === 'COMPLETED')
         .map((b: any) => ({
@@ -26,7 +26,7 @@ export const MissionAchievementTrack = ({ baptisms, children }: MissionAchieveme
             department: b.user.department?.name
         }));
 
-    const dedicatedChildren = children
+    const dedicatedChildren = childRecords
         .filter((c: any) => c.workflowStatus === 'DEDICATED')
         .map((c: any) => ({
             id: c.id,

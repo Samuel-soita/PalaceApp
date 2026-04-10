@@ -28,13 +28,45 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
     }, { enabled: open });
 
     const addLedgerMutation = useMutation(
-        async ({ id, amount, paymentMethod, referenceCode }: any) => 
-            api.post(`/partnerships/${id}/ledger`, { amount, paymentMethod, referenceCode }),
+        async ({ id, amount, paymentMethod, referenceCode }: any) => {
+            const localId = crypto.randomUUID();
+            const timestamp = Date.now();
+
+            // 🚀 Tactical Financial Save
+            await db.partnershipLedgers.put({
+                id: localId,
+                partnershipId: id,
+                amount,
+                paymentMethod,
+                referenceCode,
+                status: 'PENDING',
+                date: new Date().toISOString(),
+                syncStatus: 'PENDING',
+                deviceId: localStorage.getItem('device_id') || 'UNKNOWN',
+                lastModifiedBy: 'ME',
+                version: 0,
+                createdAt: new Date().toISOString()
+            });
+
+            // 📡 Queue for Global Reconciliation
+            await db.syncQueue.put({
+                id: crypto.randomUUID(),
+                timestamp,
+                entity: 'PARTNERSHIP_LEDGER',
+                method: 'POST',
+                url: `/partnerships/${id}/ledger`,
+                payload: { amount, paymentMethod, referenceCode, localId },
+                status: 'PENDING',
+                retryCount: 0,
+                errorLog: []
+            });
+
+            return { data: { _queued: true } };
+        },
         {
             onSuccess: (res: any) => {
                 const wasQueued = res.data._queued;
                 
-                // 🚀 OPTIMISTIC CACHE UPDATE (Manual for complex UI)
                 if (wasQueued) {
                     console.log('[Palace-Portal] Financial mission queued offline.');
                 }
@@ -45,13 +77,9 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
                 setPaymentAmount('');
                 setReferenceCode('');
                 setErrorMsg('');
-
-                if (wasQueued) {
-                    // Show a specific alert if possible or rely on the global sync indicator
-                }
             },
             onError: (err: any) => {
-                setErrorMsg(err.response?.data?.error || 'Failed to reconcile ledger.');
+                setErrorMsg(err.message || 'Failed to reconcile ledger locally.');
             }
         }
     );

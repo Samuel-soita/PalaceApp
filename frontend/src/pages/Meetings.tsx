@@ -37,7 +37,7 @@ export default function Meetings() {
     const meta = { total: meetings.length, totalPages: Math.ceil((meetings.length || 1) / limit) };
 
     const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
-    const pastors = useLiveQuery(() => db.users.where('role').equals('PASTOR').toArray(), []) || [];
+    const pastors = useLiveQuery(() => db.users.where('role').anyOf(['PASTOR', 'ASSOCIATE_PASTOR']).toArray(), []) || [];
 
     const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
         const actionId = id || crypto.randomUUID();
@@ -388,7 +388,7 @@ export default function Meetings() {
                                         {pastors?.map((p: any) => (
                                             <MenuItem key={p.id} value={p.id}>
                                                 <Checkbox checked={formData.pastorIds.includes(p.id)} />
-                                                <ListItemText primary={p.name} />
+                                                <ListItemText primary={p.name} secondary={p.role.replace('_', ' ')} />
                                             </MenuItem>
                                         ))}
                                     </Select>

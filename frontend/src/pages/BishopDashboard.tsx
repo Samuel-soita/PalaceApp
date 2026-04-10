@@ -297,7 +297,7 @@ export default function BishopDashboard() {
                         </Typography>
                         <MissionAchievementTrack 
                             baptisms={syncData?.baptisms || []} 
-                            children={syncData?.children || []} 
+                            childRecords={syncData?.children || []} 
                         />
                     </Box>
                 </Box>

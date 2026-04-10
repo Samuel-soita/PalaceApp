@@ -4,8 +4,6 @@ import { useAuth } from './contexts/AuthContext';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import { GlobalSkeleton } from './components/layout/GlobalSkeleton';
 import ProfileModal from './components/modals/ProfileModal';
-import { OfflineStatus } from './components/common/OfflineStatus';
-import NetworkStatusBanner from './components/NetworkStatusBanner';
 import ConflictResolutionModal from './components/ConflictResolutionModal';
 
 // Lazy load components
@@ -146,8 +144,6 @@ function App() {
 
     return (
         <Suspense fallback={<LoadingFallback />}>
-            <OfflineStatus />
-            <NetworkStatusBanner />
             <ConflictResolutionModal />
             <Routes>
                 <Route path="/login" element={<Login />} />

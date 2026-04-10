@@ -68,9 +68,26 @@ export const createDevotion = async (req: Request, res: Response) => {
         const actor = (req as any).user;
 
         // 🛡️ Authorization Check: Only Pastors and Global Executives can publish Daily Devotions
-        const isAuthorized = ['PASTOR', 'ASSOCIATE_PASTOR', 'SUPER_ADMIN', 'WATUA', 'SYSTEM_ADMIN'].includes(actor.role);
-        if (!isAuthorized) {
+        const highPrivilegeRoles = ['SUPER_ADMIN', 'WATUA', 'SYSTEM_ADMIN'];
+        const isHighPrivilege = highPrivilegeRoles.includes(actor.role);
+        const isPastor = ['PASTOR', 'ASSOCIATE_PASTOR'].includes(actor.role);
+
+        if (!isHighPrivilege && !isPastor) {
             return res.status(403).json({ error: 'Directive Denied: Daily Devotions must be authored by ordained leadership.' });
+        }
+
+        // If User is a Pastor (and not High Privilege), check for specific 'DevotionPublishing' module access
+        if (isPastor && !isHighPrivilege) {
+            const hasModuleAccess = await (prisma as any).pastorModuleAccess.findFirst({
+                where: {
+                    pastorId: actor.id,
+                    moduleKey: 'DevotionPublishing'
+                }
+            });
+
+            if (!hasModuleAccess) {
+                return res.status(403).json({ error: 'Directive Denied: You have not been assigned the Devotion Publishing module.' });
+            }
         }
 
         const devotion = await prisma.devotion.create({
