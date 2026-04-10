@@ -4,7 +4,9 @@ import {
     MenuItem, Typography, Button, LinearProgress, FormControl, InputLabel,
     Select, Checkbox, ListItemText, Chip
 } from '@mui/material';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../../lib/db';
 import api from '../../lib/api-client';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -64,16 +66,9 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
         }
     }, [project, open, user, defaultDepartmentId]);
 
-    const { data: departments } = useQuery(['departments'], async () => {
-        const res = await api.get('/departments');
-        return res.data;
-    }, { enabled: open && user?.role === 'SUPER_ADMIN' });
+    const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
 
-    const { data: pastors } = useQuery(['pastors'], async () => {
-        const res = await api.get('/users?role=PASTOR');
-        const userData = Array.isArray(res.data) ? res.data : (res.data?.data || []);
-        return userData.filter((u: any) => u.role === 'PASTOR');
-    }, { enabled: open && !project });
+    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
     const mutation = useMutation(
         (data: any) => project 
