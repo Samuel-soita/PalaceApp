@@ -44,7 +44,41 @@ export default function Support() {
     });
 
     const createMutation = useMutation(
-        (data: any) => api.post('/support', data),
+        async (data: any) => {
+            const localId = crypto.randomUUID();
+            const timestamp = Date.now();
+
+            // 🚀 Tactical Support Entry
+            await db.supportRequests.put({
+                id: localId,
+                title: data.title,
+                description: data.description,
+                eventId: data.eventId,
+                amountRequired: 1500, // Policy mandatory
+                proofImageUrl: data.proofImageUrl,
+                status: 'OPEN',
+                syncStatus: 'PENDING',
+                deviceId: localStorage.getItem('device_id') || 'UNKNOWN',
+                lastModifiedBy: 'ME',
+                version: 0,
+                createdAt: new Date().toISOString()
+            });
+
+            // 📡 Queue for Global Backing
+            await db.syncQueue.put({
+                id: crypto.randomUUID(),
+                timestamp,
+                entity: 'SUPPORT_REQUEST',
+                method: 'POST',
+                url: '/support',
+                payload: { ...data, localId },
+                status: 'PENDING',
+                retryCount: 0,
+                errorLog: []
+            });
+
+            return { data: { _queued: true } };
+        },
         {
             onSuccess: () => {
                 queryClient.invalidateQueries(['support-requests']);
@@ -57,7 +91,30 @@ export default function Support() {
     );
 
     const fundMutation = useMutation(
-        (id: string) => api.patch(`/support/${id}/fund`),
+        async (id: string) => {
+            const timestamp = Date.now();
+            
+            // 🚀 Tactical Funding Mark
+            await db.supportRequests.update(id, { 
+                status: 'FUNDED',
+                syncStatus: 'PENDING'
+            });
+
+            // 📡 Queue for Global Sync
+            await db.syncQueue.put({
+                id: crypto.randomUUID(),
+                timestamp,
+                entity: 'SUPPORT_REQUEST',
+                method: 'PATCH',
+                url: `/support/${id}/fund`,
+                payload: {},
+                status: 'PENDING',
+                retryCount: 0,
+                errorLog: []
+            });
+
+            return { data: { _queued: true } };
+        },
         { onSuccess: () => queryClient.invalidateQueries(['support-requests']) }
     );
 

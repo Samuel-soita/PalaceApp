@@ -260,23 +260,60 @@ export default function WatuaDashboard() {
     const [editingAnnouncement, setEditingAnnouncement] = useState<any>(null);
 
     const fetchPastorModules = async (userId: string) => {
-        // Offline Mode: Logic for assigned modules would be fetched from db.users.metadata
-        // or a dedicated local pastorModules table.
-        setPastorModules([]);
+        setModuleLoading(true);
+        try {
+            const res = await api.get(`/users/pastor/assigned-modules?userId=${userId}`);
+            if (res.data.success) {
+                setPastorModules(res.data.data);
+            }
+        } catch (err) {
+            console.error('Failed to fetch pastor modules', err);
+            // Fallback to local data if needed, but modules are primarily cloud-managed for security
+            setPastorModules([]);
+        } finally {
+            setModuleLoading(false);
+        }
     };
 
     const handleToggleModule = async (userId: string, moduleKey: string, active: boolean) => {
+        const timestamp = Date.now();
+        const existing = pastorModules.find(m => m.moduleKey === moduleKey);
+
         try {
-            // Offline Mode: We track pastor modules locally in a dedicated table if available,
-            // otherwise we can use the localUser.metadata or similar.
-            // For now, we'll use db.users to store a simple module list if needed.
-            const user = await db.users.get(userId);
-            if (user) {
-                // Simplified local tracking for demonstration
-                setMessage({ type: 'success', text: `Module ${moduleKey} ${active ? 'assigned' : 'revoked'} locally.` });
+            // 🚀 Optimistic Update
+            if (active) {
+                const tempId = crypto.randomUUID();
+                const newModule = { id: tempId, pastorId: userId, moduleKey, permissions: ['READ', 'WRITE', 'EXECUTE'], syncStatus: 'PENDING' };
+                setPastorModules(prev => [...prev, newModule]);
+
+                // 📡 Physical Dispatch
+                await api.post('/users/pastor/modules/assign', { pastorId: userId, moduleKey, permissions: ['READ', 'WRITE', 'EXECUTE'] });
+            } else {
+                if (!existing) return;
+                setPastorModules(prev => prev.filter(m => m.id !== existing.id));
+
+                // 📡 Physical Dispatch
+                await api.delete(`/users/pastor/modules/revoke/${existing.id}`);
             }
-        } catch (err) {
-            setMessage({ type: 'error', text: 'Failed to update module locally.' });
+
+            setMessage({ type: 'success', text: `Policy ${moduleKey} ${active ? 'applied' : 'decommissioned'} successfully.` });
+        } catch (err: any) {
+            console.error('Module update failed', err);
+            
+            // 🛡️ Failed? Queue for Sync Daemon
+            await db.syncQueue.put({
+                id: crypto.randomUUID(),
+                timestamp,
+                entity: 'PASTOR_MODULE',
+                method: active ? 'POST' : 'DELETE',
+                url: active ? '/users/pastor/modules/assign' : `/users/pastor/modules/revoke/${existing?.id}`,
+                payload: active ? { pastorId: userId, moduleKey, permissions: ['READ', 'WRITE', 'EXECUTE'] } : {},
+                status: 'PENDING',
+                retryCount: 0,
+                errorLog: []
+            });
+
+            setMessage({ type: 'info', text: 'Cloud sync interrupted. Command queued for background deployment.' });
         }
     };
 

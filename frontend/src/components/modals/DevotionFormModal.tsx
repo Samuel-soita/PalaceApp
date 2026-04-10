@@ -39,12 +39,59 @@ export default function DevotionFormModal({ open, onClose, onSuccess, defaultThe
         }
     );
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        mutation.mutate({
-            ...formData,
-            date: new Date().toISOString()
-        });
+        
+        const localId = crypto.randomUUID();
+        const timestamp = Date.now();
+
+        try {
+            // 🚀 Tactical Offline Broadcast
+            await db.devotions.put({
+                id: localId,
+                title: formData.title,
+                content: formData.content,
+                themeOfMonth: formData.themeOfMonth,
+                themeOfYear: formData.themeOfYear,
+                date: new Date().toISOString(),
+                authorId: 'ME', // Sync engine handles actual ID
+                syncStatus: 'PENDING',
+                deviceId: localStorage.getItem('device_id') || 'UNKNOWN',
+                lastModifiedBy: 'ME',
+                version: 0,
+                createdAt: new Date().toISOString()
+            });
+
+            // 📡 Queue for Global Deployment
+            await db.syncQueue.put({
+                id: crypto.randomUUID(),
+                timestamp,
+                entity: 'DEVOTION',
+                method: 'POST',
+                url: '/devotions',
+                payload: {
+                    ...formData,
+                    date: new Date().toISOString(),
+                    localId
+                },
+                status: 'PENDING',
+                retryCount: 0,
+                errorLog: []
+            });
+
+            onSuccess();
+            onClose();
+            setFormData({
+                title: '',
+                content: '',
+                themeOfMonth: defaultThemeOfMonth || '',
+                themeOfYear: defaultThemeOfYear || ''
+            });
+
+        } catch (err) {
+            console.error('[Offline Devotion Error]', err);
+            alert('Failed to queue devotion locally.');
+        }
     };
 
     return (

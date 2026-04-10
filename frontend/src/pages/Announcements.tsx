@@ -4,7 +4,8 @@ import { db } from '../lib/db';
 import api from '../lib/api-client';
 import {
     Typography, Grid, Card, CardContent, Box, Button, TextField, Dialog, DialogTitle,
-    DialogContent, DialogActions, MenuItem, LinearProgress, Chip, IconButton, Avatar, Paper
+    DialogContent, DialogActions, MenuItem, LinearProgress, Chip, IconButton, Avatar, Paper,
+    FormControl, InputLabel, Select, Checkbox, ListItemText
 } from '@mui/material';
 import { Bell, Plus, Edit, Trash2, Megaphone, ShieldAlert, Clock, User, Filter } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
@@ -19,7 +20,8 @@ export default function Announcements() {
         title: '',
         content: '',
         priority: 'NORMAL',
-        departmentId: user?.role === 'SUPER_ADMIN' ? '' : user?.departmentId || ''
+        departmentId: user?.role === 'SUPER_ADMIN' ? '' : user?.departmentId || '',
+        pastorIds: [] as string[]
     });
 
     const isGlobalAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(user?.role || '');
@@ -45,6 +47,8 @@ export default function Announcements() {
     const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
     const userDepartments = departments.filter((d: any) => isUserManagingDepartment(user, d.id)) || [];
     const showDepartmentSelect = isGlobalAdmin || userDepartments.length > 1;
+
+    const pastors = useLiveQuery(() => db.users.where('role').anyOf(['PASTOR', 'ASSOCIATE_PASTOR']).toArray(), []) || [];
 
     const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
         const actionId = id || crypto.randomUUID();
@@ -85,7 +89,8 @@ export default function Announcements() {
                 title: ann.title,
                 content: ann.content,
                 priority: ann.priority,
-                departmentId: ann.departmentId || ''
+                departmentId: ann.departmentId || '',
+                pastorIds: []
             });
         } else {
             setEditAnn(null);
@@ -93,7 +98,8 @@ export default function Announcements() {
                 title: '',
                 content: '',
                 priority: 'NORMAL',
-                departmentId: isGlobalAdmin ? '' : user?.departmentId || ''
+                departmentId: isGlobalAdmin ? '' : user?.departmentId || '',
+                pastorIds: []
             });
             if (!isGlobalAdmin && userDepartments.length === 1) {
                 setFormData(prev => ({ ...prev, departmentId: userDepartments[0].id }));
@@ -108,6 +114,10 @@ export default function Announcements() {
     };
 
     const handleSubmit = () => {
+        if (!editAnn && formData.pastorIds.length !== 2) {
+            alert("Exactly 2 Pastors must authorize this Broadcast before it is deployed.");
+            return;
+        }
         if (editAnn) handleAction({ ...formData, id: editAnn.id }, 'PATCH', editAnn.id);
         else handleAction(formData, 'POST');
     };
@@ -144,48 +154,49 @@ export default function Announcements() {
                     </Button>
                 )}
             </Box>
-
-    if (announcements === undefined) return <LinearProgress sx={{ mb: 4, borderRadius: 1 }} />;
-
-            <Grid container spacing={3}>
-                {filteredAnnouncements?.map((ann: any) => (
-                    <Grid item xs={12} md={6} lg={4} key={ann.id}>
-                        <Card className="holographic-card smooth-tilt" sx={{ height: '100%', borderRadius: 'var(--radius-lg)' }}>
-                            <CardContent sx={{ p: 4 }}>
-                                <Box display="flex" justifyContent="space-between" mb={3} alignItems="center">
-                                    <div className={`px-3 py-1 rounded-full border ${ann.priority === 'HIGH' ? 'bg-error/10 border-error/20 text-error' : 'bg-primary/10 border-primary/20 text-primary'}`}>
-                                        <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 1, fontSize: '0.65rem' }}>{ann.priority === 'HIGH' ? 'CRITICAL_ALERT' : 'STANDARD_INTEL'}</Typography>
-                                    </div>
-                                    <Box>
-                                        {(isGlobalAdmin || isUserManagingDepartment(user, ann.departmentId)) && (
-                                            <>
-                                                <IconButton size="small" onClick={() => handleOpen(ann)} className="tactical-border" sx={{ mr: 1 }}><Edit size={14} /></IconButton>
-                                                <IconButton size="small" color="error" onClick={() => handleAction({ id: ann.id }, 'DELETE', ann.id)} className="tactical-border"><Trash2 size={14} /></IconButton>
-                                            </>
-                                        )}
-                                    </Box>
-                                </Box>
-                                <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1, mb: 1 }}>{ann.title}</Typography>
-                                <Typography variant="body2" sx={{ mb: 4, minHeight: 60, opacity: 0.7, lineHeight: 1.6, fontWeight: 500 }}>
-                                    {ann.content}
-                                </Typography>
-                                <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <Box display="flex" alignItems="center" gap={1.5}>
-                                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm border border-primary/20">
-                                            {ann.author?.name?.charAt(0)}
+            {announcements === undefined ? (
+                <LinearProgress sx={{ mb: 4, borderRadius: 1 }} />
+            ) : (
+                <Grid container spacing={3}>
+                    {filteredAnnouncements?.map((ann: any) => (
+                        <Grid item xs={12} md={6} lg={4} key={ann.id}>
+                            <Card className="holographic-card smooth-tilt" sx={{ height: '100%', borderRadius: 'var(--radius-lg)' }}>
+                                <CardContent sx={{ p: 4 }}>
+                                    <Box display="flex" justifyContent="space-between" mb={3} alignItems="center">
+                                        <div className={`px-3 py-1 rounded-full border ${ann.priority === 'HIGH' ? 'bg-error/10 border-error/20 text-error' : 'bg-primary/10 border-primary/20 text-primary'}`}>
+                                            <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 1, fontSize: '0.65rem' }}>{ann.priority === 'HIGH' ? 'CRITICAL_ALERT' : 'STANDARD_INTEL'}</Typography>
                                         </div>
-                                        <div>
-                                            <Typography variant="body2" fontWeight="900">{ann.author?.name}</Typography>
-                                            <Typography className="neon-label" sx={{ fontSize: '0.55rem !important' }}>{ann.department?.name || 'GLOBAL_CMD'}</Typography>
-                                        </div>
+                                        <Box>
+                                            {(isGlobalAdmin || (ann.departmentId && isUserManagingDepartment(user, ann.departmentId))) && (
+                                                <>
+                                                    <IconButton size="small" onClick={() => handleOpen(ann)} className="tactical-border" sx={{ mr: 1 }}><Edit size={14} /></IconButton>
+                                                    <IconButton size="small" color="error" onClick={() => handleAction({ id: ann.id }, 'DELETE', ann.id)} className="tactical-border"><Trash2 size={14} /></IconButton>
+                                                </>
+                                            )}
+                                        </Box>
                                     </Box>
-                                    <Typography variant="caption" sx={{ fontWeight: 800, opacity: 0.5 }}>{new Date(ann.createdAt).toLocaleDateString()}</Typography>
-                                </Box>
-                            </CardContent>
-                        </Card>
-                    </Grid>
-                ))}
-            </Grid>
+                                    <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1, mb: 1 }}>{ann.title}</Typography>
+                                    <Typography variant="body2" sx={{ mb: 4, minHeight: 60, opacity: 0.7, lineHeight: 1.6, fontWeight: 500 }}>
+                                        {ann.content}
+                                    </Typography>
+                                    <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <Box display="flex" alignItems="center" gap={1.5}>
+                                            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm border border-primary/20">
+                                                {ann.author?.name?.charAt(0)}
+                                            </div>
+                                            <div>
+                                                <Typography variant="body2" fontWeight="900">{ann.author?.name}</Typography>
+                                                <Typography className="neon-label" sx={{ fontSize: '0.55rem !important' }}>{ann.department?.name || 'GLOBAL_CMD'}</Typography>
+                                            </div>
+                                        </Box>
+                                        <Typography variant="caption" sx={{ fontWeight: 800, opacity: 0.5 }}>{new Date(ann.createdAt).toLocaleDateString()}</Typography>
+                                    </Box>
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                    ))}
+                </Grid>
+            )}
 
             {meta.totalPages > 1 && (
                 <Box display="flex" justifyContent="center" mt={6} gap={2}>
@@ -261,6 +272,34 @@ export default function Announcements() {
                                     <MenuItem key={dept.id} value={dept.id}>{dept.name}</MenuItem>
                                 ))}
                             </TextField>
+                        )}
+
+                        {!editAnn && (
+                            <FormControl fullWidth required error={formData.pastorIds.length > 0 && formData.pastorIds.length !== 2}>
+                                <InputLabel id="pastors-label">Select 2 Authorizing Pastors</InputLabel>
+                                <Select
+                                    labelId="pastors-label"
+                                    multiple
+                                    value={formData.pastorIds}
+                                    onChange={(e) => {
+                                        const value = e.target.value as string[];
+                                        if (value.length <= 2) {
+                                            setFormData({ ...formData, pastorIds: value });
+                                        }
+                                    }}
+                                    renderValue={(selected) => 
+                                        pastors?.filter((p: any) => (selected as string[]).includes(p.id)).map((p: any) => p.name).join(', ')
+                                    }
+                                    label="Select 2 Authorizing Pastors"
+                                >
+                                    {pastors?.map((pastor: any) => (
+                                        <MenuItem key={pastor.id} value={pastor.id}>
+                                            <Checkbox checked={formData.pastorIds.indexOf(pastor.id) > -1} />
+                                            <ListItemText primary={pastor.name} secondary={pastor.role.replace('_', ' ')} />
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
                         )}
                     </Box>
                 </DialogContent>
