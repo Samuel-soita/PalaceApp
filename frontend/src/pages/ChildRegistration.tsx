@@ -7,6 +7,7 @@ import {
 import { UserPlus, Baby, ArrowLeft, Plus, ShieldCheck, Heart } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api-client';
+import { db } from '../lib/db';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { Stack } from '@mui/material';
 
@@ -53,8 +54,8 @@ export default function ChildRegistration() {
                 name,
                 dob: new Date(dob).toISOString(),
                 gender,
-                branch,
                 isDedicated,
+                isDedicationPaid: false,
                 dedicationCardNumber,
                 dedicationNumber: trackingId,
                 workflowStatus: 'PENDING_DEDICATION',

@@ -6,6 +6,7 @@ import {
 import { Settings, Wrench, DollarSign } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api-client';
+import { db } from '../../lib/db';
 
 interface TechnicalRepairModalProps {
     open: boolean;
@@ -31,7 +32,7 @@ export default function TechnicalRepairModal({ open, onClose, departmentId, onSu
             instrumentName: data.instrumentName,
             problemDescription: data.problemDescription,
             estimatedCost: data.estimatedCost,
-            budgetSource: data.budgetSource,
+            requesterId: 'ME',
             departmentId: data.departmentId || 'GLOBAL',
             status: 'PENDING_APPROVAL',
             syncStatus: 'PENDING',

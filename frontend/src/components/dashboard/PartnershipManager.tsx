@@ -7,6 +7,7 @@ import {
 import { XCircle, Star, TrendingUp, DollarSign, Search, CheckCircle, RefreshCcw } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api-client';
+import { db } from '../../lib/db';
 
 interface PartnershipManagerProps {
     open: boolean;
@@ -35,6 +36,7 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
             // 🚀 Tactical Financial Save
             await db.partnershipLedgers.put({
                 id: localId,
+                transactionType: 'RECONCILIATION',
                 partnershipId: id,
                 amount,
                 paymentMethod,

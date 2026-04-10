@@ -6,6 +6,7 @@ import { InterventionService, InterventionAction } from '../lib/InterventionServ
 import { BackupService } from '../lib/BackupService';
 import { AuditLogService } from '../lib/AuditLogService';
 import { DeviceService } from '../lib/DeviceService';
+import api from '../lib/api-client';
 import {
     Box,
     Typography,
