@@ -6,6 +6,7 @@ import {
 import { useMutation } from '@tanstack/react-query';
 import { Sparkles } from 'lucide-react';
 import api from '../../lib/api-client';
+import { db } from '../../lib/db';
 
 interface DevotionFormModalProps {
     open: boolean;
