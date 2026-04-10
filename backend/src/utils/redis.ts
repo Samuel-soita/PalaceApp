@@ -1,30 +1,105 @@
 import { Redis } from 'ioredis';
 
 let redis: Redis;
+let isCircuitOpen = false;
+let failureCount = 0;
+const MAX_FAILURES = 3;
 
-if (process.env.REDIS_URL) {
-    redis = new Redis(process.env.REDIS_URL, {
-        maxRetriesPerRequest: 3,
-        retryStrategy: (times: number) => Math.min(times * 50, 2000),
-    });
+// 🧠 IN-MEMORY FALLBACK CACHE (Process-Local Layer)
+// This ensures that even if Redis fails, we still have a functional (though not shared) cache layer.
+const memoryCache = new Map<string, { value: string, expiry: number }>();
 
-    redis.on('error', (err: any) => {
-        console.error('[Redis Error]', err);
-    });
+const dummyRedis = {
+    status: 'ready',
+    on: () => {},
+    get: async (key: string) => {
+        const item = memoryCache.get(key);
+        if (item && item.expiry > Date.now()) return item.value;
+        if (item) memoryCache.delete(key);
+        return null;
+    },
+    set: async (key: string, value: string) => {
+        // Set with default day TTL if not specified via setex
+        memoryCache.set(key, { value, expiry: Date.now() + (86400 * 1000) });
+    },
+    setex: async (key: string, ttl: number, value: string) => {
+        memoryCache.set(key, { value, expiry: Date.now() + (ttl * 1000) });
+    },
+    del: async (...keys: string[]) => {
+        keys.forEach(k => memoryCache.delete(k));
+    },
+    incr: async (key: string) => {
+        const item = memoryCache.get(key);
+        let val = 0;
+        if (item && !isNaN(parseInt(item.value))) {
+            val = parseInt(item.value);
+        }
+        val++;
+        memoryCache.set(key, { value: val.toString(), expiry: Date.now() + (86400 * 1000) });
+        return val;
+    },
+    keys: async (pattern: string) => {
+        const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+        return Array.from(memoryCache.keys()).filter(k => regex.test(k));
+    },
+    disconnect: () => {}
+} as any;
 
-    redis.on('connect', () => console.log('[Redis] Connected to Cache Layer'));
-} else {
-    // Dummy Redis-like object for environments without Redis
-    console.warn('[Redis] No REDIS_URL provided. Cache layer disabled.');
-    redis = {
-        status: 'disconnected',
-        on: () => {},
-        get: async () => null,
-        setex: async () => {},
-        del: async () => {},
-        keys: async () => [],
-    } as any;
-}
+const initializeRedis = () => {
+    if (process.env.REDIS_URL && !isCircuitOpen) {
+        try {
+            const client = new Redis(process.env.REDIS_URL, {
+                maxRetriesPerRequest: 1,
+                connectTimeout: 5000,
+                retryStrategy: (times: number) => {
+                    const delay = Math.min(times * 200, 2000);
+                    if (times > MAX_FAILURES) {
+                        console.error('[Redis Service] Max connection retries reached. Opening Circuit.');
+                        isCircuitOpen = true;
+                        redis = dummyRedis;
+                        
+                        // ⏱️ Start Re-Discovery Timer (Try again in 15 mins)
+                        setTimeout(() => {
+                            console.log('[Redis] Attempting to close circuit and re-discover cache host...');
+                            isCircuitOpen = false;
+                            redis = initializeRedis();
+                        }, 900000); 
+
+                        return null; // Stop this specific instance from retrying
+                    }
+                    return delay;
+                },
+            });
+
+            client.on('error', (err: any) => {
+                failureCount++;
+                console.error(`[Redis Error] Attempt ${failureCount}/${MAX_FAILURES}:`, err.message);
+                if (failureCount >= MAX_FAILURES) {
+                    console.warn('[Redis] Switching to Local Memory Cache (Circuit Open)');
+                    isCircuitOpen = true;
+                    redis = dummyRedis;
+                    client.disconnect();
+                }
+            });
+
+            client.on('connect', () => {
+                console.log('[Redis] Connected to Cache Layer');
+                failureCount = 0;
+            });
+
+            return client;
+        } catch (e) {
+            console.error('[Redis Init Failed]', e);
+            isCircuitOpen = true;
+            return dummyRedis;
+        }
+    }
+    
+    console.warn('[Redis] Cache layer starting in Memory Mode.');
+    return dummyRedis;
+};
+
+redis = initializeRedis();
 
 const pendingPromises = new Map<string, Promise<any>>();
 
