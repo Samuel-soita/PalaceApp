@@ -202,6 +202,7 @@ export async function processSyncDaemon() {
                     window.dispatchEvent(new CustomEvent('pwa-conflict-detected', {
                         detail: { action: job, serverData: pushErr.response.data }
                     }));
+                    continue; // Process next updates instead of blocking
                 } else if (status >= 500 || status === 429 || !status) {
                     // RETRYABLE ERROR
                     const nextRetryCount = job.retryCount + 1;
@@ -215,14 +216,17 @@ export async function processSyncDaemon() {
                     } else {
                         await db.syncQueue.update(job.id, { status: 'FAILED', lastError: 'MAX_RETRIES_EXCEEDED' });
                     }
+                    if (!status) {
+                        break; // Stop completely on network loss
+                    } else {
+                        continue; // Continue processing other updates
+                    }
                 } else {
                     // PERMANENT REJECT (400, 403, 404, etc)
                     console.error('[Palace-Daemon] Permanent push reject', pushErr);
                     await db.syncQueue.update(job.id, { status: 'FAILED', lastError: errorMessage });
+                    continue; // Continue processing other updates
                 }
-                
-                // Stop processing the queue for this tick on failure to avoid cascading errors
-                break;
             }
         }
     } finally {
@@ -233,10 +237,10 @@ export async function processSyncDaemon() {
 // Start Daemon Loop
 if (typeof window !== 'undefined') {
     window.addEventListener('online', processSyncDaemon);
-    // Poll every 15 seconds if online to pull updates
+    // Poll every 5 seconds if online to pull updates
     setInterval(() => {
         if (navigator.onLine) processSyncDaemon();
-    }, 15000);
+    }, 5000);
     
     // Initial boot kick
     setTimeout(processSyncDaemon, 2000);
