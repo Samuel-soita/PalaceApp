@@ -5,7 +5,8 @@ import {
     TextField, InputAdornment, LinearProgress, MenuItem, Alert
 } from '@mui/material';
 import { XCircle, Star, TrendingUp, DollarSign, Search, CheckCircle, RefreshCcw } from 'lucide-react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useLiveQuery } from 'dexie-react-hooks';
 import api from '../../lib/api-client';
 import { db } from '../../lib/db';
 
@@ -23,10 +24,9 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
     const [referenceCode, setReferenceCode] = useState<string>('');
     const [errorMsg, setErrorMsg] = useState<string>('');
 
-    const { data: partnerships = [], isLoading } = useQuery(['all-partnerships'], async () => {
-        const res = await api.get('/partnerships/all');
-        return res.data;
-    }, { enabled: open });
+    // --- MISSION: OFFLINE-FIRST PARTNERSHIP DATA ---
+    const partnerships = useLiveQuery(() => db.partnerships.toArray(), []) || [];
+    const isLoading = false; // Data is in-memory local
 
     const addLedgerMutation = useMutation(
         async ({ id, amount, paymentMethod, referenceCode }: any) => {

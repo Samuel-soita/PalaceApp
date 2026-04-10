@@ -11,8 +11,10 @@ import {
     Shield, Activity, Users, Landmark, Globe, TrendingUp
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
+import { useLiveQuery } from 'dexie-react-hooks';
 import api from '../lib/api-client';
+import { db } from '../lib/db';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { Link } from 'react-router-dom';
 import FinancialLedger from '../components/dashboard/FinancialLedger';
@@ -70,10 +72,11 @@ export default function BishopDashboard() {
     const [pastorModules, setPastorModules] = useState<any[]>([]);
     const [moduleLoading, setModuleLoading] = useState(false);
 
-    const { data: pastorsData, isLoading: isPastorsLoading } = useQuery(['pastors'], async () => {
-        const res = await api.get('/users', { params: { role: ['PASTOR', 'ASSOCIATE_PASTOR'], limit: 100 } });
-        return res.data.data;
-    }, { enabled: pastorManagementOpen });
+    // --- MISSION: OFFLINE-FIRST PASTORAL LIST ---
+    const pastorsData = useLiveQuery(() => 
+        db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role)).toArray()
+    , []) || [];
+    const isPastorsLoading = false;
 
     const fetchPastorModules = async (userId: string) => {
         setModuleLoading(true);
