@@ -68,7 +68,7 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
 
     const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
 
-    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
+    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
     const mutation = useMutation(
         (data: any) => project 

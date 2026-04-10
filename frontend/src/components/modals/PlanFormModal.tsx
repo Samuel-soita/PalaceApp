@@ -60,7 +60,7 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
         }
     }, [plan, open, user, defaultDepartmentId]);
 
-    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
+    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
     const mutation = useMutation(
         (data: any) => plan 
