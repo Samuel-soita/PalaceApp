@@ -5,6 +5,8 @@ import { socket, connectSocket } from '../../utils/socket';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../lib/api-client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../../lib/db';
 import { encryptMessage, decryptMessage } from '../../lib/encryption';
 
 interface Message {
@@ -46,11 +48,10 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
         }
     }, { enabled: open && (activeTab === 'ROOM' || !!selectedUser), retry: false });
 
-    const { data: users } = useQuery(['leaders'], async () => {
-        const res = await api.get('/users', { params: { role: ['SUPER_ADMIN', 'PASTOR', 'DEPARTMENT_LEADER'] } });
-        const userList = Array.isArray(res.data) ? res.data : (res.data.data || []);
-        return userList.filter((u: any) => u.id !== user?.id);
-    }, { enabled: open && activeTab === 'PRIVATE' });
+    // --- MISSION: OFFLINE-FIRST LEADER LIST ---
+    const users = useLiveQuery(() => 
+        db.users.filter(u => u.id !== user?.id && ['SUPER_ADMIN', 'PASTOR', 'DEPARTMENT_LEADER', 'BISHOP'].includes(u.role)).toArray()
+    , [user?.id]) || [];
 
     // Inactivity Tracker
     useEffect(() => {
