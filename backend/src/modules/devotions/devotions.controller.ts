@@ -99,6 +99,7 @@ export const createDevotion = async (req: Request, res: Response) => {
                 content,
                 themeOfMonth,
                 themeOfYear,
+                authorId: actor.id,
                 date: devotionDate
             }
         });
@@ -140,6 +141,26 @@ export const getDevotions = async (req: Request, res: Response) => {
         const devotions = await prisma.devotion.findMany({
             orderBy: { date: 'desc' },
             take: 30,
+            include: { 
+                affirmations: true,
+                author: { select: { name: true, role: true } }
+            }
+        });
+        res.json({ success: true, data: devotions });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * 👤 PERSONAL INTELLIGENCE: Get devotions authored by the current user.
+ */
+export const getMyDevotions = async (req: any, res: Response) => {
+    try {
+        const userId = req.user.id;
+        const devotions = await prisma.devotion.findMany({
+            where: { authorId: userId },
+            orderBy: { date: 'desc' },
             include: { affirmations: true }
         });
         res.json({ success: true, data: devotions });

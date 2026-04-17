@@ -7,6 +7,7 @@ const router = Router();
 router.get('/daily', authenticate, devotionsController.getDailyDevotion);
 router.get('/all', authenticate, moduleGuard('DevotionPublishing'), devotionsController.getDevotions);
 router.post('/', authenticate, moduleGuard('DevotionPublishing'), devotionsController.createDevotion);
+router.get('/authored/me', authenticate, devotionsController.getMyDevotions);
 router.post('/:devotionId/interact', authenticate, devotionsController.interactWithDevotion);
 
 export default router;

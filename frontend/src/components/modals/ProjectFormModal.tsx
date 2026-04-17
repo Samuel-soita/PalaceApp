@@ -70,9 +70,9 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
     }, { enabled: open && user?.role === 'SUPER_ADMIN' });
 
     const { data: pastors } = useQuery(['pastors'], async () => {
-        const res = await api.get('/users?role=PASTOR');
+        const res = await api.get('/users?role=PASTOR&role=ASSOCIATE_PASTOR&status=ACTIVE&limit=100');
         const userData = Array.isArray(res.data) ? res.data : (res.data?.data || []);
-        return userData.filter((u: any) => u.role === 'PASTOR');
+        return userData.filter((u: any) => ['PASTOR', 'ASSOCIATE_PASTOR'].includes(u.role) && u.status === 'ACTIVE');
     }, { enabled: open && !project });
 
     const mutation = useMutation(

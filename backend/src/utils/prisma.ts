@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 
 // --- CONNECTION SHIELD: Protect against malformed Render Environment Variables ---
-let dbUrl = process.env.DATABASE_URL || '';
+const dbUrl = process.env.DATABASE_URL || '';
 if (dbUrl) {
     // Automatically strip accidental quotes or trailing spaces (Common Copy-Paste issues)
     const cleanedUrl = dbUrl.trim().replace(/^["']|["']$/g, '');
@@ -41,6 +41,8 @@ const hasDeletedAt = (where: any): boolean => {
     if (where.NOT && (Array.isArray(where.NOT) ? where.NOT.some(hasDeletedAt) : hasDeletedAt(where.NOT))) return true;
     return false;
 };
+
+export const rawPrisma = basePrisma;
 
 export const prisma = basePrisma.$extends({
   query: {

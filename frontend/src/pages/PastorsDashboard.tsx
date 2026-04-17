@@ -82,6 +82,11 @@ export default function PastorsDashboard() {
         return res.data;
     });
 
+    const { data: myDevotions, isLoading: isMyDevotionsLoading } = useQuery(['my-devotions'], async () => {
+        const res = await api.get('/devotions/authored/me');
+        return res.data?.data || [];
+    });
+
     const devotionMutation = useMutation(async ({ type, value }: { type: string, value: string }) => {
         return await api.post(`/devotions/${devotion?.id}/interact`, { type, value });
     }, {
@@ -309,6 +314,37 @@ export default function PastorsDashboard() {
                                 )}
                             </CardContent>
                         </Card>
+
+                        {/* Recent Authored Devotions - Personal History */}
+                        {myDevotions && myDevotions.length > 0 && (
+                            <Card sx={{ mb: 4, bgcolor: 'rgba(0, 255, 255, 0.02)', border: '1px solid rgba(0, 255, 255, 0.1)', borderRadius: 4 }}>
+                                <CardContent sx={{ p: 4 }}>
+                                    <Box display="flex" alignItems="center" gap={2} mb={3}>
+                                        <BookOpen size={24} color="var(--cyan)" />
+                                        <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>MY RECENT BROADCASTS</Typography>
+                                    </Box>
+                                    <Stack spacing={2}>
+                                        {myDevotions.map((d: any) => (
+                                            <Box key={d.id} sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 2 }}>
+                                                <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                                                    <Typography variant="subtitle2" fontWeight="900" color="var(--cyan)">{d.title?.toUpperCase()}</Typography>
+                                                    <Typography variant="caption" sx={{ opacity: 0.5 }}>{new Date(d.date).toLocaleDateString()}</Typography>
+                                                </Box>
+                                                <Typography variant="caption" sx={{ display: 'block', opacity: 0.7, mb: 1, fontStyle: 'italic' }}>
+                                                    &quot;{d.affirmations?.[0]?.content || "No affirmation extracted"}&quot;
+                                                </Typography>
+                                                <Divider sx={{ my: 1, opacity: 0.05 }} />
+                                                <Box display="flex" gap={2}>
+                                                    <Typography variant="caption" fontWeight="bold" sx={{ color: 'var(--primary)' }}>
+                                                        {d.interactions?.length || 0} Interactions
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        ))}
+                                    </Stack>
+                                </CardContent>
+                            </Card>
+                        )}
 
                         {/* Personal Tactical Grid */}
                         <Typography variant="caption" fontWeight="900" sx={{ letterSpacing: 2, color: 'primary.main', mb: 2, display: 'block', textAlign: 'center' }}>PERSONAL FAMILY MISSIONS</Typography>
