@@ -74,7 +74,7 @@ export default function BishopDashboard() {
 
     // --- MISSION: OFFLINE-FIRST PASTORAL LIST ---
     const pastorsData = useLiveQuery(() => 
-        db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role)).toArray()
+        db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role) && u.status === 'ACTIVE').toArray()
     , []) || [];
     const isPastorsLoading = false;
 

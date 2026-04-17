@@ -75,6 +75,7 @@ model User {
   department                                     Department?            @relation("DeptLeader", fields: [departmentId], references: [id])
   managedDepartments                             Department[]           @relation("DeptManagers")
   taggedInMessages                               Message[]              @relation("MessageTags")
+  authoredDevotions                              Devotion[]             @relation("UserDevotions")
   submittedReports                               DepartmentReport[]     @relation("ReportSubmitter")
   requestedRepairs                               TechnicalRepair[]      @relation("RepairRequester")
   repairApprovals                                RepairApproval[]
@@ -135,12 +136,14 @@ model Devotion {
   content      String
   themeOfMonth String
   themeOfYear  String
+  authorId     String?
   date         DateTime              @unique @default(now())
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @default(now()) @updatedAt
   deletedAt    DateTime?
   version      Int                   @default(0)
 
+  author       User?                 @relation("UserDevotions", fields: [authorId], references: [id])
   interactions DevotionInteraction[]
   affirmations Affirmation[]
 }

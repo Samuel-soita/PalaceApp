@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import prisma from '../../utils/prisma.js';
+import prisma, { rawPrisma } from '../../utils/prisma.js';
 import { logAudit } from '../../utils/audit.js';
 import { logAction } from '../../utils/audit.service.js';
 import { findTargetDepartmentId } from '../../utils/department-mapper.js';
@@ -13,7 +13,7 @@ import { generateNextMembershipNumber, isEligibleForRenewal } from '../../utils/
  * 👥 Fetch Users list with role filtering (Paginated)
  */
 export const getUsers = catchAsync(async (req: AuthRequest, res: Response) => {
-    const { role, page = '1', limit: qLimit = '20', excludeMembers } = req.query;
+    const { role, page = '1', limit: qLimit = '20', excludeMembers, status } = req.query;
     const pageNum = Number(page);
     const limitNum = Number(qLimit);
     const skip = (pageNum - 1) * limitNum;
@@ -22,6 +22,10 @@ export const getUsers = catchAsync(async (req: AuthRequest, res: Response) => {
     const whereClause: any = { deletedAt: null };
     if (role) {
         whereClause.role = Array.isArray(role) ? { in: role.map(r => String(r)) } : String(role);
+    }
+    
+    if (status) {
+        whereClause.status = String(status);
     }
     
     if (excludeMembers === 'true') {
@@ -84,6 +88,40 @@ export const getPendingUsers = catchAsync(async (req: AuthRequest, res: Response
         }
     });
     res.json(users);
+});
+
+/**
+ * ☣️ PERMANENT PURGE - WATUA ONLY
+ * Completely removes an account and all traces from the system. 
+ * Use with extreme caution.
+ */
+export const purgeUser = catchAsync(async (req: AuthRequest, res: Response) => {
+    const { id } = req.params;
+    const actor = req.user!;
+
+    if (actor.role !== 'WATUA') {
+        throw new AppError('Directive Denied: Only a System Engineer (Watua) can initiate a hard purge.', 403);
+    }
+
+    const targetUser = await prisma.user.findUnique({ where: { id } });
+    if (!targetUser) throw new AppError('Entity not found', 404);
+
+    // ☣️ HARD PURGE: Bypassing soft-delete extension using rawPrisma
+    await rawPrisma.$transaction([
+        // Purge interactions if any (they don't cascade automatically in schema)
+        rawPrisma.devotionInteraction.deleteMany({ where: { userId: id } }),
+        rawPrisma.user.delete({ where: { id } })
+    ]);
+
+    await logAction({
+        actorId: actor.id,
+        actionType: 'HARD_PURGE_USER',
+        entityType: 'USER',
+        entityId: id,
+        metadata: { purgedUserName: targetUser.name, purgedMembership: targetUser.membershipNumber }
+    });
+
+    res.json({ success: true, message: `Entity ${targetUser.name} has been permanently purged from the system.` });
 });
 
 /**

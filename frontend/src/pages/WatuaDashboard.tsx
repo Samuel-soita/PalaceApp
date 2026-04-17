@@ -320,25 +320,38 @@ export default function WatuaDashboard() {
 
     // ─── LOCAL ACTION HANDLERS ──────────────────────────────────────────────
     const handleGlobalDelete = async (type: string, id: string) => {
-        if (!window.confirm('OMNIPOTENT COMMAND: Are you absolutely sure you want to FORCE DELETE this resource? This bypasses all safety checks.')) return;
+        const confirmText = type === 'USER' ? 'PURGE' : 'YES';
+        const promptMsg = type === 'USER' 
+            ? `☢️ CRITICAL OMNIPOTENT COMMAND: Are you absolutely sure you want to PERMANENTLY PURGE this user from the entire system? This cannot be undone. Type "${confirmText}" to confirm.`
+            : `OMNIPOTENT COMMAND: Are you absolutely sure you want to FORCE DELETE this resource from the local kernel?`;
+
+        const userConfirm = window.prompt(promptMsg);
+        if (userConfirm !== confirmText) return;
+
         try {
-            const tableMap: Record<string, any> = {
-                'PROJECT': db.projects,
-                'EVENT': db.events,
-                'PLAN': db.plans,
-                'ANNOUNCEMENT': db.announcements,
-                'MEETING': db.meetings,
-                'REPAIR': db.repairs,
-                'BAPTISM': db.baptisms,
-                'C_DEDICATION': db.children
-            };
-            const table = tableMap[type];
-            if (table) {
-                await table.delete(id);
-                setMessage({ text: `${type} purged from local kernel.`, type: 'success' });
+            if (type === 'USER') {
+                await api.delete(`/users/technical/purge/${id}`);
+                await db.users.delete(id);
+                setMessage({ text: `Entity purged from cloud and local kernel.`, type: 'success' });
+            } else {
+                const tableMap: Record<string, any> = {
+                    'PROJECT': db.projects,
+                    'EVENT': db.events,
+                    'PLAN': db.plans,
+                    'ANNOUNCEMENT': db.announcements,
+                    'MEETING': db.meetings,
+                    'REPAIR': db.repairs,
+                    'BAPTISM': db.baptisms,
+                    'C_DEDICATION': db.children
+                };
+                const table = tableMap[type];
+                if (table) {
+                    await table.delete(id);
+                    setMessage({ text: `${type} purged from local kernel.`, type: 'success' });
+                }
             }
-        } catch (err) {
-            setMessage({ text: `Purge failed: ${err}`, type: 'error' });
+        } catch (err: any) {
+            setMessage({ text: `Purge failed: ${err.response?.data?.error || err.message}`, type: 'error' });
         }
     };
 
@@ -792,6 +805,13 @@ export default function WatuaDashboard() {
                                                         });
                                                     }} title="Bio Inspector">
                                                         <Search size={18} />
+                                                    </IconButton>
+                                                    <IconButton 
+                                                        sx={{ color: '#ef4444' }} 
+                                                        onClick={() => handleGlobalDelete('USER', user.id)}
+                                                        title="PERMANENT PURGE (Hard Delete)"
+                                                    >
+                                                        <Trash2 size={18} />
                                                     </IconButton>
                                                     <IconButton 
                                                         sx={{ color: '#94a3b8' }} 
