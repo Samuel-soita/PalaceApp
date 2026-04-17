@@ -409,7 +409,7 @@ export default function BishopDashboard() {
                                                 >
                                                     <Box display="flex" justifyContent="space-between" alignItems="flex-start">
                                                         <Typography variant="subtitle2" fontWeight="1000" color="white" sx={{ letterSpacing: 0.5 }}>
-                                                            {dept.name.toUpperCase()}
+                                                            {dept?.name?.toUpperCase() || 'UNNAMED DEPARTMENT'}
                                                         </Typography>
                                                         <ArrowUpRight size={14} color="var(--cyan)" />
                                                     </Box>
@@ -439,8 +439,8 @@ export default function BishopDashboard() {
                                         {syncData?.allPartnerships?.slice(0, 5).map((p: any) => (
                                             <Box key={p.id} sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                 <Box>
-                                                    <Typography variant="subtitle2" fontWeight="1000">{p.user.name}</Typography>
-                                                    <Typography variant="caption" sx={{ opacity: 0.5 }}>{p.user.membershipNumber}</Typography>
+                                                    <Typography variant="subtitle2" fontWeight="1000">{p.user?.name || 'N/A'}</Typography>
+                                                    <Typography variant="caption" sx={{ opacity: 0.5 }}>{p.user?.membershipNumber || 'N/A'}</Typography>
                                                 </Box>
                                                 <Box sx={{ textAlign: 'right' }}>
                                                     <Typography variant="subtitle2" fontWeight="1000" color="var(--cyan)">KES {p.amount.toLocaleString()}</Typography>
@@ -487,8 +487,8 @@ export default function BishopDashboard() {
                                             ...(syncData?.projects?.map((p: any) => ({ ...p, type: 'PROJECT' })) || []),
                                             ...(syncData?.events?.map((e: any) => ({ ...e, type: 'EVENT' })) || []),
                                             ...(syncData?.announcements?.map((a: any) => ({ ...a, type: 'ALERT' })) || []),
-                                            ...(syncData?.baptisms?.map((b: any) => ({ ...b, title: `Baptism Request: ${b.user.name}`, type: 'BAPTISM' })) || []),
-                                            ...(syncData?.children?.map((c: any) => ({ ...c, title: `Child Dedication: ${c.name}`, type: 'DEDICATION' })) || [])
+                                            ...(syncData?.baptisms?.map((b: any) => ({ ...b, title: `Baptism Request: ${b.user?.name || 'Unknown'}`, type: 'BAPTISM' })) || []),
+                                            ...(syncData?.children?.map((c: any) => ({ ...c, title: `Child Dedication: ${c.name || 'Unknown'}`, type: 'DEDICATION' })) || [])
                                         ].sort((a, b) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime()).slice(0, 10).map((item: any, idx: number) => (
                                             <Box key={idx} sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderLeft: `2px solid ${item.type === 'ALERT' ? '#ff4f4f' : 'var(--cyan)'}` }}>
                                                 <Typography variant="caption" fontWeight="900" color="var(--cyan)" sx={{ fontSize: '0.6rem' }}>{item.type} — {item.createdAt || item.date ? new Date(item.createdAt || item.date).toLocaleDateString() : "N/A"}</Typography>
@@ -520,7 +520,7 @@ export default function BishopDashboard() {
                                                 <Typography variant="caption" sx={{ display: 'block', color: 'rgba(255,255,255,0.4)', fontSize: '0.6rem' }}>
                                                     {log.createdAt ? new Date(log.createdAt).toLocaleString() : "N/A"}
                                                 </Typography>
-                                                <Typography variant="caption" fontWeight="900" sx={{ color: 'var(--cyan)' }}>[{log.actor.name}]</Typography>
+                                                <Typography variant="caption" fontWeight="900" sx={{ color: 'var(--cyan)' }}>[{log.actor?.name || 'System'}]</Typography>
                                                 <Typography variant="caption" sx={{ ml: 1, opacity: 0.7 }}>{log.actionType}</Typography>
                                                 <Typography variant="caption" sx={{ display: 'block', fontStyle: 'italic', fontSize: '0.7rem', opacity: 0.5 }}>{log.entityType}: {log.entityId}</Typography>
                                             </Box>
@@ -590,10 +590,10 @@ export default function BishopDashboard() {
                             {pastorsData?.map((pastor: any) => (
                                 <Box key={pastor.id} sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', '&:hover': { bgcolor: 'rgba(34, 197, 94, 0.05)', borderColor: '#22c55e' } }}>
                                     <Box>
-                                        <Typography variant="subtitle2" fontWeight="950">{pastor.name.toUpperCase()}</Typography>
-                                        <Typography variant="caption" sx={{ opacity: 0.5 }}>{pastor.role} — {pastor.membershipNumber}</Typography>
+                                        <Typography variant="subtitle2" fontWeight="950">{pastor?.name?.toUpperCase() || 'UNKNOWN PASTOR'}</Typography>
+                                        <Typography variant="caption" sx={{ opacity: 0.5 }}>{pastor?.role || 'PASTOR'} — {pastor?.membershipNumber || 'N/A'}</Typography>
                                     </Box>
-                                    <Button size="small" onClick={() => { setModuleDialog({ open: true, userId: pastor.id, name: pastor.name }); fetchPastorModules(pastor.id); }} sx={{ color: 'var(--cyan)', fontWeight: 900 }}>
+                                    <Button size="small" onClick={() => { setModuleDialog({ open: true, userId: pastor.id, name: pastor.name || 'Unknown' }); fetchPastorModules(pastor.id); }} sx={{ color: 'var(--cyan)', fontWeight: 900 }}>
                                         MANAGE MODULES
                                     </Button>
                                 </Box>
@@ -611,7 +611,7 @@ export default function BishopDashboard() {
                 <DialogTitle sx={{ fontWeight: 900, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                     <Box display="flex" alignItems="center" gap={1}>
                         <Zap size={20} color="var(--cyan)" />
-                        ACCESS TOKENS: {moduleDialog.name.toUpperCase()}
+                        ACCESS TOKENS: {(moduleDialog.name || '').toUpperCase()}
                     </Box>
                 </DialogTitle>
                 <DialogContent sx={{ pt: 2 }}>

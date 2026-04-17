@@ -87,8 +87,8 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
     );
 
     const filteredPartners = partnerships.filter((p: any) => 
-        p.user?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.user?.membershipNumber.includes(searchTerm)
+        (p.user?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (p.user?.membershipNumber || '').includes(searchTerm)
     );
 
     return (
@@ -166,10 +166,10 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
                                             <Grid container spacing={2} alignItems="center">
                                                 <Grid item xs={12} sm={4}>
                                                     <Box display="flex" alignItems="center" gap={1.5}>
-                                                        <Avatar sx={{ bgcolor: 'orange' }}>{p.user?.name.charAt(0)}</Avatar>
+                                                        <Avatar sx={{ bgcolor: 'orange' }}>{(p.user?.name || 'P').charAt(0)}</Avatar>
                                                         <Box>
-                                                            <Typography variant="subtitle2" fontWeight={950}>{p.user?.name}</Typography>
-                                                            <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 700 }}>{p.user?.membershipNumber}</Typography>
+                                                            <Typography variant="subtitle2" fontWeight={950}>{p.user?.name || 'Unknown Partner'}</Typography>
+                                                            <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 700 }}>{p.user?.membershipNumber || 'N/A'}</Typography>
                                                         </Box>
                                                     </Box>
                                                 </Grid>
@@ -220,7 +220,7 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
                                         <IconButton onClick={() => setSelectedPartner(null)} sx={{ color: 'text.secondary' }}><XCircle /></IconButton>
                                     </Box>
                                     <Typography variant="body2" sx={{ mb: 4, opacity: 0.7 }}>
-                                        Updating manual ledger for <b>{selectedPartner.user?.name}</b>. <br/>
+                                        Updating manual ledger for <b>{selectedPartner.user?.name || 'Unknown Partner'}</b>. <br/>
                                         Outstanding Balance: <b>{selectedPartner.balance} KES</b> <br/>
                                         Payment to: <b>0741502198</b>
                                     </Typography>

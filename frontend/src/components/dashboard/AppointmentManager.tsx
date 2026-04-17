@@ -116,7 +116,7 @@ export default function AppointmentManager({ open, onClose }: { open: boolean, o
                                 >
                                     <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
                                         <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={1}>
-                                            <Typography variant="subtitle2" fontWeight="900" noWrap sx={{ maxWidth: '70%' }}>{a.member.name}</Typography>
+                                            <Typography variant="subtitle2" fontWeight="900" noWrap sx={{ maxWidth: '70%' }}>{a.member?.name || 'Unknown Member'}</Typography>
                                             <Chip 
                                                 label={a.status} 
                                                 size="small" 
@@ -143,11 +143,11 @@ export default function AppointmentManager({ open, onClose }: { open: boolean, o
                             <Box>
                                 <Box display="flex" alignItems="center" gap={2} mb={4}>
                                     <Avatar sx={{ width: 64, height: 64, bgcolor: 'var(--primary)', fontWeight: 900, fontSize: '1.5rem', border: '2px solid rgba(79,139,255,0.3)' }}>
-                                        {selectedAppointment.member.name.charAt(0)}
+                                        {(selectedAppointment.member?.name || 'M').charAt(0)}
                                     </Avatar>
                                     <Box>
-                                        <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>{selectedAppointment.member.name}</Typography>
-                                        <Typography variant="body2" color="textSecondary" fontWeight={700}>MEMBERSHIP: {selectedAppointment.member.membershipNumber}</Typography>
+                                        <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>{selectedAppointment.member?.name || 'Unknown Member'}</Typography>
+                                        <Typography variant="body2" color="textSecondary" fontWeight={700}>MEMBERSHIP: {selectedAppointment.member?.membershipNumber || 'N/A'}</Typography>
                                     </Box>
                                 </Box>
 

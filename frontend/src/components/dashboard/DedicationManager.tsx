@@ -128,7 +128,7 @@ export default function DedicationManager({ open, onClose }: { open: boolean, on
                                 >
                                     <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
                                         <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={1}>
-                                            <Typography variant="subtitle2" fontWeight="900" noWrap sx={{ maxWidth: '70%' }}>{c.name}</Typography>
+                                            <Typography variant="subtitle2" fontWeight="900" noWrap sx={{ maxWidth: '70%' }}>{c.name || 'Unknown Child'}</Typography>
                                             <Chip 
                                                 label={c.workflowStatus === 'PENDING_DEDICATION' ? 'PASTOR' : c.workflowStatus === 'ADMIN_PAYMENT_VERIFICATION' ? 'ADMIN' : 'BISHOP'} 
                                                 size="small" 
@@ -155,11 +155,11 @@ export default function DedicationManager({ open, onClose }: { open: boolean, on
                             <Box>
                                 <Box display="flex" alignItems="center" gap={2} mb={4}>
                                     <Avatar sx={{ width: 64, height: 64, bgcolor: 'orange', fontWeight: 900, fontSize: '1.5rem', border: '2px solid rgba(255,152,0,0.3)' }}>
-                                        {selectedChild.name.charAt(0)}
+                                        {(selectedChild.name || 'C').charAt(0)}
                                     </Avatar>
                                     <Box>
-                                        <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>{selectedChild.name}</Typography>
-                                        <Typography variant="body2" color="textSecondary" fontWeight={700}>BORN: {new Date(selectedChild.dob).toLocaleDateString()}</Typography>
+                                        <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>{selectedChild.name || 'Unknown Child'}</Typography>
+                                        <Typography variant="body2" color="textSecondary" fontWeight={700}>BORN: {selectedChild.dob ? new Date(selectedChild.dob).toLocaleDateString() : 'N/A'}</Typography>
                                     </Box>
                                 </Box>
 
