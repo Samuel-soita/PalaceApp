@@ -196,6 +196,23 @@ export default function AdminDashboard() {
         }
     );
 
+    const purgeMutation = useMutation(
+        async (id: string) => api.delete(`/users/technical/purge/${id}`),
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries(['dashboard-sync']);
+                setToast({ open: true, message: 'Entity permanently purged from the system.', severity: 'success' });
+            },
+            onError: (err: any) => {
+                setToast({ 
+                    open: true, 
+                    message: err.response?.data?.error || 'Purge failed.', 
+                    severity: 'error' 
+                });
+            }
+        }
+    );
+
     const handleEdit = (item: any) => {
         if (item.type === 'PROJECT') { setEditingProject(item); setProjectModalOpen(true); }
         if (item.type === 'EVENT') { setEditingEvent(item); setEventModalOpen(true); }
@@ -648,6 +665,22 @@ export default function AdminDashboard() {
                                                                         </IconButton>
                                                                     </span>
                                                                 </Tooltip>
+                                                                {role === 'WATUA' && (
+                                                                    <Tooltip title="PERMANENT PURGE (Watua Only)">
+                                                                        <IconButton 
+                                                                            size="small" 
+                                                                            color="error"
+                                                                            onClick={() => {
+                                                                                if (window.prompt(`☢️ CRITICAL: Type PURGE to permanently remove ${u.name}`) === 'PURGE') {
+                                                                                    purgeMutation.mutate(u.id);
+                                                                                }
+                                                                            }}
+                                                                            sx={{ border: '1px solid rgba(244,67,54,0.5)', ml: 0.5 }}
+                                                                        >
+                                                                            <Shield size={17} />
+                                                                        </IconButton>
+                                                                    </Tooltip>
+                                                                )}
                                                                 <Tooltip title={u.deletionRequested ? "Reject Deletion Request" : "Reject Registration"}>
                                                                     <IconButton size="small" color="info" disabled={verifyMutation.isLoading} onClick={() => verifyMutation.mutate({ id: u.id, status: 'REJECTED', name: u.name })} sx={{ border: '1px solid rgba(0,188,212,0.25)' }}>
                                                                         <XCircle size={17} />

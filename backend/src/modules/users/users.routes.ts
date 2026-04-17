@@ -17,7 +17,8 @@ import {
     enrollPartnership,
     requestCardRenewal,
     approveCardRenewal,
-    searchUsers
+    searchUsers,
+    purgeUser
 } from './users.controller.js';
 import { authenticate, authorize, moduleGuard } from '../../middleware/auth.middleware.js';
 import { mutationLimiter } from '../../middleware/rate-limiting.middleware.js';
@@ -54,6 +55,7 @@ router.get('/technical/flags', watuaOnly, getFeatureFlags);
 router.patch('/technical/flags', watuaOnly, mutationLimiter, updateFeatureFlag);
 router.post('/technical/intervention/:id', authorize(['WATUA', 'SUPER_ADMIN', 'SECRETARY']), mutationLimiter, executeIntervention);
 router.patch('/technical/bio/:id', watuaOnly, mutationLimiter, validate(UserUpdateSchema), updateUserBioTechnical);
+router.delete('/technical/purge/:id', watuaOnly, mutationLimiter, purgeUser);
 
 // 👨‍🏫 PASTORAL CORE & WATUA DUAL-AUTH
 import * as watuaController from './watua.controller.js';

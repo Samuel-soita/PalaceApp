@@ -20,20 +20,20 @@ export const MissionAchievementTrack = ({ baptisms, childRecords }: MissionAchie
         .filter((b: any) => b.status === 'COMPLETED')
         .map((b: any) => ({
             id: b.id,
-            name: b.user.name,
+            name: b.user?.name || 'Unknown',
             type: 'BAPTISM' as const,
             date: b.updatedAt,
-            department: b.user.department?.name
+            department: b.user?.department?.name || 'N/A'
         }));
 
     const dedicatedChildren = childRecords
         .filter((c: any) => c.workflowStatus === 'DEDICATED')
         .map((c: any) => ({
             id: c.id,
-            name: c.name,
+            name: c.name || 'Unknown Child',
             type: 'DEDICATION' as const,
             date: c.updatedAt,
-            department: c.department?.name
+            department: c.department?.name || 'N/A'
         }));
 
     const achievements: Achievement[] = [...completedBaptisms, ...dedicatedChildren]

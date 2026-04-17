@@ -81,11 +81,11 @@ export const ExecutiveTaskTrack = ({ appointments, onAction }: ExecutiveTaskTrac
                             
                             <Box display="flex" alignItems="center" gap={1.5} mb={2}>
                                 <Avatar sx={{ width: 32, height: 32, bgcolor: 'var(--primary)', fontSize: '0.8rem', fontWeight: 900 }}>
-                                    {appt.member.name.charAt(0)}
+                                    {(appt.member?.name || 'U').charAt(0)}
                                 </Avatar>
                                 <Box>
                                     <Typography variant="body2" fontWeight="900" noWrap sx={{ maxWidth: 180 }}>
-                                        {appt.member.name}
+                                        {appt.member?.name || 'Unknown Member'}
                                     </Typography>
                                     <Typography variant="caption" color="textSecondary" fontWeight="700">
                                         Session: {appt.type}
