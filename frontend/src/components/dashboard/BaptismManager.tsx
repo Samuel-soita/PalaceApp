@@ -132,7 +132,7 @@ export default function BaptismManager({ open, onClose }: { open: boolean, onClo
                                 >
                                     <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
                                         <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={1}>
-                                            <Typography variant="subtitle2" fontWeight="900" noWrap sx={{ maxWidth: '70%' }}>{b.user.name}</Typography>
+                                            <Typography variant="subtitle2" fontWeight="900" noWrap sx={{ maxWidth: '70%' }}>{b.user?.name || 'Unknown'}</Typography>
                                             <Chip 
                                                 label={b.status === 'PENDING_PASTOR_APPROVAL' ? 'PASTOR' : b.status === 'ADMIN_PAYMENT_VERIFICATION' ? 'ADMIN' : 'BISHOP'} 
                                                 size="small" 
@@ -146,7 +146,7 @@ export default function BaptismManager({ open, onClose }: { open: boolean, onClo
                                                 }} 
                                             />
                                         </Box>
-                                        <Typography variant="caption" color="textSecondary" sx={{ display: 'block' }}>{b.user.department?.name || 'General'} Sector</Typography>
+                                        <Typography variant="caption" color="textSecondary" sx={{ display: 'block' }}>{b.user?.department?.name || 'General'} Sector</Typography>
                                     </CardContent>
                                 </Card>
                             ))
@@ -159,11 +159,11 @@ export default function BaptismManager({ open, onClose }: { open: boolean, onClo
                             <Box>
                                 <Box display="flex" alignItems="center" gap={2} mb={4}>
                                     <Avatar sx={{ width: 64, height: 64, bgcolor: 'var(--cyan)', fontWeight: 900, fontSize: '1.5rem', border: '2px solid rgba(0,200,255,0.3)' }}>
-                                        {selectedBaptism.user.name.charAt(0)}
+                                        {(selectedBaptism.user?.name || 'U').charAt(0)}
                                     </Avatar>
                                     <Box>
-                                        <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>{selectedBaptism.user.name}</Typography>
-                                        <Typography variant="body2" color="textSecondary" fontWeight={700}>{selectedBaptism.user.phoneNumber || 'NO CONTACT RECORDED'}</Typography>
+                                        <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>{selectedBaptism.user?.name || 'Unknown Request'}</Typography>
+                                        <Typography variant="body2" color="textSecondary" fontWeight={700}>{selectedBaptism.user?.phoneNumber || 'NO CONTACT RECORDED'}</Typography>
                                     </Box>
                                 </Box>
 
