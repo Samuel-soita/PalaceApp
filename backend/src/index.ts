@@ -31,6 +31,7 @@ import { bootstrapSystem } from './utils/bootstrap.js';
 import recoveryRoutes from './modules/recovery/recovery.routes.js';
 import syncRoutes from './modules/sync/sync.routes.js';
 import healthRoutes from './modules/health/health.routes.js';
+import publicRoutes from './modules/public/public.routes.js';
 import cluster from 'cluster';
 import os from 'os';
 import prisma from './utils/prisma.js';
@@ -172,6 +173,7 @@ if (useCluster && cluster.isPrimary) {
     app.use('/recovery', recoveryRoutes);
     app.use('/sync', syncRoutes);
     app.use('/system-health', healthRoutes);
+    app.use('/public', publicRoutes);
 
     // SILENCE DEVTOOLS NOISE
     app.get('/.well-known/*', (req, res) => res.status(204).end());

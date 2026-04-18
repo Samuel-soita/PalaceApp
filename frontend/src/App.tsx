@@ -121,6 +121,7 @@ function LeaderGuard({ children }: { children: React.ReactNode }) {
 
 import { PermissionService } from './lib/PermissionService';
 import { DeviceService } from './lib/DeviceService';
+import PublicUpdateToast from './components/PublicUpdateToast';
 
 function App() {
     const { user } = useAuth();
@@ -144,6 +145,7 @@ function App() {
 
     return (
         <Suspense fallback={<LoadingFallback />}>
+            <PublicUpdateToast />
             <ConflictResolutionModal />
             <Routes>
                 <Route path="/login" element={<Login />} />

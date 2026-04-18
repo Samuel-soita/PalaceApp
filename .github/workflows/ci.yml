@@ -6,9 +6,15 @@ on:
   pull_request:
     branches: [ master, main ]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node.js
@@ -21,7 +27,7 @@ jobs:
         run: npm ci
         working-directory: backend
       - name: Generate Prisma client
-        run: npx prisma generate
+        run: npx prisma@5.22.0 generate
         working-directory: backend
       - name: Lint
         run: npm run lint
@@ -52,6 +58,36 @@ jobs:
       - name: Type Check
         run: npm run type-check
         working-directory: frontend
+      - name: Test
+        run: npm test
+        working-directory: frontend
       - name: Build
         run: npm run build
         working-directory: frontend
+
+  e2e:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install Dependencies
+        run: |
+          cd backend && npm ci
+          cd ../frontend && npm ci
+      
+      - name: Generate Prisma
+        run: cd backend && npx prisma@5.22.0 generate
+      
+      - name: Run E2E Tests
+        uses: cypress-io/github-action@v6
+        with:
+          working-directory: frontend
+          start: npm run dev --prefix ../backend, npm run dev
+          wait-on: 'http://localhost:4000, http://localhost:5173'
+          wait-on-timeout: 120
