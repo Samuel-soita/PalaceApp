@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Box, Typography, TextField, IconButton, Paper, Avatar, Drawer, Badge, useMediaQuery, useTheme } from '@mui/material';
-import { Send, MessageSquare, X, Users, Shield } from 'lucide-react';
+import { Box, Typography, TextField, IconButton, Paper, Avatar, Drawer, Badge, useMediaQuery, useTheme, InputAdornment } from '@mui/material';
+import { Send, MessageSquare, X, Users, Shield, Edit2, Pencil, Trash2 } from 'lucide-react';
 import { socket, connectSocket } from '../../utils/socket';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../lib/api-client';
@@ -23,6 +23,7 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
     const [activeTab, setActiveTab] = useState<'ROOM' | 'PRIVATE'>('ROOM');
     const [selectedUser, setSelectedUser] = useState<any>(null);
     const [lastActivity, setLastActivity] = useState(Date.now());
+    const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
     const { user } = useAuth();
     const queryClient = useQueryClient();
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -91,8 +92,16 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
             };
 
             socket.on('new-message', handleNewMessage);
+            
+            socket.on('message_edited', (editedMsg: any) => {
+                queryClient.setQueryData(['messages', roomId], (old: any) => {
+                    return (old || []).map((m: any) => m.id === editedMsg.id ? { ...m, ...editedMsg } : m);
+                });
+            });
+
             return () => {
                 socket.off('new-message', handleNewMessage);
+                socket.off('message_edited');
             };
         }
     }, [open, roomId, user, queryClient]);
@@ -110,15 +119,19 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
         if (activeTab === 'PRIVATE' && !selectedUser) return;
 
         try {
-            const payload = activeTab === 'ROOM' 
-                ? { content: encryptMessage(message, roomId), senderId: user.id, departmentId, projectId, eventId, chatType: departmentId ? 'DEPARTMENT' : projectId ? 'PROJECT' : eventId ? 'EVENT' : 'GLOBAL' }
-                : { content: encryptMessage(message, roomId), senderId: user.id, receiverId: selectedUser.id, chatType: 'PRIVATE' };
+            if (editingMessageId) {
+                await api.patch(`/messages/${editingMessageId}`, { content: encryptMessage(message, roomId) });
+                setEditingMessageId(null);
+            } else {
+                const payload = activeTab === 'ROOM' 
+                    ? { content: encryptMessage(message, roomId), senderId: user.id, departmentId, projectId, eventId, chatType: departmentId ? 'DEPARTMENT' : projectId ? 'PROJECT' : eventId ? 'EVENT' : 'GLOBAL' }
+                    : { content: encryptMessage(message, roomId), senderId: user.id, receiverId: selectedUser.id, chatType: 'PRIVATE' };
 
-            const res = await api.post('/messages', payload);
+                await api.post('/messages', payload);
+            }
             setMessage('');
         } catch (error: any) {
-            console.error('Failed to send message', error);
-            // Show suspension error if applicable
+            console.error('Failed to send/update message', error);
             if (error.response?.status === 403) {
                 alert(error.response.data.error);
             }
@@ -147,18 +160,26 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
                 </Badge>
             </IconButton>
 
+            {/* Mobile Backdrop to ensure send tap works */}
+            {open && isMobile && (
+                <Box 
+                    onClick={() => setOpen(false)}
+                    sx={{ position: 'fixed', inset: 0, bgcolor: 'rgba(0,0,0,0.5)', zIndex: 1999 }} 
+                />
+            )}
+
             <Box 
                 sx={{ 
                     position: 'fixed',
-                    bottom: isMobile ? 0 : 96,
+                    bottom: isMobile ? 'env(safe-area-inset-bottom, 0px)' : 96,
                     right: isMobile ? 0 : 32,
                     width: isMobile ? '100%' : 380,
-                    height: isMobile ? '100%' : 540,
-                    maxHeight: isMobile ? '100%' : 'calc(100vh - 120px)',
+                    height: isMobile ? '90vh' : 540,
+                    maxHeight: '90vh',
                     bgcolor: 'background.paper',
                     border: '1px solid var(--glass-border)',
-                    borderRadius: isMobile ? 0 : 3,
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+                    borderRadius: isMobile ? '24px 24px 0 0' : 3,
+                    boxShadow: '0 -8px 32px rgba(0,0,0,0.5)',
                     display: open ? 'flex' : 'none',
                     flexDirection: 'column',
                     zIndex: 2000,
@@ -264,39 +285,94 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
                                     bgcolor: msg.senderId === user?.id ? 'primary.main' : 'rgba(255,255,255,0.05)', 
                                     borderRadius: 2, 
                                     border: '1px solid var(--glass-border)',
-                                    boxShadow: msg.senderId === user?.id ? '0 4px 12px rgba(var(--primary-rgb), 0.2)' : 'none'
                                 }}>
-                                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', color: msg.senderId === user?.id ? 'white' : 'inherit', lineHeight: 1.4 }}>{decryptMessage(msg.content, roomId)}</Typography>
+                                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', color: msg.senderId === user?.id ? 'white' : 'inherit', lineHeight: 1.4 }}>
+                                        {decryptMessage(msg.content, roomId)}
+                                        {msg.isEdited && <Typography component="span" variant="caption" sx={{ ml: 1, opacity: 0.5, fontSize: '0.6rem' }}>(edited)</Typography>}
+                                    </Typography>
                                 </Paper>
-                                <Typography variant="caption" sx={{ display: 'block', mt: 0.5, opacity: 0.4, textAlign: msg.senderId === user?.id ? 'right' : 'left', fontSize: '0.55rem' }}>
-                                    {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </Typography>
+                                <Box display="flex" alignItems="center" gap={1} mt={0.5} flexDirection={msg.senderId === user?.id ? 'row-reverse' : 'row'}>
+                                    <Typography variant="caption" sx={{ opacity: 0.4, fontSize: '0.55rem' }}>
+                                        {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </Typography>
+                                    {msg.senderId === user?.id && !msg.isDeleted && (
+                                        <IconButton 
+                                            size="small" 
+                                            onClick={() => {
+                                                setEditingMessageId(msg.id);
+                                                setMessage(decryptMessage(msg.content, roomId));
+                                            }}
+                                            sx={{ p: 0.2, color: 'primary.main', opacity: 0.5, '&:hover': { opacity: 1 } }}
+                                        >
+                                            <Edit2 size={10} />
+                                        </IconButton>
+                                    )}
+                                </Box>
                             </Box>
                         ))}
                         </Box>
                     )}
 
-                    <Box sx={{ p: 2, borderTop: '1px solid var(--glass-border)', bgcolor: 'rgba(255,255,255,0.02)' }}>
-                        <Box display="flex" gap={1}>
+                    <Box sx={{ 
+                        p: 2, 
+                        pb: isMobile ? 'calc(env(safe-area-inset-bottom, 0px) + 16px)' : 2,
+                        borderTop: '1px solid var(--glass-border)', 
+                        bgcolor: 'rgba(255,255,255,0.02)' 
+                    }}>
+                        <Box display="flex" gap={1} alignItems="center">
                             <TextField 
                                 fullWidth 
                                 size="small" 
+                                multiline={isMobile}
+                                maxRows={3}
                                 placeholder="Type a message..." 
                                 value={message} 
                                 onChange={(e) => setMessage(e.target.value)}
-                                onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                                onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), sendMessage())}
                                 sx={{ 
                                     '& .MuiOutlinedInput-root': { 
-                                        borderRadius: 2, 
+                                        borderRadius: 2.5, 
                                         bgcolor: 'rgba(255,255,255,0.03)',
-                                        fontSize: '0.8rem'
+                                        fontSize: '0.9rem',
+                                        border: editingMessageId ? '1px solid orange' : 'none',
+                                        transition: 'all 0.2s'
                                     } 
                                 }}
+                                InputProps={{
+                                    endAdornment: editingMessageId ? (
+                                        <InputAdornment position="end">
+                                            <IconButton size="small" onClick={() => { setEditingMessageId(null); setMessage(''); }}>
+                                                <X size={14} />
+                                            </IconButton>
+                                        </InputAdornment>
+                                    ) : null
+                                }}
                             />
-                            <IconButton onClick={sendMessage} color="primary" sx={{ bgcolor: 'primary.main', color: 'white', '&:hover': { bgcolor: 'primary.dark' }, p: 1 }}>
-                                <Send size={18} />
+                            <IconButton 
+                                onClick={sendMessage} 
+                                disabled={!message.trim()}
+                                color="primary" 
+                                sx={{ 
+                                    bgcolor: 'primary.main', 
+                                    color: 'white', 
+                                    '&:hover': { bgcolor: 'primary.dark' },
+                                    '&.Mui-disabled': { bgcolor: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.2)' },
+                                    p: 1.2, 
+                                    flexShrink: 0,
+                                    boxShadow: message.trim() ? '0 0 15px var(--primary-glow)' : 'none'
+                                }}
+                            >
+                                <Send size={20} />
                             </IconButton>
                         </Box>
+                        {editingMessageId && (
+                            <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1, p: 0.5, bgcolor: 'rgba(255, 165, 0, 0.1)', borderRadius: 1, border: '1px solid rgba(255, 165, 0, 0.2)' }}>
+                                <Pencil size={10} color="orange" />
+                                <Typography variant="caption" sx={{ color: 'orange', fontSize: '0.65rem', fontWeight: 1000, letterSpacing: 0.5 }}>
+                                    EDITING MODE ACTIVE
+                                </Typography>
+                            </Box>
+                        )}
                     </Box>
                 </Box>
             </Box>

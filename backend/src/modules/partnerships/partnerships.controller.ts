@@ -180,3 +180,57 @@ export const deletePartnership = async (req: any, res: Response) => {
         res.status(500).json({ error: 'Failed to dissolve partnership.' });
     }
 };
+export const updatePartnership = async (req: any, res: Response) => {
+    const { id } = req.params;
+    const { amount } = req.body;
+    const actorId = req.user.id;
+
+    if (!amount || amount <= 0) {
+        return res.status(400).json({ error: 'Partnership amount must be positive.' });
+    }
+
+    try {
+        const current = await prisma.partnership.findUnique({ where: { id } });
+        if (!current) return res.status(404).json({ error: 'Partnership not found.' });
+
+        const updatedPartnership = await prisma.$transaction(async (tx) => {
+            // 1. Recalculate balance based on new commitment amount
+            const totalPaid = current.paidAmount;
+            const newBalance = Math.max(0, Number(amount) - totalPaid);
+
+            // 2. Update record
+            return tx.partnership.update({
+                where: { id },
+                data: {
+                    amount: Number(amount),
+                    balance: newBalance,
+                    status: newBalance === 0 ? 'COMPLETED' : 'ACTIVE'
+                }
+            });
+        });
+
+        await logAction({
+            actorId,
+            actorRole: req.user.role,
+            actionType: 'UPDATE_PARTNERSHIP_AMOUNT',
+            entityType: 'PARTNERSHIP',
+            entityId: id,
+            beforeState: current,
+            afterState: updatedPartnership,
+            ipAddress: req.ip
+        });
+
+        await NotificationEngine.dispatch({
+            userId: updatedPartnership.userId,
+            title: 'Covenant Partnership Updated',
+            message: `Your partnership commitment has been revised to KES ${amount}. Your new balance is KES ${updatedPartnership.balance}.`,
+            type: 'PARTNERSHIP_UPDATE',
+            deliveryChannel: 'IN_APP'
+        });
+
+        res.json({ message: 'Partnership commitment updated.', partnership: updatedPartnership });
+    } catch (error) {
+        console.error('Update Error:', error);
+        res.status(500).json({ error: 'Failed to update partnership commitment.' });
+    }
+};

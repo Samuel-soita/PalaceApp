@@ -4,7 +4,7 @@ import {
     Avatar, Chip, IconButton, Button, Stack, Divider, 
     TextField, InputAdornment, LinearProgress, MenuItem, Alert
 } from '@mui/material';
-import { XCircle, Star, TrendingUp, DollarSign, Search, CheckCircle, RefreshCcw } from 'lucide-react';
+import { XCircle, Star, TrendingUp, DollarSign, Search, CheckCircle, RefreshCcw, Pencil, Edit3 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLiveQuery } from 'dexie-react-hooks';
 import api from '../../lib/api-client';
@@ -23,6 +23,8 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
     const [paymentMethod, setPaymentMethod] = useState<string>('MPESA');
     const [referenceCode, setReferenceCode] = useState<string>('');
     const [errorMsg, setErrorMsg] = useState<string>('');
+    const [editingPartner, setEditingPartner] = useState<any>(null);
+    const [newCommitmentAmount, setNewCommitmentAmount] = useState<string>('');
 
     // --- MISSION: OFFLINE-FIRST PARTNERSHIP DATA ---
     const partnerships = useLiveQuery(() => db.partnerships.toArray(), []) || [];
@@ -49,6 +51,19 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
                 version: 0,
                 createdAt: new Date().toISOString()
             });
+
+            // 💰 Optimistic Parent Update
+            const p = await db.partnerships.get(id);
+            if (p) {
+                const newPaid = (p.paidAmount || 0) + Number(amount);
+                const newBalance = Math.max(0, (p.amount || 0) - newPaid);
+                await db.partnerships.update(id, {
+                    paidAmount: newPaid,
+                    balance: newBalance,
+                    status: newBalance === 0 ? 'COMPLETED' : 'ACTIVE',
+                    lastPaymentDate: new Date().toISOString()
+                });
+            }
 
             // 📡 Queue for Global Reconciliation
             await db.syncQueue.put({
@@ -82,6 +97,49 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
             },
             onError: (err: any) => {
                 setErrorMsg(err.message || 'Failed to reconcile ledger locally.');
+            }
+        }
+    );
+
+    const updatePartnershipMutation = useMutation(
+        async ({ id, amount }: { id: string, amount: number }) => {
+            const timestamp = Date.now();
+
+            // 🚀 Tactical Offline Update
+            const p = await db.partnerships.get(id);
+            if (p) {
+                const newBalance = Math.max(0, Number(amount) - (p.paidAmount || 0));
+                await db.partnerships.update(id, {
+                    amount: Number(amount),
+                    balance: newBalance,
+                    status: newBalance === 0 ? 'COMPLETED' : 'ACTIVE'
+                });
+            }
+
+            // 📡 Queue for Global Update
+            await db.syncQueue.put({
+                id: crypto.randomUUID(),
+                timestamp,
+                entity: 'PARTNERSHIP',
+                method: 'PATCH',
+                url: `/partnerships/${id}`,
+                payload: { amount: Number(amount) },
+                status: 'PENDING',
+                retryCount: 0,
+                errorLog: []
+            });
+
+            return { data: { _queued: true } };
+        },
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries(['all-partnerships']);
+                setEditingPartner(null);
+                setNewCommitmentAmount('');
+                setErrorMsg('');
+            },
+            onError: (err: any) => {
+                setErrorMsg(err.message || 'Failed to update commitment offline.');
             }
         }
     );
@@ -174,8 +232,23 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
                                                     </Box>
                                                 </Grid>
                                                 <Grid item xs={4} sm={2}>
-                                                    <Typography variant="caption" sx={{ opacity: 0.5 }}>COMMITMENT</Typography>
-                                                    <Typography variant="subtitle2" fontWeight={1000}>{p.amount} KES</Typography>
+                                                    <Box display="flex" alignItems="center" gap={1}>
+                                                        <Box>
+                                                            <Typography variant="caption" sx={{ opacity: 0.5 }}>COMMITMENT</Typography>
+                                                            <Typography variant="subtitle2" fontWeight={1000}>{p.amount} KES</Typography>
+                                                        </Box>
+                                                        <IconButton 
+                                                            size="small" 
+                                                            onClick={() => {
+                                                                setEditingPartner(p);
+                                                                setNewCommitmentAmount(p.amount.toString());
+                                                                setErrorMsg('');
+                                                            }}
+                                                            sx={{ color: 'orange', opacity: 0.6, '&:hover': { opacity: 1 } }}
+                                                        >
+                                                            <Pencil size={14} />
+                                                        </IconButton>
+                                                    </Box>
                                                 </Grid>
                                                 <Grid item xs={4} sm={2}>
                                                     <Typography variant="caption" sx={{ opacity: 0.5 }}>PAID</Typography>
@@ -219,10 +292,14 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
                                         <Typography variant="h6" fontWeight={1000}>RECONCILE SEED</Typography>
                                         <IconButton onClick={() => setSelectedPartner(null)} sx={{ color: 'text.secondary' }}><XCircle /></IconButton>
                                     </Box>
-                                    <Typography variant="body2" sx={{ mb: 4, opacity: 0.7 }}>
+                                    <Typography variant="body2" sx={{ mb: 2, opacity: 0.7 }}>
                                         Updating manual ledger for <b>{selectedPartner.user?.name || 'Unknown Partner'}</b>. <br/>
                                         Outstanding Balance: <b>{selectedPartner.balance} KES</b> <br/>
                                         Payment to: <b>0741502198</b>
+                                    </Typography>
+
+                                    <Typography variant="caption" sx={{ display: 'block', mb: 3, p: 1.5, bgcolor: 'rgba(76, 175, 80, 0.1)', borderLeft: '3px solid #4caf50', color: '#4caf50', fontWeight: 900, borderRadius: 1 }}>
+                                        &quot;Your seed is a tactical investment in the Kingdom. Thank you for your unwavering faithfulness!&quot;
                                     </Typography>
 
                                     <Stack spacing={2.5}>
@@ -252,6 +329,48 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
                                             sx={{ bgcolor: 'orange', color: '#000', fontWeight: 1000, py: 1.5, '&:hover': { bgcolor: '#ffb347' } }}
                                         >
                                             {addLedgerMutation.isLoading ? 'PROCESSING...' : 'CONFIRM RECONCILIATION'}
+                                        </Button>
+                                    </Stack>
+                                </CardContent>
+                            </Card>
+                        </Box>
+                    )}
+
+                    {/* Edit Commitment Dialog */}
+                    {editingPartner && (
+                        <Box sx={{ 
+                            position: 'absolute', inset: 0, bgcolor: 'rgba(0,0,0,0.95)', 
+                            zIndex: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 4 
+                        }}>
+                            <Card sx={{ maxWidth: 400, width: '100%', bgcolor: '#111', border: '1px solid orange' }}>
+                                <CardContent sx={{ p: 4 }}>
+                                    <Box display="flex" justifyContent="space-between" mb={3}>
+                                        <Typography variant="h6" fontWeight={1000}>EDIT COMMITMENT</Typography>
+                                        <IconButton onClick={() => setEditingPartner(null)} sx={{ color: 'text.secondary' }}><XCircle /></IconButton>
+                                    </Box>
+                                    <Typography variant="body2" sx={{ mb: 4, opacity: 0.7 }}>
+                                        Adjusting partnership commitment for <b>{editingPartner.user?.name || 'Unknown Partner'}</b>. <br/>
+                                        Current Paid: <b>{editingPartner.paidAmount} KES</b>
+                                    </Typography>
+
+                                    <Stack spacing={2.5}>
+                                        {errorMsg && <Alert severity="error">{errorMsg}</Alert>}
+                                        <TextField
+                                            fullWidth 
+                                            label="NEW MONTHLY AMOUNT (KES)" 
+                                            type="number"
+                                            value={newCommitmentAmount} 
+                                            onChange={(e) => setNewCommitmentAmount(e.target.value)}
+                                            InputProps={{ sx: { fontWeight: 900 } }}
+                                            helperText="Commitment should be at least 700 KES as per ministry standards."
+                                        />
+                                        <Button 
+                                            fullWidth variant="contained"
+                                            disabled={!newCommitmentAmount || Number(newCommitmentAmount) < 700 || updatePartnershipMutation.isLoading}
+                                            onClick={() => updatePartnershipMutation.mutate({ id: editingPartner.id, amount: Number(newCommitmentAmount) })}
+                                            sx={{ bgcolor: 'orange', color: '#000', fontWeight: 1000, py: 1.5, '&:hover': { bgcolor: '#ffb347' } }}
+                                        >
+                                            {updatePartnershipMutation.isLoading ? 'UPDATING...' : 'UPDATE COMMITMENT'}
                                         </Button>
                                     </Stack>
                                 </CardContent>
