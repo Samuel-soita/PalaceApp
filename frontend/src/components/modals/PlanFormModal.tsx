@@ -75,7 +75,13 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
     );
 
     const approveMutation = useMutation(
-        () => api.post(`/plans/${plan.id}/approve`),
+        async (status: 'APPROVED' | 'REJECTED') => {
+            if (status === 'APPROVED') {
+                return await api.post(`/plans/${plan.id}/approve`);
+            } else {
+                return await api.patch(`/plans/${plan.id}/status`, { approvalStatus: 'REJECTED' });
+            }
+        },
         {
             onSuccess: () => {
                 onSuccess();
@@ -120,7 +126,7 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
                 </DialogTitle>
                 <DialogContent>
                     {/* 👨‍⚖️ COMMAND APPROVAL OVERRIDE */}
-                    {plan && plan.approvalStatus !== 'APPROVED' && plan.targetPastorId === user?.id && (
+                    {plan && plan.approvalStatus !== 'APPROVED' && (plan.targetPastorId === user?.id || ['WATUA', 'BISHOP'].includes(user?.role || '')) && (
                         <Box sx={{ mb: 4, p: 3, bgcolor: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: 0, textAlign: 'center' }}>
                             <Typography variant="subtitle2" fontWeight="950" color="orange" mb={1}>
                                 ACTION REQUIRED: PLAN CLEARANCE
@@ -133,7 +139,7 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
                                     variant="contained" 
                                     color="success" 
                                     size="small" 
-                                    onClick={() => approveMutation.mutate()}
+                                    onClick={() => approveMutation.mutate('APPROVED')}
                                     disabled={approveMutation.isLoading}
                                     sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
                                 >
@@ -143,8 +149,8 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
                                     variant="outlined" 
                                     color="error" 
                                     size="small" 
-                                    onClick={() => { if(window.confirm('Reject plan?')) mutation.mutate({ approvalStatus: 'REJECTED' }); }}
-                                    disabled={mutation.isLoading}
+                                    onClick={() => { if(window.confirm('Reject plan?')) approveMutation.mutate('REJECTED'); }}
+                                    disabled={approveMutation.isLoading}
                                     sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
                                 >
                                     REJECT
