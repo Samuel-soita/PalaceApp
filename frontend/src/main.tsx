@@ -49,8 +49,8 @@ if (import.meta.env.DEV) {
             }
         },
         onNeedRefresh() {
-            // No UI interruption. New SW activates automatically (autoUpdate).
-            // Updates apply on next natural reload.
+            // Force immediate reload to activate the new version
+            window.location.reload();
         },
         onOfflineReady() {
             window.dispatchEvent(new Event('pwa-offline-ready'));
