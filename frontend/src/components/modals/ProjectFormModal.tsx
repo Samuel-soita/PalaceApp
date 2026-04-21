@@ -148,7 +148,7 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                                     variant="contained" 
                                     color="success" 
                                     size="small" 
-                                    onClick={() => approveMutation.mutate()}
+                                    onClick={() => approveMutation.mutate('APPROVED')}
                                     disabled={approveMutation.isLoading}
                                     sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
                                 >
@@ -158,8 +158,8 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                                     variant="outlined" 
                                     color="error" 
                                     size="small" 
-                                    onClick={() => { if(window.confirm('Reject mission?')) mutation.mutate({ approvalStatus: 'REJECTED' }); }}
-                                    disabled={mutation.isLoading}
+                                    onClick={() => { if(window.confirm('Reject mission?')) approveMutation.mutate('REJECTED'); }}
+                                    disabled={approveMutation.isLoading}
                                     sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
                                 >
                                     REJECT
