@@ -71,6 +71,16 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
         }
     );
 
+    const approveMutation = useMutation(
+        () => api.post(`/announcements/${announcement.id}/approve`),
+        {
+            onSuccess: () => {
+                onSuccess();
+                onClose();
+            }
+        }
+    );
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!announcement && formData.pastorIds.length !== 2) {
@@ -100,6 +110,40 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                     {announcement ? 'EDIT BROADCAST' : 'DEPLOY NEW BROADCAST'}
                 </DialogTitle>
                 <DialogContent sx={{ px: 4 }}>
+                    {/* 👨‍⚖️ COMMAND APPROVAL OVERRIDE */}
+                    {announcement && announcement.status !== 'APPROVED' && announcement.targetPastorId === user?.id && (
+                        <Box sx={{ mb: 4, mt: 2, p: 3, bgcolor: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: 0, textAlign: 'center' }}>
+                            <Typography variant="subtitle2" fontWeight="950" color="orange" mb={1}>
+                                ACTION REQUIRED: BROADCAST CLEARANCE
+                            </Typography>
+                            <Typography variant="caption" sx={{ display: 'block', mb: 2, opacity: 0.8 }}>
+                                Review the intelligence parameters and grant authorization to broadcast.
+                            </Typography>
+                            <Box display="flex" gap={2} justifyContent="center">
+                                <Button 
+                                    variant="contained" 
+                                    color="success" 
+                                    size="small" 
+                                    onClick={() => approveMutation.mutate()}
+                                    disabled={approveMutation.isLoading}
+                                    sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
+                                >
+                                    APPROVE BROADCAST
+                                </Button>
+                                <Button 
+                                    variant="outlined" 
+                                    color="error" 
+                                    size="small" 
+                                    onClick={() => { if(window.confirm('Reject broadcast?')) mutation.mutate({ status: 'REJECTED' }); }}
+                                    disabled={mutation.isLoading}
+                                    sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
+                                >
+                                    REJECT
+                                </Button>
+                            </Box>
+                        </Box>
+                    )}
+
                     <Box display="flex" flexDirection="column" gap={3} sx={{ mt: 2 }}>
                         <TextField
                             label="Broadcast Title"

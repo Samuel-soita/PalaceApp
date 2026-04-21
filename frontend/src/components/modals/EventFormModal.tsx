@@ -87,6 +87,16 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
         }
     });
 
+    const approveMutation = useMutation(
+        () => api.post(`/events/${event.id}/approve`),
+        {
+            onSuccess: () => {
+                onSuccess();
+                onClose();
+            }
+        }
+    );
+
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [uploading, setUploading] = useState(false);
 
@@ -164,6 +174,40 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
                     {event ? (event.status === 'APPROVED' ? 'VIEW EVENT (LOCKED)' : 'EDIT EVENT') : 'INITIATE EVENT'}
                 </DialogTitle>
                 <DialogContent>
+                    {/* 👨‍⚖️ COMMAND APPROVAL OVERRIDE */}
+                    {event && event.approvalStatus !== 'APPROVED' && event.targetPastorId === user?.id && (
+                        <Box sx={{ mb: 4, p: 3, bgcolor: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: 0, textAlign: 'center' }}>
+                            <Typography variant="subtitle2" fontWeight="950" color="orange" mb={1}>
+                                ACTION REQUIRED: EVENT CLEARANCE
+                            </Typography>
+                            <Typography variant="caption" sx={{ display: 'block', mb: 2, opacity: 0.8 }}>
+                                Review the mission parameters and grant authorization to proceed.
+                            </Typography>
+                            <Box display="flex" gap={2} justifyContent="center">
+                                <Button 
+                                    variant="contained" 
+                                    color="success" 
+                                    size="small" 
+                                    onClick={() => approveMutation.mutate()}
+                                    disabled={approveMutation.isLoading}
+                                    sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
+                                >
+                                    APPROVE EVENT
+                                </Button>
+                                <Button 
+                                    variant="outlined" 
+                                    color="error" 
+                                    size="small" 
+                                    onClick={() => { if(window.confirm('Reject event?')) mutation.mutate({ approvalStatus: 'REJECTED', id: event.id }); }}
+                                    disabled={mutation.isLoading}
+                                    sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
+                                >
+                                    REJECT
+                                </Button>
+                            </Box>
+                        </Box>
+                    )}
+
                     <Box display="flex" flexDirection="column" gap={3} mt={1}>
                         <TextField
                             label="Event Title"

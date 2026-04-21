@@ -82,6 +82,16 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
         }
     );
 
+    const approveMutation = useMutation(
+        () => api.post(`/projects/${project.id}/approve`),
+        {
+            onSuccess: () => {
+                onSuccess();
+                onClose();
+            }
+        }
+    );
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         
@@ -118,6 +128,40 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                     {project ? (project.status === 'APPROVED' ? 'VIEW PROJECT (LOCKED)' : 'EDIT PROJECT') : 'INITIALIZE PROJECT'}
                 </DialogTitle>
                 <DialogContent>
+                    {/* 👨‍⚖️ COMMAND APPROVAL OVERRIDE */}
+                    {project && project.approvalStatus !== 'APPROVED' && project.targetPastorId === user?.id && (
+                        <Box sx={{ mb: 4, p: 3, bgcolor: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: 0, textAlign: 'center' }}>
+                            <Typography variant="subtitle2" fontWeight="950" color="orange" mb={1}>
+                                ACTION REQUIRED: STRATEGIC CLEARANCE
+                            </Typography>
+                            <Typography variant="caption" sx={{ display: 'block', mb: 2, opacity: 0.8 }}>
+                                As the assigned authorizing officer, you are required to review this mission deployment.
+                            </Typography>
+                            <Box display="flex" gap={2} justifyContent="center">
+                                <Button 
+                                    variant="contained" 
+                                    color="success" 
+                                    size="small" 
+                                    onClick={() => approveMutation.mutate()}
+                                    disabled={approveMutation.isLoading}
+                                    sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
+                                >
+                                    APPROVE MISSION
+                                </Button>
+                                <Button 
+                                    variant="outlined" 
+                                    color="error" 
+                                    size="small" 
+                                    onClick={() => { if(window.confirm('Reject mission?')) mutation.mutate({ approvalStatus: 'REJECTED' }); }}
+                                    disabled={mutation.isLoading}
+                                    sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
+                                >
+                                    REJECT
+                                </Button>
+                            </Box>
+                        </Box>
+                    )}
+
                     <Box display="flex" flexDirection="column" gap={3} mt={1}>
                         <TextField
                             label="Project Title"

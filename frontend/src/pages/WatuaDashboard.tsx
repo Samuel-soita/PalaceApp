@@ -86,7 +86,8 @@ import {
     Droplets,
     Baby,
     Wrench,
-    LogOut
+    LogOut,
+    BookOpen
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import DashboardLayout from '../components/layout/DashboardLayout';
@@ -98,6 +99,7 @@ import DepartmentReportModal from '../components/modals/DepartmentReportModal';
 import PermissionEnginePanel from '../components/watua/PermissionEnginePanel';
 import SyncIndicator from '../components/SyncIndicator';
 import { PermissionService } from '../lib/PermissionService';
+import { useLocalFirstDashboard } from '../hooks/useLocalFirstDashboard';
 
 interface User {
     id: string;
@@ -171,7 +173,11 @@ interface Diagnostics {
 export default function WatuaDashboard() {
     const { user: currentUser, logout } = useAuth();
     const [tab, setTab] = useState(0);
-    
+
+    // --- Data Streams (Tactical Mirror) ---
+    const { data: syncData, isLoading: isSyncLoading } = useLocalFirstDashboard();
+    const devotion = syncData?.devotion;
+
     // 🏛️ LOCAL-FIRST REACTIVE DATA KERNEL (Dexie — Tactical Mirror)
     const users = useLiveQuery(() => db.users.toArray()) || [];
     const projects = useLiveQuery(() => db.projects.toArray()) || [];
@@ -204,15 +210,15 @@ export default function WatuaDashboard() {
 
     // 📊 REAL-TIME TELEMETRY (Calculated from Local Device DB)
     const stats = useMemo(() => ({
-        users: { 
-            total: users.length, 
-            pending: users.filter(u => u.status === 'PENDING').length, 
-            leaders: users.filter(u => u.role === 'DEPARTMENT_LEADER').length 
+        users: {
+            total: users.length,
+            pending: users.filter(u => u.status === 'PENDING').length,
+            leaders: users.filter(u => u.role === 'DEPARTMENT_LEADER').length
         },
-        operations: { 
-            projects: projects.length, 
-            events: events.length, 
-            departments: departments.length 
+        operations: {
+            projects: projects.length,
+            events: events.length,
+            departments: departments.length
         },
         health: 'KERNEL_ACTIVE_LOCAL',
         kernelVersion: '2.5.0-OFFLINE-SYSTEM',
@@ -246,7 +252,7 @@ export default function WatuaDashboard() {
     });
     const [pastorModules, setPastorModules] = useState<any[]>([]);
     const [moduleLoading, setModuleLoading] = useState(false);
-    
+
     // Mission Control States
     const [projectModalOpen, setProjectModalOpen] = useState(false);
     const [eventModalOpen, setEventModalOpen] = useState(false);
@@ -300,7 +306,7 @@ export default function WatuaDashboard() {
             setMessage({ type: 'success', text: `Policy ${moduleKey} ${active ? 'applied' : 'decommissioned'} successfully.` });
         } catch (err: any) {
             console.error('Module update failed', err);
-            
+
             // 🛡️ Failed? Queue for Sync Daemon
             await db.syncQueue.put({
                 id: crypto.randomUUID(),
@@ -321,7 +327,7 @@ export default function WatuaDashboard() {
     // ─── LOCAL ACTION HANDLERS ──────────────────────────────────────────────
     const handleGlobalDelete = async (type: string, id: string) => {
         const confirmText = type === 'USER' ? 'PURGE' : 'YES';
-        const promptMsg = type === 'USER' 
+        const promptMsg = type === 'USER'
             ? `☢️ CRITICAL OMNIPOTENT COMMAND: Are you absolutely sure you want to PERMANENTLY PURGE this user from the entire system? This cannot be undone. Type "${confirmText}" to confirm.`
             : `OMNIPOTENT COMMAND: Are you absolutely sure you want to FORCE DELETE this resource from the local kernel?`;
 
@@ -361,7 +367,7 @@ export default function WatuaDashboard() {
         // Synchronizes roles and permissions from the backend source of truth.
         // Works offline by falling back to indexedDB cache if the cloud is unreachable.
         PermissionService.syncWithCloud();
-        
+
         setLoading(false);
     }, []);
 
@@ -400,10 +406,10 @@ export default function WatuaDashboard() {
     const handleBioRepair = async () => {
         if (!selectedUser) return;
         try {
-            await db.users.update(selectedUser.id, { 
-                ...repairData, 
+            await db.users.update(selectedUser.id, {
+                ...repairData,
                 dob: new Date(repairData.dob).toISOString(),
-                syncStatus: 'PENDING' 
+                syncStatus: 'PENDING'
             });
             setMessage({ type: 'success', text: 'ENTITY BIO_REPAIR COMPLETE.' });
             setSelectedUser(null);
@@ -534,8 +540,8 @@ export default function WatuaDashboard() {
                             }
                         }}
                         variant="contained"
-                        sx={{ 
-                            bgcolor: 'rgba(239, 68, 68, 0.2)', 
+                        sx={{
+                            bgcolor: 'rgba(239, 68, 68, 0.2)',
                             border: '1px solid #ef4444',
                             color: '#ef4444',
                             '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.4)' }
@@ -567,6 +573,52 @@ export default function WatuaDashboard() {
                 </Alert>
             )}
 
+            {/* 📖 DAILY DEVOTION (Synchronized) */}
+            {devotion && (
+                <Card sx={{ 
+                    mb: 4, 
+                    borderRadius: 0, 
+                    border: '1px solid rgba(193, 117, 255, 0.3)', 
+                    background: 'linear-gradient(135deg, rgba(193, 117, 255, 0.05) 0%, rgba(0, 0, 0, 0.8) 100%)',
+                    position: 'relative',
+                    overflow: 'hidden'
+                }}>
+                    <Box sx={{ 
+                        position: 'absolute', 
+                        top: -20, 
+                        right: -20, 
+                        width: 100, 
+                        height: 100, 
+                        bgcolor: 'rgba(193, 117, 255, 0.1)', 
+                        borderRadius: '50%', 
+                        filter: 'blur(30px)' 
+                    }} />
+                    <CardContent sx={{ p: 4 }}>
+                        <Box display="flex" justifyContent="space-between" alignItems="flex-start">
+                            <Box>
+                                <Typography variant="overline" sx={{ color: '#c175ff', fontWeight: 900, letterSpacing: 2 }}>
+                                    DAILY SPIRITUAL FEED • {new Date(devotion.date).toLocaleDateString()}
+                                </Typography>
+                                <Typography variant="h5" fontWeight={950} sx={{ color: '#f8fafc', mt: 1, letterSpacing: -1 }}>
+                                    {devotion.title}
+                                </Typography>
+                                <Typography variant="subtitle2" sx={{ color: 'rgba(255,255,255,0.6)', mt: 0.5, fontStyle: 'italic' }}>
+                                    {devotion.scripture}
+                                </Typography>
+                            </Box>
+                            <Chip 
+                                icon={<BookOpen size={14} color="#c175ff" />} 
+                                label="ACTIVE DEVOTION" 
+                                sx={{ bgcolor: 'rgba(193, 117, 255, 0.1)', color: '#c175ff', fontWeight: 900, borderRadius: 0, border: '1px solid rgba(193, 117, 255, 0.3)' }} 
+                            />
+                        </Box>
+                        <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)', mt: 2, lineHeight: 1.6, maxWidth: '800px' }}>
+                            {devotion.content}
+                        </Typography>
+                    </CardContent>
+                </Card>
+            )}
+
             {/* More Actions Menu */}
             <Menu
                 anchorEl={anchorEl}
@@ -581,20 +633,20 @@ export default function WatuaDashboard() {
                     }
                 }}
             >
-                <MenuItem 
+                <MenuItem
                     onClick={() => menuUserId && handleAction(menuUserId, users.find(u => u.id === menuUserId)?.isSuspended ? 'UNSUSPEND' : 'SUSPEND')}
                     sx={{ gap: 1.5, fontSize: '0.875rem' }}
                 >
                     {users.find(u => u.id === menuUserId)?.isSuspended ? <Unlock size={16} /> : <Lock size={16} />}
                     {users.find(u => u.id === menuUserId)?.isSuspended ? 'Lift Suspension' : 'Suspend Account'}
                 </MenuItem>
-                <MenuItem 
+                <MenuItem
                     onClick={() => menuUserId && handleAction(menuUserId, 'RESET_STRIKES')}
                     sx={{ gap: 1.5, fontSize: '0.875rem', color: '#22c55e' }}
                 >
                     <RotateCcw size={16} /> Reset Strikes
                 </MenuItem>
-                <MenuItem 
+                <MenuItem
                     onClick={() => {
                         if (menuUserId && window.confirm('DANGER: This will demote the leader to a regular member. Continue?')) {
                             handleAction(menuUserId, 'DEMOTE_MEMBER');
@@ -713,8 +765,8 @@ export default function WatuaDashboard() {
                                                         gender: user.gender || ''
                                                     });
                                                 }}>
-                                                    <Avatar 
-                                                        src={user.avatarUrl || undefined} 
+                                                    <Avatar
+                                                        src={user.avatarUrl || undefined}
                                                         sx={{ width: 32, height: 32, border: '1px solid rgba(255,255,255,0.1)' }}
                                                     >
                                                         {user.name.charAt(0)}
@@ -746,16 +798,16 @@ export default function WatuaDashboard() {
                                             <TableCell>
                                                 <Box display="flex" gap={1}>
                                                     {user.status === 'PENDING' && (
-                                                        <IconButton 
-                                                            color="success" 
+                                                        <IconButton
+                                                            color="success"
                                                             disabled={!user.isCardPaid}
-                                                            onClick={() => handleAction(user.id, 'ACTIVATE')} 
+                                                            onClick={() => handleAction(user.id, 'ACTIVATE')}
                                                             title={user.isCardPaid ? "Authorize Entry" : "Payment Required"}
                                                         >
                                                             <CheckCircle size={18} />
                                                         </IconButton>
                                                     )}
-                                                    <IconButton 
+                                                    <IconButton
                                                         onClick={() => handleMarkPaid(user.id, !user.isCardPaid)}
                                                         title={user.isCardPaid ? "Revoke Payment" : "Verify Payment"}
                                                         sx={{ color: user.isCardPaid ? '#22c55e' : 'rgba(255,255,255,0.2)' }}
@@ -784,13 +836,13 @@ export default function WatuaDashboard() {
                                                         <UserCheckIcon size={18} />
                                                     </IconButton>
                                                     {(user.role === 'PASTOR' || user.role === 'ASSOCIATE_PASTOR') && (
-                                                        <IconButton 
-                                                           sx={{ color: 'var(--cyan)' }} 
-                                                           onClick={() => {
-                                                               setModuleDialog({ open: true, userId: user.id, name: user.name });
-                                                               fetchPastorModules(user.id);
-                                                           }} 
-                                                           title="Manage Pastor Modules"
+                                                        <IconButton
+                                                            sx={{ color: 'var(--cyan)' }}
+                                                            onClick={() => {
+                                                                setModuleDialog({ open: true, userId: user.id, name: user.name });
+                                                                fetchPastorModules(user.id);
+                                                            }}
+                                                            title="Manage Pastor Modules"
                                                         >
                                                             <Zap size={18} />
                                                         </IconButton>
@@ -806,15 +858,15 @@ export default function WatuaDashboard() {
                                                     }} title="Bio Inspector">
                                                         <Search size={18} />
                                                     </IconButton>
-                                                    <IconButton 
-                                                        sx={{ color: '#ef4444' }} 
+                                                    <IconButton
+                                                        sx={{ color: '#ef4444' }}
                                                         onClick={() => handleGlobalDelete('USER', user.id)}
                                                         title="PERMANENT PURGE (Hard Delete)"
                                                     >
                                                         <Trash2 size={18} />
                                                     </IconButton>
-                                                    <IconButton 
-                                                        sx={{ color: '#94a3b8' }} 
+                                                    <IconButton
+                                                        sx={{ color: '#94a3b8' }}
                                                         onClick={(e) => handleOpenMenu(e, user.id)}
                                                         title="More Interventions"
                                                     >
@@ -860,21 +912,21 @@ export default function WatuaDashboard() {
                                                 )}
                                                 <IconButton size="small" sx={{ color: '#c175ff' }} onClick={() => handleAction(user.id, 'MAKE_SUPER_ADMIN')}><ShieldCheck size={16} /></IconButton>
                                                 {(user.role === 'PASTOR' || user.role === 'ASSOCIATE_PASTOR') && (
-                                                    <IconButton 
-                                                       size="small" 
-                                                       sx={{ color: 'var(--cyan)' }} 
-                                                       onClick={() => {
-                                                           setModuleDialog({ open: true, userId: user.id, name: user.name });
-                                                           fetchPastorModules(user.id);
-                                                       }}
+                                                    <IconButton
+                                                        size="small"
+                                                        sx={{ color: 'var(--cyan)' }}
+                                                        onClick={() => {
+                                                            setModuleDialog({ open: true, userId: user.id, name: user.name });
+                                                            fetchPastorModules(user.id);
+                                                        }}
                                                     >
                                                         <Zap size={16} />
                                                     </IconButton>
                                                 )}
-                                                <IconButton 
-                                                   size="small" 
-                                                   sx={{ color: '#94a3b8' }} 
-                                                   onClick={(e) => handleOpenMenu(e, user.id)}
+                                                <IconButton
+                                                    size="small"
+                                                    sx={{ color: '#94a3b8' }}
+                                                    onClick={(e) => handleOpenMenu(e, user.id)}
                                                 >
                                                     <MoreVertical size={16} />
                                                 </IconButton>
@@ -921,85 +973,85 @@ export default function WatuaDashboard() {
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                    {(resourceType === 'PROJECT' ? projects : 
-                                      resourceType === 'EVENT' ? events : 
-                                      resourceType === 'PLAN' ? plans : 
-                                      resourceType === 'ANNOUNCEMENT' ? announcements : 
-                                      resourceType === 'MEETING' ? meetings :
-                                      resourceType === 'REPAIR' ? repairs :
-                                      resourceType === 'BAPTISM' ? baptisms :
-                                      dedications).map((item: any) => (
-                                        <TableRow key={item.id} sx={{ '& td': { borderBottom: '1px solid rgba(255,255,255,0.05)', py: 2, color: '#f8fafc' } }}>
-                                            <TableCell>
-                                                <Typography variant="body2" fontWeight="bold">{item.title || item.name}</Typography>
-                                                <Typography variant="caption" sx={{ opacity: 0.5 }}>ID: {item.id.split('-')[0]}...</Typography>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Typography variant="body2" sx={{ color: '#00d4ff' }}>
-                                                    {item.department?.name || 'GLOBAL'}
-                                                </Typography>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Chip 
-                                                    label={item.approvalStatus || item.status || item.meetingStatus || 'UNKNOWN'} 
-                                                    size="small" 
-                                                    variant="outlined"
-                                                    sx={{ height: 20, fontSize: '10px' }}
-                                                />
-                                            </TableCell>
-                                            <TableCell>
-                                                <Box display="flex" gap={1}>
-                                                    <IconButton color="primary" size="small" onClick={() => {
-                                                        const type = resourceType;
-                                                        if (type === 'PROJECT') { setEditingProject(item); setProjectModalOpen(true); }
-                                                        if (type === 'EVENT') { setEditingEvent(item); setEventModalOpen(true); }
-                                                        if (type === 'PLAN') { setEditingPlan(item); setPlanModalOpen(true); }
-                                                        if (type === 'ANNOUNCEMENT') { setEditingAnnouncement(item); setAnnouncementModalOpen(true); }
-                                                    }} title="TECHNICAL OVERRIDE EDIT">
-                                                        <PenTool size={16} />
-                                                    </IconButton>
-                                                    {(item.approvalStatus === 'PENDING_APPROVAL' || item.status === 'PENDING' || item.meetingStatus === 'PENDING_APPROVAL' || item.workflowStatus === 'PENDING_DEDICATION' || item.status === 'PENDING_PASTOR_APPROVAL') && (
-                                                        <IconButton color="success" size="small" onClick={() => handleForceApproval(resourceType as any, item.id)} title="FORCE AUTHORIZE">
-                                                            <CheckCircle size={16} />
-                                                        </IconButton>
-                                                    )}
-                                                    <IconButton color="error" size="small" onClick={() => handleGlobalDelete(resourceType, item.id)} title="FORCE PURGE">
-                                                        <Activity size={16} />
-                                                    </IconButton>
-                                                </Box>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
+                                    {(resourceType === 'PROJECT' ? projects :
+                                        resourceType === 'EVENT' ? events :
+                                            resourceType === 'PLAN' ? plans :
+                                                resourceType === 'ANNOUNCEMENT' ? announcements :
+                                                    resourceType === 'MEETING' ? meetings :
+                                                        resourceType === 'REPAIR' ? repairs :
+                                                            resourceType === 'BAPTISM' ? baptisms :
+                                                                dedications).map((item: any) => (
+                                                                    <TableRow key={item.id} sx={{ '& td': { borderBottom: '1px solid rgba(255,255,255,0.05)', py: 2, color: '#f8fafc' } }}>
+                                                                        <TableCell>
+                                                                            <Typography variant="body2" fontWeight="bold">{item.title || item.name}</Typography>
+                                                                            <Typography variant="caption" sx={{ opacity: 0.5 }}>ID: {item.id.split('-')[0]}...</Typography>
+                                                                        </TableCell>
+                                                                        <TableCell>
+                                                                            <Typography variant="body2" sx={{ color: '#00d4ff' }}>
+                                                                                {item.department?.name || 'GLOBAL'}
+                                                                            </Typography>
+                                                                        </TableCell>
+                                                                        <TableCell>
+                                                                            <Chip
+                                                                                label={item.approvalStatus || item.status || item.meetingStatus || 'UNKNOWN'}
+                                                                                size="small"
+                                                                                variant="outlined"
+                                                                                sx={{ height: 20, fontSize: '10px' }}
+                                                                            />
+                                                                        </TableCell>
+                                                                        <TableCell>
+                                                                            <Box display="flex" gap={1}>
+                                                                                <IconButton color="primary" size="small" onClick={() => {
+                                                                                    const type = resourceType;
+                                                                                    if (type === 'PROJECT') { setEditingProject(item); setProjectModalOpen(true); }
+                                                                                    if (type === 'EVENT') { setEditingEvent(item); setEventModalOpen(true); }
+                                                                                    if (type === 'PLAN') { setEditingPlan(item); setPlanModalOpen(true); }
+                                                                                    if (type === 'ANNOUNCEMENT') { setEditingAnnouncement(item); setAnnouncementModalOpen(true); }
+                                                                                }} title="TECHNICAL OVERRIDE EDIT">
+                                                                                    <PenTool size={16} />
+                                                                                </IconButton>
+                                                                                {(item.approvalStatus === 'PENDING_APPROVAL' || item.status === 'PENDING' || item.meetingStatus === 'PENDING_APPROVAL' || item.workflowStatus === 'PENDING_DEDICATION' || item.status === 'PENDING_PASTOR_APPROVAL') && (
+                                                                                    <IconButton color="success" size="small" onClick={() => handleForceApproval(resourceType as any, item.id)} title="FORCE AUTHORIZE">
+                                                                                        <CheckCircle size={16} />
+                                                                                    </IconButton>
+                                                                                )}
+                                                                                <IconButton color="error" size="small" onClick={() => handleGlobalDelete(resourceType, item.id)} title="FORCE PURGE">
+                                                                                    <Activity size={16} />
+                                                                                </IconButton>
+                                                                            </Box>
+                                                                        </TableCell>
+                                                                    </TableRow>
+                                                                ))}
                                 </TableBody>
                             </Table>
                         </TableContainer>
 
                         {/* Mobile Resource Cards */}
                         <Box sx={{ display: { xs: 'flex', md: 'none' }, flexDirection: 'column', gap: 2 }}>
-                            {(resourceType === 'PROJECT' ? projects : 
-                              resourceType === 'EVENT' ? events : 
-                              resourceType === 'PLAN' ? plans : 
-                              resourceType === 'ANNOUNCEMENT' ? announcements : 
-                              resourceType === 'MEETING' ? meetings :
-                              resourceType === 'REPAIR' ? repairs :
-                              resourceType === 'BAPTISM' ? baptisms :
-                              dedications).map((item: any) => (
-                                <Card key={item.id} sx={{ bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                                    <CardContent sx={{ p: 2 }}>
-                                        <Box display="flex" justifyContent="space-between" mb={1}>
-                                            <Typography variant="subtitle2" fontWeight="900" noWrap sx={{ maxWidth: '70%' }}>{item.title || item.name || item.instrumentName}</Typography>
-                                            <Chip label={item.approvalStatus || item.status || item.workflowStatus || item.meetingStatus || 'STATUS'} size="small" variant="outlined" sx={{ height: 18, fontSize: '0.6rem' }} />
-                                        </Box>
-                                        <Typography variant="caption" sx={{ color: '#00d4ff', display: 'block', mb: 2 }}>{item.department?.name || 'GLOBAL SECTOR'}</Typography>
-                                        <Box display="flex" gap={1}>
-                                            {(item.approvalStatus === 'PENDING_APPROVAL' || item.status === 'PENDING' || item.meetingStatus === 'PENDING_APPROVAL' || item.workflowStatus === 'PENDING_DEDICATION' || item.status === 'PENDING_PASTOR_APPROVAL') && (
-                                                <Button size="small" variant="contained" color="success" fullWidth onClick={() => handleForceApproval(resourceType as any, item.id)}>FORCE_AUTH</Button>
-                                            )}
-                                            <Button size="small" variant="outlined" color="error" fullWidth onClick={() => handleGlobalDelete(resourceType, item.id)}>PURGE</Button>
-                                        </Box>
-                                    </CardContent>
-                                </Card>
-                            ))}
+                            {(resourceType === 'PROJECT' ? projects :
+                                resourceType === 'EVENT' ? events :
+                                    resourceType === 'PLAN' ? plans :
+                                        resourceType === 'ANNOUNCEMENT' ? announcements :
+                                            resourceType === 'MEETING' ? meetings :
+                                                resourceType === 'REPAIR' ? repairs :
+                                                    resourceType === 'BAPTISM' ? baptisms :
+                                                        dedications).map((item: any) => (
+                                                            <Card key={item.id} sx={{ bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                                                <CardContent sx={{ p: 2 }}>
+                                                                    <Box display="flex" justifyContent="space-between" mb={1}>
+                                                                        <Typography variant="subtitle2" fontWeight="900" noWrap sx={{ maxWidth: '70%' }}>{item.title || item.name || item.instrumentName}</Typography>
+                                                                        <Chip label={item.approvalStatus || item.status || item.workflowStatus || item.meetingStatus || 'STATUS'} size="small" variant="outlined" sx={{ height: 18, fontSize: '0.6rem' }} />
+                                                                    </Box>
+                                                                    <Typography variant="caption" sx={{ color: '#00d4ff', display: 'block', mb: 2 }}>{item.department?.name || 'GLOBAL SECTOR'}</Typography>
+                                                                    <Box display="flex" gap={1}>
+                                                                        {(item.approvalStatus === 'PENDING_APPROVAL' || item.status === 'PENDING' || item.meetingStatus === 'PENDING_APPROVAL' || item.workflowStatus === 'PENDING_DEDICATION' || item.status === 'PENDING_PASTOR_APPROVAL') && (
+                                                                            <Button size="small" variant="contained" color="success" fullWidth onClick={() => handleForceApproval(resourceType as any, item.id)}>FORCE_AUTH</Button>
+                                                                        )}
+                                                                        <Button size="small" variant="outlined" color="error" fullWidth onClick={() => handleGlobalDelete(resourceType, item.id)}>PURGE</Button>
+                                                                    </Box>
+                                                                </CardContent>
+                                                            </Card>
+                                                        ))}
                         </Box>
                     </CardContent>
                 </Card>
@@ -1093,7 +1145,7 @@ export default function WatuaDashboard() {
                                             </TableCell>
                                             <TableCell>
                                                 <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                                                    {log.entityType}: {log.targetId?.split('-')[0] || 'N/A'}... 
+                                                    {log.entityType}: {log.targetId?.split('-')[0] || 'N/A'}...
                                                     {log.metadata ? ` | Meta: ${JSON.stringify(log.metadata).slice(0, 50)}` : ''}
                                                 </Typography>
                                             </TableCell>
@@ -1135,7 +1187,7 @@ export default function WatuaDashboard() {
                                     </Typography>
                                 </Box>
                             </Box>
-                            
+
                             <Grid container spacing={4}>
                                 <Grid item xs={12} md={6}>
                                     <Paper sx={{ p: 3, bgcolor: 'rgba(0, 212, 255, 0.02)', border: '1px solid rgba(0, 212, 255, 0.1)', borderRadius: 0 }}>
@@ -1143,10 +1195,10 @@ export default function WatuaDashboard() {
                                         <Typography variant="caption" sx={{ display: 'block', mb: 3, color: '#94a3b8' }}>
                                             Creates a master JSON archive of all local database tables including audit logs, user records, and operational tasks.
                                         </Typography>
-                                        <Button 
-                                            variant="contained" 
-                                            fullWidth 
-                                            startIcon={<DownloadCloud size={18} />} 
+                                        <Button
+                                            variant="contained"
+                                            fullWidth
+                                            startIcon={<DownloadCloud size={18} />}
                                             onClick={handleBackupExport}
                                             sx={{ bgcolor: '#00d4ff', color: '#0c0e14', fontWeight: 900 }}
                                         >
@@ -1168,11 +1220,11 @@ export default function WatuaDashboard() {
                                                 accept=".json"
                                                 onChange={handleBackupImport}
                                             />
-                                            <Button 
+                                            <Button
                                                 component="span"
-                                                variant="outlined" 
-                                                fullWidth 
-                                                startIcon={<UploadCloud size={18} />} 
+                                                variant="outlined"
+                                                fullWidth
+                                                startIcon={<UploadCloud size={18} />}
                                                 sx={{ borderColor: '#ff4d4d', color: '#ff4d4d', fontWeight: 900 }}
                                             >
                                                 IMPORT & RESTORE
@@ -1216,8 +1268,8 @@ export default function WatuaDashboard() {
                                             <TableCell>{new Date(item.timestamp).toLocaleString()}</TableCell>
                                             <TableCell sx={{ opacity: 0.7 }}>{item.lastError || 'No error details'}</TableCell>
                                             <TableCell>
-                                                <Button 
-                                                    size="small" 
+                                                <Button
+                                                    size="small"
                                                     startIcon={<RefreshCw size={14} />}
                                                     onClick={() => handleRestore(item.id, item.entity.toLowerCase())}
                                                     sx={{ color: '#00d4ff' }}
@@ -1250,8 +1302,8 @@ export default function WatuaDashboard() {
                                             <Typography variant="caption" color={flag.enabled ? '#22c55e' : '#ef4444'}>
                                                 {flag.enabled ? 'ENABLED' : 'DISABLED'}
                                             </Typography>
-                                            <Switch 
-                                                checked={flag.enabled} 
+                                            <Switch
+                                                checked={flag.enabled}
                                                 onChange={(e) => handleToggleFlag(flag.name, e.target.checked, flag.scope)}
                                                 color="secondary"
                                             />
@@ -1269,11 +1321,11 @@ export default function WatuaDashboard() {
                             <CircularProgress sx={{ color: '#00d4ff' }} />
                         </Box>
                     ) : !governanceData ? (
-                         <Box sx={{ p: 4 }}>
+                        <Box sx={{ p: 4 }}>
                             <Alert severity="info" sx={{ bgcolor: '#0f172a', color: '#00d4ff', border: '1px solid rgba(0, 212, 255, 0.2)' }}>
                                 KERNEL_GOVERNANCE_DATA_NOT_SYNCED: Please wait for system telemetry.
                             </Alert>
-                         </Box>
+                        </Box>
                     ) : (
                         <Box sx={{ p: 4, height: '100%', overflowY: 'auto' }}>
                             <Grid container spacing={3}>
@@ -1321,28 +1373,28 @@ export default function WatuaDashboard() {
                                                 <AreaChart data={governanceData.trends || []}>
                                                     <defs>
                                                         <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
-                                                            <stop offset="5%" stopColor="#00d4ff" stopOpacity={0.3}/>
-                                                            <stop offset="95%" stopColor="#00d4ff" stopOpacity={0}/>
+                                                            <stop offset="5%" stopColor="#00d4ff" stopOpacity={0.3} />
+                                                            <stop offset="95%" stopColor="#00d4ff" stopOpacity={0} />
                                                         </linearGradient>
                                                     </defs>
                                                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                                                    <XAxis 
-                                                        dataKey="date" 
-                                                        stroke="rgba(255,255,255,0.3)" 
-                                                        fontSize={10} 
+                                                    <XAxis
+                                                        dataKey="date"
+                                                        stroke="rgba(255,255,255,0.3)"
+                                                        fontSize={10}
                                                         tickFormatter={(str) => str.split('-').slice(1).join('/')}
                                                     />
                                                     <YAxis stroke="rgba(255,255,255,0.3)" fontSize={10} />
-                                                    <Tooltip 
+                                                    <Tooltip
                                                         contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }}
                                                         itemStyle={{ color: '#00d4ff' }}
                                                     />
-                                                    <Area 
-                                                        type="monotone" 
-                                                        dataKey="count" 
-                                                        stroke="#00d4ff" 
-                                                        fillOpacity={1} 
-                                                        fill="url(#colorCount)" 
+                                                    <Area
+                                                        type="monotone"
+                                                        dataKey="count"
+                                                        stroke="#00d4ff"
+                                                        fillOpacity={1}
+                                                        fill="url(#colorCount)"
                                                         strokeWidth={3}
                                                     />
                                                 </AreaChart>
@@ -1491,7 +1543,7 @@ export default function WatuaDashboard() {
                     </Button>
                 </DialogActions>
             </Dialog>
-                {/* Pastor Module Management Dialog */}
+            {/* Pastor Module Management Dialog */}
             <Dialog open={moduleDialog.open} onClose={() => setModuleDialog({ ...moduleDialog, open: false })} maxWidth="xs" fullWidth>
                 <DialogTitle sx={{ bgcolor: '#161925', color: '#f8fafc', fontWeight: 900 }}>
                     <Box display="flex" alignItems="center" gap={1}>
@@ -1516,10 +1568,10 @@ export default function WatuaDashboard() {
                                 return (
                                     <Box key={moduleKey} display="flex" justifyContent="space-between" alignItems="center" p={1.5} sx={{ bgcolor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
                                         <Typography variant="body2" fontWeight="700">{moduleKey}</Typography>
-                                        <Switch 
-                                            size="small" 
-                                            checked={isActive} 
-                                            onChange={(e) => handleToggleModule(moduleDialog.userId, moduleKey, e.target.checked)} 
+                                        <Switch
+                                            size="small"
+                                            checked={isActive}
+                                            onChange={(e) => handleToggleModule(moduleDialog.userId, moduleKey, e.target.checked)}
                                         />
                                     </Box>
                                 );
@@ -1557,10 +1609,10 @@ export default function WatuaDashboard() {
                                 { label: 'STRATEGIC PLAN', icon: Target, color: '#ffcc00', onClick: () => setPlanModalOpen(true) },
                                 { label: 'SUBMIT REPORT', icon: FileText, color: '#22c55e', onClick: () => setReportModalOpen(true) },
                                 { label: 'SYSTEM ALERT', icon: AlertTriangle, color: '#ff4d4d', onClick: () => setAnnouncementModalOpen(true) },
-                                { 
-                                    label: 'NUCLEAR FLUSH', 
-                                    icon: Trash2, 
-                                    color: '#ef4444', 
+                                {
+                                    label: 'NUCLEAR FLUSH',
+                                    icon: Trash2,
+                                    color: '#ef4444',
                                     onClick: async () => {
                                         if (window.confirm('🚧 OMNIPOTENT WIPE: Delete all local tactical cache and mirrored data? This will force a full resync.')) {
                                             await db.delete();
@@ -1568,7 +1620,7 @@ export default function WatuaDashboard() {
                                             sessionStorage.clear();
                                             window.location.reload();
                                         }
-                                    } 
+                                    }
                                 },
                             ].map((action, i) => (
                                 <Grid item xs={12} sm={6} md={4} key={i}>
@@ -1600,11 +1652,11 @@ export default function WatuaDashboard() {
                 </Card>
             )}
 
-            <EventFormModal open={eventModalOpen} onClose={() => { setEventModalOpen(false); setEditingEvent(null); }} event={editingEvent} onSuccess={() => {}} />
-            <ProjectFormModal open={projectModalOpen} onClose={() => { setProjectModalOpen(false); setEditingProject(null); }} project={editingProject} onSuccess={() => {}} />
-            <PlanFormModal open={planModalOpen} onClose={() => { setPlanModalOpen(false); setEditingPlan(null); }} plan={editingPlan} onSuccess={() => {}} />
-            <AnnouncementFormModal open={announcementModalOpen} onClose={() => { setAnnouncementModalOpen(false); setEditingAnnouncement(null); }} announcement={editingAnnouncement} onSuccess={() => {}} />
-            <DepartmentReportModal open={reportModalOpen} onClose={() => setReportModalOpen(false)} onSuccess={() => {}} />
+            <EventFormModal open={eventModalOpen} onClose={() => { setEventModalOpen(false); setEditingEvent(null); }} event={editingEvent} onSuccess={() => { }} />
+            <ProjectFormModal open={projectModalOpen} onClose={() => { setProjectModalOpen(false); setEditingProject(null); }} project={editingProject} onSuccess={() => { }} />
+            <PlanFormModal open={planModalOpen} onClose={() => { setPlanModalOpen(false); setEditingPlan(null); }} plan={editingPlan} onSuccess={() => { }} />
+            <AnnouncementFormModal open={announcementModalOpen} onClose={() => { setAnnouncementModalOpen(false); setEditingAnnouncement(null); }} announcement={editingAnnouncement} onSuccess={() => { }} />
+            <DepartmentReportModal open={reportModalOpen} onClose={() => setReportModalOpen(false)} onSuccess={() => { }} />
         </Box>
     );
 }
