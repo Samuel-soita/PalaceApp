@@ -51,8 +51,8 @@ registerRoute(
     new NetworkOnly()
 );
 
-// 3. NAVIGATION FALLBACK (App Shell with StaleWhileRevalidate)
-registerRoute(new NavigationRoute(new StaleWhileRevalidate({
+// 3. NAVIGATION FALLBACK (NetworkFirst for zero-latency updates)
+registerRoute(new NavigationRoute(new NetworkFirst({
     cacheName: 'navigations',
     plugins: [
         new CacheableResponsePlugin({ statuses: [200] }),
