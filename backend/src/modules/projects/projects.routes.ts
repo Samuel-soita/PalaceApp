@@ -48,7 +48,7 @@ router.post('/:id/approve',
 );
 
 router.patch('/:id/status',
-    authorize(['WATUA', 'SUPER_ADMIN']), // Interventions usually locked to highest clearance
+    authorize(['WATUA', 'SUPER_ADMIN', 'BISHOP', 'PASTOR', 'ASSOCIATE_PASTOR']), 
     updateProjectStatus
 );
 

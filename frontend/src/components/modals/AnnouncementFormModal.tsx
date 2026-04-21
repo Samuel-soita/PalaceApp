@@ -72,7 +72,13 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
     );
 
     const approveMutation = useMutation(
-        () => api.post(`/announcements/${announcement.id}/approve`),
+        async (status: 'APPROVED' | 'REJECTED') => {
+            if (status === 'APPROVED') {
+                return await api.post(`/announcements/${announcement.id}/approve`);
+            } else {
+                return await api.put(`/announcements/${announcement.id}`, { status: 'REJECTED' });
+            }
+        },
         {
             onSuccess: () => {
                 onSuccess();
@@ -111,7 +117,7 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                 </DialogTitle>
                 <DialogContent sx={{ px: 4 }}>
                     {/* 👨‍⚖️ COMMAND APPROVAL OVERRIDE */}
-                    {announcement && announcement.status !== 'APPROVED' && announcement.targetPastorId === user?.id && (
+                    {announcement && announcement.status !== 'APPROVED' && (announcement.targetPastorId === user?.id || ['WATUA', 'BISHOP'].includes(user?.role || '')) && (
                         <Box sx={{ mb: 4, mt: 2, p: 3, bgcolor: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: 0, textAlign: 'center' }}>
                             <Typography variant="subtitle2" fontWeight="950" color="orange" mb={1}>
                                 ACTION REQUIRED: BROADCAST CLEARANCE
@@ -124,7 +130,7 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                                     variant="contained" 
                                     color="success" 
                                     size="small" 
-                                    onClick={() => approveMutation.mutate()}
+                                    onClick={() => approveMutation.mutate('APPROVED')}
                                     disabled={approveMutation.isLoading}
                                     sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
                                 >
@@ -134,8 +140,8 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                                     variant="outlined" 
                                     color="error" 
                                     size="small" 
-                                    onClick={() => { if(window.confirm('Reject broadcast?')) mutation.mutate({ status: 'REJECTED' }); }}
-                                    disabled={mutation.isLoading}
+                                    onClick={() => { if(window.confirm('Reject broadcast?')) approveMutation.mutate('REJECTED'); }}
+                                    disabled={approveMutation.isLoading}
                                     sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
                                 >
                                     REJECT

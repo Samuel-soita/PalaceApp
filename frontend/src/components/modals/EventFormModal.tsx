@@ -88,7 +88,13 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
     });
 
     const approveMutation = useMutation(
-        () => api.post(`/events/${event.id}/approve`),
+        async (status: 'APPROVED' | 'REJECTED') => {
+            if (status === 'APPROVED') {
+                return await api.post(`/events/${event.id}/approve`);
+            } else {
+                return await api.patch(`/events/${event.id}/status`, { approvalStatus: 'REJECTED' });
+            }
+        },
         {
             onSuccess: () => {
                 onSuccess();
@@ -175,7 +181,7 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
                 </DialogTitle>
                 <DialogContent>
                     {/* 👨‍⚖️ COMMAND APPROVAL OVERRIDE */}
-                    {event && event.approvalStatus !== 'APPROVED' && event.targetPastorId === user?.id && (
+                    {event && event.approvalStatus !== 'APPROVED' && (event.targetPastorId === user?.id || ['WATUA', 'BISHOP'].includes(user?.role || '')) && (
                         <Box sx={{ mb: 4, p: 3, bgcolor: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: 0, textAlign: 'center' }}>
                             <Typography variant="subtitle2" fontWeight="950" color="orange" mb={1}>
                                 ACTION REQUIRED: EVENT CLEARANCE
@@ -188,7 +194,7 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
                                     variant="contained" 
                                     color="success" 
                                     size="small" 
-                                    onClick={() => approveMutation.mutate()}
+                                    onClick={() => approveMutation.mutate('APPROVED')}
                                     disabled={approveMutation.isLoading}
                                     sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
                                 >
@@ -198,8 +204,8 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
                                     variant="outlined" 
                                     color="error" 
                                     size="small" 
-                                    onClick={() => { if(window.confirm('Reject event?')) mutation.mutate({ approvalStatus: 'REJECTED', id: event.id }); }}
-                                    disabled={mutation.isLoading}
+                                    onClick={() => { if(window.confirm('Reject event?')) approveMutation.mutate('REJECTED'); }}
+                                    disabled={approveMutation.isLoading}
                                     sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
                                 >
                                     REJECT
@@ -399,8 +405,9 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
                         )}
                     </Box>
                 </DialogContent>
-                <DialogActions sx={{ p: 4, gap: 2 }}>
+                <DialogActions sx={{ p: 4, gap: 2, flexWrap: 'wrap' }}>
                     <Button onClick={onClose} sx={{ fontWeight: 900, color: 'text.secondary' }}>ABORT</Button>
+                    <Box sx={{ flexGrow: 1 }} />
                     <Button 
                         type="submit" 
                         variant="contained" 

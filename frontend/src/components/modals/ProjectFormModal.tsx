@@ -83,7 +83,13 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
     );
 
     const approveMutation = useMutation(
-        () => api.post(`/projects/${project.id}/approve`),
+        async (status: 'APPROVED' | 'REJECTED') => {
+            if (status === 'APPROVED') {
+                return await api.post(`/projects/${project.id}/approve`);
+            } else {
+                return await api.patch(`/projects/${project.id}/status`, { approvalStatus: 'REJECTED' });
+            }
+        },
         {
             onSuccess: () => {
                 onSuccess();
@@ -125,14 +131,14 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
         >
             <form onSubmit={handleSubmit}>
                 <DialogTitle sx={{ fontWeight: '950', fontSize: '1.5rem', letterSpacing: -1 }}>
-                    {project ? (project.status === 'APPROVED' ? 'VIEW PROJECT (LOCKED)' : 'EDIT PROJECT') : 'INITIALIZE PROJECT'}
+                    {project ? (project.status === 'APPROVED' ? 'VIEW PROJECT (LOCKED)' : 'EDIT PROJECT') : 'INITIATE PROJECT'}
                 </DialogTitle>
                 <DialogContent>
                     {/* 👨‍⚖️ COMMAND APPROVAL OVERRIDE */}
-                    {project && project.approvalStatus !== 'APPROVED' && project.targetPastorId === user?.id && (
+                    {project && project.approvalStatus !== 'APPROVED' && (project.targetPastorId === user?.id || ['WATUA', 'BISHOP'].includes(user?.role || '')) && (
                         <Box sx={{ mb: 4, p: 3, bgcolor: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: 0, textAlign: 'center' }}>
                             <Typography variant="subtitle2" fontWeight="950" color="orange" mb={1}>
-                                ACTION REQUIRED: STRATEGIC CLEARANCE
+                                ACTION REQUIRED: PROJECT CLEARANCE
                             </Typography>
                             <Typography variant="caption" sx={{ display: 'block', mb: 2, opacity: 0.8 }}>
                                 As the assigned authorizing officer, you are required to review this mission deployment.
@@ -335,7 +341,7 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                         )}
                     </Box>
                 </DialogContent>
-                <DialogActions sx={{ p: 4, gap: 2 }}>
+                <DialogActions sx={{ p: 4, gap: 2, flexWrap: 'wrap' }}>
                     <Button onClick={onClose} sx={{ fontWeight: 900, color: 'text.secondary' }}>ABORT</Button>
                     <Box sx={{ flexGrow: 1 }} />
                     <Button 
