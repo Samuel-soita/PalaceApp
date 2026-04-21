@@ -37,15 +37,12 @@ export default function MemberPortal() {
     // --- Data Streams (Tactical Local Mirror) ---
     const { data: syncData, isLoading: isSyncLoading } = useLocalFirstDashboard();
 
-    const { data: devotion, isLoading: isDevotionLoading } = useQuery(['daily-devotion'], async () => {
-        const res = await api.get('/devotions/daily');
-        return res.data;
-    });
+    const devotion = syncData?.devotion;
 
     const devotionMutation = useMutation(async ({ type, value }: { type: string, value: string }) => {
         return await api.post(`/devotions/${devotion?.id}/interact`, { type, value });
     }, {
-        onSuccess: () => queryClient.invalidateQueries(['daily-devotion'])
+        onSuccess: () => queryClient.invalidateQueries(['dashboard-sync'])
     });
 
     const createAppointmentMutation = useOfflineMutation({
@@ -303,7 +300,7 @@ export default function MemberPortal() {
                                     />
                                 </Box>
 
-                                {isDevotionLoading ? <LinearProgress /> : 
+                                {isSyncLoading ? <LinearProgress /> : (
                                     !devotion ? (
                                         <Box sx={{ p: 4, textAlign: 'center', border: '1px dashed rgba(0,255,255,0.3)', bgcolor: 'rgba(0,255,255,0.02)', borderRadius: 2 }}>
                                             <Sparkles size={24} color="var(--cyan)" style={{ marginBottom: 8, opacity: 0.5 }} />
@@ -356,6 +353,7 @@ export default function MemberPortal() {
                                             </Typography>
                                         </Box>
                                     </>
+                                    )
                                 )}
                             </CardContent>
                         </Card>

@@ -75,15 +75,12 @@ export default function DepartmentDashboard() {
     // --- Data Streams (Tactical Local Mirror) ---
     const { data: syncData, isLoading: isSyncLoading } = useLocalFirstDashboard(effectiveId);
 
-    const { data: devotion, isLoading: isDevotionLoading } = useQuery(['daily-devotion'], async () => {
-        const res = await api.get('/devotions/daily');
-        return res.data;
-    });
+    const devotion = syncData?.devotion;
 
     const devotionMutation = useMutation(async ({ type, value }: { type: string, value: string }) => {
         return await api.post(`/devotions/${devotion?.id}/interact`, { type, value });
     }, {
-        onSuccess: () => queryClient.invalidateQueries(['daily-devotion'])
+        onSuccess: () => queryClient.invalidateQueries(['dashboard-sync', effectiveId])
     });
 
     const enrollPartnershipMutation = useMutation(
@@ -114,7 +111,7 @@ export default function DepartmentDashboard() {
         }
     );
 
-    if (isSyncLoading || isDevotionLoading) return (
+    if (isSyncLoading) return (
         <DashboardLayout>
             <Box p={4} display="flex" flexDirection="column" gap={3}>
                 <Skeleton variant="rectangular" height={150} sx={{ borderRadius: 0 }} />
