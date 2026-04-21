@@ -23,27 +23,40 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 select: { dob: true, gender: true, departmentId: true, isPartner: true } 
             });
 
-            // Helper to build relevant 'where' clause for members
             const getWhere = (modelName: string) => {
-                const baseWhere: any = {
-                    OR: [
-                        { departmentId },
-                        { targetPastorId: userId }
-                    ]
-                };
-
-                // Standardize approval field mapping
                 const approvalField = modelName === 'Announcement' ? 'status' : 
                                     modelName === 'Meeting' ? 'meetingStatus' : 
                                     'approvalStatus';
 
-                if (isAdmin) return baseWhere;
+                // Base condition setup
+                const baseWhere: any = { OR: [] };
+                
+                // Allow filtering by requested or own department
+                if (departmentId) baseWhere.OR.push({ departmentId });
+                else if (userDeptId) baseWhere.OR.push({ departmentId: userDeptId });
 
-                // Members only see major approved items
+                // ALWAYS allow assigned pastors to see missions they need to approve
+                baseWhere.OR.push({ approvals: { some: { userId } } });
+                baseWhere.OR.push({ targetPastorId: userId });
+
+                if (['WATUA', 'BISHOP', 'SUPER_ADMIN'].includes(role)) {
+                    if (departmentId) return { departmentId };
+                    return {}; // See everything
+                }
+
+                if (isLeader) { // PASTOR, ASSOCIATE_PASTOR, DEPARTMENT_LEADER
+                    // Leaders see everything in their department OR assigned to them
+                    // Plus global major items
+                    baseWhere.OR.push({ isMajor: true, [approvalField]: 'APPROVED' });
+                    return baseWhere;
+                }
+
+                // Members only see approved items in their dept OR global major items
                 return {
-                    ...baseWhere,
-                    isMajor: true,
-                    [approvalField]: 'APPROVED'
+                    OR: [
+                        { departmentId: userDeptId, [approvalField]: 'APPROVED' },
+                        { isMajor: true, [approvalField]: 'APPROVED' }
+                    ]
                 };
             };
 
