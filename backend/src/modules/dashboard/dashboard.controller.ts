@@ -46,18 +46,22 @@ export const getDashboardSync = async (req: any, res: Response) => {
 
                 if (isLeader) { // PASTOR, ASSOCIATE_PASTOR, DEPARTMENT_LEADER
                     // Leaders see everything in their department OR assigned to them
-                    // Plus global major items
-                    baseWhere.OR.push({ isMajor: true, [approvalField]: 'APPROVED' });
+                    // Plus global major items (Meetings do not have an isMajor field)
+                    if (modelName !== 'Meeting') {
+                        baseWhere.OR.push({ isMajor: true, [approvalField]: 'APPROVED' });
+                    }
                     return baseWhere;
                 }
 
                 // Members only see approved items in their dept OR global major items
-                return {
-                    OR: [
-                        { departmentId: userDeptId, [approvalField]: 'APPROVED' },
-                        { isMajor: true, [approvalField]: 'APPROVED' }
-                    ]
-                };
+                const memberOr: any[] = [
+                    { departmentId: userDeptId, [approvalField]: 'APPROVED' }
+                ];
+                if (modelName !== 'Meeting') {
+                    memberOr.push({ isMajor: true, [approvalField]: 'APPROVED' });
+                }
+
+                return { OR: memberOr };
             };
 
             const wrap = async (name: string, promise: Promise<any>) => {

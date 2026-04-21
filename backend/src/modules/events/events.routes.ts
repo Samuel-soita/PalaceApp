@@ -10,7 +10,7 @@ router.get('/', authenticate, getEvents);
 router.get('/department/:departmentId', authenticate, getEventsByDepartment);
 router.post('/', authenticate, moduleGuard('EventOversight'), authorize(['SUPER_ADMIN', 'DEPARTMENT_LEADER', 'PASTOR']), validate(CreateEventSchema), createEvent);
 router.post('/:id/approve', authenticate, moduleGuard('EventOversight'), authorize(['SUPER_ADMIN', 'WATUA', 'PASTOR']), approveEvent);
-router.patch('/:id/status', authenticate, authorize(['SUPER_ADMIN', 'WATUA', 'BISHOP', 'PASTOR', 'ASSOCIATE_PASTOR']), updateEventStatus);
+router.patch('/:id/status', authenticate, authorize(['SUPER_ADMIN', 'WATUA', 'PASTOR', 'ASSOCIATE_PASTOR']), updateEventStatus);
 router.patch('/:id', authenticate, authorize(['SUPER_ADMIN', 'WATUA', 'SYSTEM_ADMIN', 'ASSOCIATE_PASTOR', 'DEPARTMENT_LEADER', 'PASTOR']), moduleGuard('EventOversight'), validate(UpdateEventSchema), updateEvent);
 router.delete('/:id', authenticate, authorize(['SUPER_ADMIN', 'WATUA', 'SYSTEM_ADMIN', 'ASSOCIATE_PASTOR', 'DEPARTMENT_LEADER', 'PASTOR']), moduleGuard('EventOversight'), deleteEvent);
 
