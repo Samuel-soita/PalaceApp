@@ -8,7 +8,7 @@ export const getDashboardSync = async (req: any, res: Response) => {
         const { departmentId } = req.query;
 
         // Effective department ID for filtering
-        const isAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA', 'PASTOR'].includes(role);
+        const isAdmin = ['SUPER_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'WATUA', 'SYSTEM_ADMIN', 'BISHOP'].includes(req.user.role);
         const effectiveDeptId = (isAdmin && departmentId) ? departmentId : (isAdmin ? null : userDeptId);
 
         const isLeader = ['PASTOR', 'DEPARTMENT_LEADER'].includes(role);
@@ -18,24 +18,33 @@ export const getDashboardSync = async (req: any, res: Response) => {
 
         const data = await getOrSetCache(cacheKey, async () => {
             // 1. Fetch user record first to use for filtering in subsequent queries
-            const userRecord = await (prisma as any).user.findUnique({ 
+            const userRecord = await prisma.user.findUnique({ 
                 where: { id: userId }, 
                 select: { dob: true, gender: true, departmentId: true, isPartner: true } 
             });
 
             // Helper to build relevant 'where' clause for members
-            const getWhere = (majField: string = 'isMajor') => {
-                if (isAdmin) {
-                    return effectiveDeptId ? { departmentId: effectiveDeptId } : {};
-                }
-                
-                // If member/leader has no department, only show major/global items
-                if (!userDeptId) {
-                    return { [majField]: true };
-                }
+            const getWhere = (modelName: string) => {
+                const baseWhere: any = {
+                    OR: [
+                        { departmentId },
+                        { targetPastorId: userId }
+                    ]
+                };
 
-                // Members see their department OR major global items
-                return { OR: [{ departmentId: userDeptId }, { [majField]: true }] };
+                // Standardize approval field mapping
+                const approvalField = modelName === 'Announcement' ? 'status' : 
+                                    modelName === 'Meeting' ? 'meetingStatus' : 
+                                    'approvalStatus';
+
+                if (isAdmin) return baseWhere;
+
+                // Members only see major approved items
+                return {
+                    ...baseWhere,
+                    isMajor: true,
+                    [approvalField]: 'APPROVED'
+                };
             };
 
             const wrap = async (name: string, promise: Promise<any>) => {
@@ -68,42 +77,31 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 departmentMembers,
                 repairs,
                 reports,
+                devotion,
                 appointments
             ] = await Promise.all([
                 wrap('projects', prisma.project.findMany({ 
-                    where: getWhere(), 
+                    where: getWhere('Project'), 
                     take: 50, 
                     orderBy: { createdAt: 'desc' },
                 })),
                 wrap('events', prisma.event.findMany({ 
-                    where: getWhere(), 
+                    where: getWhere('Event'), 
                     take: 50, 
                     orderBy: { date: 'asc' },
                 })),
                 wrap('plans', prisma.plan.findMany({ 
-                    where: getWhere(), 
+                    where: getWhere('Plan'), 
                     take: 50, 
                     orderBy: { createdAt: 'desc' },
                 })),
                 wrap('meetings', prisma.meeting.findMany({ 
-                    where: isAdmin 
-                        ? (effectiveDeptId ? { departmentId: effectiveDeptId } : {}) 
-                        : { 
-                            OR: [
-                                { departmentId: userDeptId },
-                                { isPartnerOnly: userRecord?.isPartner || false }
-                            ]
-                        }, 
+                    where: getWhere('Meeting'),
                     take: 50, 
                     orderBy: { date: 'asc' },
                 })),
                 wrap('announcements', prisma.announcement.findMany({ 
-                    where: isAdmin ? (effectiveDeptId ? { departmentId: effectiveDeptId } : {}) : {
-                        OR: [
-                            { departmentId: userDeptId },
-                            { isGlobal: true, status: 'APPROVED' }
-                        ]
-                    }, 
+                    where: getWhere('Announcement'),
                     take: 50, 
                     orderBy: { createdAt: 'desc' },
                 })),
@@ -129,8 +127,8 @@ export const getDashboardSync = async (req: any, res: Response) => {
                         where: { parentId: userId },
                         include: { department: { select: { name: true } } }
                     })),
-                wrap('ministrySettings', (prisma as any).ministrySettings ? (prisma as any).ministrySettings.findUnique({ where: { id: 'GLOBAL' } }) : Promise.resolve(null)),
-                wrap('affirmation', (prisma as any).affirmation ? (prisma as any).affirmation.findFirst({ where: { date: new Date(new Date().setHours(0,0,0,0)) } }) : Promise.resolve(null)),
+                wrap('ministrySettings', prisma.ministrySettings ? prisma.ministrySettings.findUnique({ where: { id: 'GLOBAL' } }) : Promise.resolve(null)),
+                wrap('affirmation', prisma.affirmation ? prisma.affirmation.findFirst({ where: { date: new Date(new Date().setHours(0,0,0,0)) } }) : Promise.resolve(null)),
                 wrap('partnership', prisma.partnership.findFirst({ where: { userId, status: 'ACTIVE' } })),
                 wrap('account', (isAdmin || isLeader) 
                     ? (effectiveDeptId 
@@ -144,7 +142,7 @@ export const getDashboardSync = async (req: any, res: Response) => {
                             }))
                             : Promise.resolve(null))) 
                     : Promise.resolve(null)),
-                wrap('transactions', (isAdmin || isLeader) ? (prisma.transaction as any).findMany({ 
+                wrap('transactions', (isAdmin || isLeader) ? prisma.transaction.findMany({ 
                     where: effectiveDeptId 
                         ? { account: { departmentId: effectiveDeptId } } 
                         : (isAdmin ? {} : { id: 'none' }),
@@ -173,21 +171,34 @@ export const getDashboardSync = async (req: any, res: Response) => {
                     orderBy: { createdAt: 'desc' },
                     include: { actor: { select: { name: true } } }
                 }) : Promise.resolve([])),
-                wrap('departmentMembers', effectiveDeptId ? prisma.user.findMany({
+                wrap('departmentMembers', isAdmin ? prisma.user.findMany({
+                    where: effectiveDeptId ? { departmentId: effectiveDeptId as string } : {},
+                    orderBy: { name: 'asc' },
+                    take: (role === 'WATUA' || !effectiveDeptId) ? undefined : 1000 // WATUA gets everyone; others limited in global view
+                }) : (effectiveDeptId ? prisma.user.findMany({
                     where: { departmentId: effectiveDeptId as string },
-                    include: { children: true },
                     orderBy: { name: 'asc' }
-                }) : Promise.resolve([])),
-                wrap('repairs', (prisma as any).technicalRepair ? (prisma as any).technicalRepair.findMany({
+                }) : Promise.resolve([]))),
+                wrap('repairs', prisma.technicalRepair ? prisma.technicalRepair.findMany({
                     where: isAdmin ? (effectiveDeptId ? { departmentId: effectiveDeptId } : {}) : { departmentId: userDeptId },
                     take: 20,
                     orderBy: { createdAt: 'desc' }
                 }) : Promise.resolve([])),
-                wrap('reports', (prisma as any).departmentReport ? (prisma as any).departmentReport.findMany({
+                wrap('reports', prisma.departmentReport ? prisma.departmentReport.findMany({
                     where: isAdmin ? (effectiveDeptId ? { departmentId: effectiveDeptId } : {}) : { departmentId: userDeptId },
                     take: 20,
                     orderBy: { createdAt: 'desc' }
                 }) : Promise.resolve([])),
+                wrap('devotion', prisma.devotion.findFirst({
+                    where: {
+                        date: {
+                            gte: new Date(new Date().setHours(0, 0, 0, 0)),
+                            lt: new Date(new Date().setHours(23, 59, 59, 999))
+                        }
+                    },
+                    include: { interactions: true },
+                    orderBy: { createdAt: 'desc' }
+                })),
                 wrap('appointments', prisma.appointment.findMany({
                     where: {
                         deletedAt: null,
@@ -253,7 +264,8 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 departmentMembers,
                 repairs,
                 reports,
-                appointments
+                appointments,
+                devotion
             };
         }, 10); // High-frequency cache for real-time situational awareness
 

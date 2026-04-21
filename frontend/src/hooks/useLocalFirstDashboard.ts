@@ -19,7 +19,7 @@ export function useLocalFirstDashboard(departmentId?: string) {
         const [
             projects, events, plans, meetings, children, 
             announcements, baptisms, departments, transactions,
-            repairs, appointments, settings, affirmation, account, auditLogs, members
+            repairs, appointments, settings, affirmation, account, auditLogs, members, devotions
         ] = await Promise.all([
             db.projects.limit(50).reverse().toArray(),
             db.events.limit(50).toArray(),
@@ -36,13 +36,15 @@ export function useLocalFirstDashboard(departmentId?: string) {
             db.affirmations.get('DAILY'),
             db.account.get('MAIN'),
             db.auditLogs.limit(20).toArray(),
-            db.users.filter(u => u.departmentId === departmentId).toArray()
+            db.users.filter(u => !departmentId || u.departmentId === departmentId).toArray(),
+            db.devotions.get('DAILY')
         ]);
 
         return {
             projects, events, plans, meetings, children, 
             announcements, baptisms, departments, transactions,
             repairs, appointments, auditLogs, departmentMembers: members,
+            devotion: devotions,
             ministrySettings: settings || { themeOfYear: 'OFFLINE MODE', themeOfMonth: 'LOCAL DATA ONLY' },
             affirmation: affirmation || { content: 'Faith works even without a connection.' },
             account: account || { balance: 0 },
@@ -66,10 +68,12 @@ export function useLocalFirstDashboard(departmentId?: string) {
                 await Promise.all([
                     data.ministrySettings && db.settings.put({ id: 'GLOBAL', ...data.ministrySettings }),
                     data.affirmation && db.affirmations.put({ id: 'DAILY', ...data.affirmation }),
+                    data.devotion && db.devotions.put({ id: 'DAILY', ...data.devotion }),
                     data.account && db.account.put({ ...data.account, id: 'MAIN' }),
                     data.projects && db.projects.bulkPut(data.projects),
                     data.events && db.events.bulkPut(data.events),
-                    data.transactions && db.transactions.bulkPut(data.transactions)
+                    data.transactions && db.transactions.bulkPut(data.transactions),
+                    data.departmentMembers && db.users.bulkPut(data.departmentMembers)
                     // ... other modules are handled by pwa-sync.ts daemon
                 ]);
             }

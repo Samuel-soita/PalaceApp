@@ -196,12 +196,17 @@ export const OperationalTimeline = ({ items, onEdit, onDelete }: OperationalTime
 
                                 {/* Colored left-bar accent */}
                                 <Box sx={{ borderLeft: `3px solid ${cfg.color}`, pl: 1.5, mt: 0.5 }}>
-                                    <Typography variant="body2" fontWeight="950"
-                                        sx={{ lineHeight: 1.3, fontSize: '0.9rem',
-                                              display: '-webkit-box', WebkitLineClamp: 2,
-                                              WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                                        {item.title}
-                                    </Typography>
+                                    <Box display="flex" alignItems="center" gap={1} mb={0.5}>
+                                        <Typography variant="body2" fontWeight="950"
+                                            sx={{ lineHeight: 1.3, fontSize: '0.9rem', flexGrow: 1,
+                                                display: '-webkit-box', WebkitLineClamp: 2,
+                                                WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                            {item.title}
+                                        </Typography>
+                                        {(item.approvalStatus === 'PENDING_APPROVAL' || item.meetingStatus === 'PENDING_APPROVAL' || item.status === 'PENDING') && (
+                                            <Chip label="PENDING" size="small" sx={{ height: 14, fontSize: '0.5rem', fontWeight: 950, bgcolor: 'orange', color: '#000', borderRadius: 0.5 }} />
+                                        )}
+                                    </Box>
                                 </Box>
 
                                 {/* Footer meta */}

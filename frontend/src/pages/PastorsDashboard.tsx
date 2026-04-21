@@ -76,11 +76,9 @@ export default function PastorsDashboard() {
 
     // --- Data Streams (Tactical Mirror) ---
     const { data: syncData, isLoading: isSyncLoading } = useLocalFirstDashboard();
-
-    const { data: devotion, isLoading: isDevotionLoading } = useQuery(['daily-devotion'], async () => {
-        const res = await api.get('/devotions/daily');
-        return res.data;
-    });
+    
+    // Legacy support for direct interaction, but display will favor syncData
+    const devotion = syncData?.devotion;
 
     const { data: myDevotions, isLoading: isMyDevotionsLoading } = useQuery(['my-devotions'], async () => {
         const res = await api.get('/devotions/authored/me');
@@ -255,6 +253,65 @@ export default function PastorsDashboard() {
                     </Box>
                 </Box>
 
+                {/* 🛡️ APPROVAL MISSION TERMINAL (Items assigned to current user) */}
+                {(() => {
+                    const pendingApprovals = [
+                        ...(syncData?.projects || []).filter((p: any) => p.targetPastorId === user?.id && p.approvalStatus === 'PENDING').map((p: any) => ({ ...p, type: 'PROJECT' })),
+                        ...(syncData?.events || []).filter((e: any) => e.targetPastorId === user?.id && e.approvalStatus === 'PENDING').map((e: any) => ({ ...e, type: 'EVENT' })),
+                        ...(syncData?.plans || []).filter((p: any) => p.targetPastorId === user?.id && p.approvalStatus === 'PENDING').map((p: any) => ({ ...p, type: 'PLAN' })),
+                    ];
+
+                    if (pendingApprovals.length === 0) return null;
+
+                    return (
+                        <Box sx={{ mb: 6 }}>
+                            <Box display="flex" alignItems="center" gap={1.5} mb={3}>
+                                <Shield size={20} color="orange" />
+                                <Typography variant="caption" fontWeight="1000" sx={{ color: 'orange', letterSpacing: 2 }}>
+                                    CRITICAL: PENDING APPROVAL REQUESTS ({pendingApprovals.length})
+                                </Typography>
+                            </Box>
+                            <Grid container spacing={2}>
+                                {pendingApprovals.map((item) => (
+                                    <Grid item xs={12} md={4} key={item.id}>
+                                        <Card 
+                                            className="holographic-card" 
+                                            sx={{ 
+                                                border: '1px solid orange', 
+                                                bgcolor: 'rgba(255,165,0,0.05)',
+                                                animation: 'pulse-pastor-live 3s infinite'
+                                            }}
+                                        >
+                                            <CardContent sx={{ p: 2 }}>
+                                                <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                                                    <Typography variant="caption" fontWeight="950" color="orange">{item.type}</Typography>
+                                                    <Chip label="ACTION REQUIRED" size="small" sx={{ height: 16, fontSize: '0.55rem', fontWeight: 950, bgcolor: 'orange', color: '#000' }} />
+                                                </Box>
+                                                <Typography variant="subtitle2" fontWeight="950" mb={1}>{item.title?.toUpperCase()}</Typography>
+                                                <Typography variant="caption" sx={{ opacity: 0.6, display: 'block', mb: 2 }}>
+                                                    Requested: {new Date(item.createdAt).toLocaleDateString()}
+                                                </Typography>
+                                                <Button 
+                                                    variant="outlined" 
+                                                    size="small" 
+                                                    fullWidth 
+                                                    onClick={() => handleEdit(item)}
+                                                    sx={{ 
+                                                        borderColor: 'orange', color: 'orange', fontWeight: 900, fontSize: '0.65rem',
+                                                        '&:hover': { bgcolor: 'orange', color: 'black' }
+                                                    }}
+                                                >
+                                                    REVIEW & APPROVE
+                                                </Button>
+                                            </CardContent>
+                                        </Card>
+                                    </Grid>
+                                ))}
+                            </Grid>
+                        </Box>
+                    );
+                })()}
+
                 <Grid container spacing={4}>
                     {/* Left Column (6): Spiritual, Personal & Major Intelligence */}
                     <Grid item xs={12} lg={6}>
@@ -283,7 +340,7 @@ export default function PastorsDashboard() {
                                     sx={{ color: 'var(--cyan)', borderColor: 'var(--cyan-glow)', fontWeight: 900, mb: 2 }}
                                 />
 
-                                {isDevotionLoading ? <LinearProgress /> : (
+                                {isSyncLoading ? <LinearProgress /> : (
                                     <>
                                         <Typography variant="h4" fontWeight="950" sx={{ mb: 2, color: 'primary.main', opacity: 0.9 }}>{devotion?.title}</Typography>
                                         <Typography variant="body1" sx={{ mb: 4, lineHeight: 1.8, fontSize: '1.1rem', opacity: 0.8, fontStyle: 'italic' }}>
