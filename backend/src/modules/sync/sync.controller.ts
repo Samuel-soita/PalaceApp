@@ -17,34 +17,41 @@ export const getDeltaSync = async (req: any, res: Response) => {
         const effectiveDeptId = (isAdmin && departmentId) ? departmentId : (isAdmin ? null : userDeptId);
 
         // Helper for standard scoping
-        const getStandardWhere = (options: { majField?: string | null, supportsDept?: boolean, supportsSoftDelete?: boolean } = {}) => {
-            const { majField = 'isMajor', supportsDept = true, supportsSoftDelete = true } = options;
+        const getStandardWhere = (options: { majField?: string | null, supportsDept?: boolean, supportsSoftDelete?: boolean, modelName?: string } = {}) => {
+            const { majField = 'isMajor', supportsDept = true, supportsSoftDelete = true, modelName } = options;
             
-            const base: any = { 
-                OR: [
-                    { updatedAt: { gt: timestamp } },
-                    ...(supportsSoftDelete ? [{ deletedAt: { gt: timestamp } }] : [])
-                ]
-            };
+            // Core visibility conditions (OR block)
+            const visibilityConditions: any[] = [
+                { createdById: userId },
+                { targetPastorId: userId },
+                { approvals: { some: { userId } } }
+            ];
+
+            if (modelName === 'Announcement') visibilityConditions.push({ authorId: userId });
+            if (modelName === 'Meeting') visibilityConditions.push({ organizerId: userId });
             
-            if (isAdmin) {
-                if (supportsDept && effectiveDeptId) base.departmentId = effectiveDeptId;
-                return base;
-            }
-            
-            if (supportsDept && !userDeptId) {
-                return majField ? { ...base, [majField]: true } : base;
+            if (supportsDept) {
+                if (effectiveDeptId) {
+                    visibilityConditions.push({ departmentId: effectiveDeptId });
+                } else if (userDeptId) {
+                    visibilityConditions.push({ departmentId: userDeptId });
+                }
             }
 
-            if (!supportsDept) return base;
+            if (majField) {
+                visibilityConditions.push({ [majField]: true });
+            }
 
-            return { 
-                ...base, 
+            // Final where clause: (Any Visibility Condition) AND (Recently Updated or Deleted)
+            return {
                 AND: [
-                    { OR: [
-                        { departmentId: userDeptId }, 
-                        ...(majField ? [{ [majField]: true }] : [])
-                    ] }
+                    { OR: visibilityConditions },
+                    {
+                        OR: [
+                            { updatedAt: { gt: timestamp } },
+                            ...(supportsSoftDelete ? [{ deletedAt: { gt: timestamp } }] : [])
+                        ]
+                    }
                 ]
             };
         };
@@ -57,28 +64,32 @@ export const getDeltaSync = async (req: any, res: Response) => {
             switch (module) {
                 case 'projects':
                     result = await prisma.project.findMany({ 
-                        where: getStandardWhere(),
+                        where: getStandardWhere({ modelName: 'Project' }),
+                        include: { approvals: true, department: { select: { name: true } } },
                         orderBy: { updatedAt: 'desc' }
                     });
                     break;
 
                 case 'events':
                     result = await prisma.event.findMany({ 
-                        where: getStandardWhere(),
+                        where: getStandardWhere({ modelName: 'Event' }),
+                        include: { approvals: true, department: { select: { name: true } } },
                         orderBy: { updatedAt: 'desc' }
                     });
                     break;
 
                 case 'plans':
                     result = await prisma.plan.findMany({ 
-                        where: getStandardWhere(),
+                        where: getStandardWhere({ modelName: 'Plan' }),
+                        include: { approvals: true, department: { select: { name: true } } },
                         orderBy: { updatedAt: 'desc' }
                     });
                     break;
 
                 case 'announcements':
                     result = await prisma.announcement.findMany({ 
-                        where: getStandardWhere({ majField: 'isGlobal' }),
+                        where: getStandardWhere({ majField: 'isGlobal', modelName: 'Announcement' }),
+                        include: { approvals: true, department: { select: { name: true } } },
                         orderBy: { updatedAt: 'desc' }
                     });
                     break;

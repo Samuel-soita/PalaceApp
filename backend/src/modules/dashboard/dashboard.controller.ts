@@ -24,52 +24,51 @@ export const getDashboardSync = async (req: any, res: Response) => {
             });
 
             const getWhere = (modelName: string) => {
-                const approvalField = modelName === 'Announcement' ? 'status' : 
-                                    modelName === 'Meeting' ? 'meetingStatus' : 
-                                    'approvalStatus';
+                const approvalField = (modelName === 'Announcement' ? 'status' : 
+                                     modelName === 'Meeting' ? 'meetingStatus' : 
+                                     'approvalStatus') as string;
 
                 // Base condition setup
-                const baseWhere: any = { OR: [] };
+                const conditions: any[] = [];
                 
-                // Allow filtering by requested or own department
-                if (departmentId) baseWhere.OR.push({ departmentId });
-                else if (userDeptId) baseWhere.OR.push({ departmentId: userDeptId });
+                // 1. ALWAYS allow originators to see what they deployed
+                conditions.push({ createdById: userId });
+                if (modelName === 'Announcement') conditions.push({ authorId: userId });
+                if (modelName === 'Meeting') conditions.push({ organizerId: userId });
 
-                // ALWAYS allow assigned pastors to see missions they need to approve
-                baseWhere.OR.push({ approvals: { some: { userId } } });
-                baseWhere.OR.push({ targetPastorId: userId });
+                // 2. ALWAYS allow assigned authorizers to see missions for approval
+                conditions.push({ approvals: { some: { userId } } });
+                conditions.push({ targetPastorId: userId });
 
-                if (['WATUA', 'BISHOP', 'SUPER_ADMIN'].includes(role)) {
+                // 3. Role-based visibility
+                if (['WATUA', 'BISHOP', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(role)) {
                     if (departmentId) {
                         return { departmentId };
                     }
-                    return {
-                        OR: [
-                            { [approvalField]: 'APPROVED' },
-                            { approvals: { some: { userId } } },
-                            { targetPastorId: userId }
-                        ]
-                    };
+                    // Admins see everything PENDING or APPROVED
+                    conditions.push({ [approvalField]: { in: ['APPROVED', 'PENDING_APPROVAL', 'PENDING'] } });
+                    return { OR: conditions };
                 }
 
                 if (isLeader) { // PASTOR, ASSOCIATE_PASTOR, DEPARTMENT_LEADER
-                    // Leaders see everything in their department OR assigned to them
-                    // Plus global major items (Meetings do not have an isMajor field)
+                    // Leaders see everything in their department
+                    if (departmentId) conditions.push({ departmentId });
+                    else if (userDeptId) conditions.push({ departmentId: userDeptId });
+                    
+                    // Plus global major items
                     if (modelName !== 'Meeting') {
-                        baseWhere.OR.push({ isMajor: true, [approvalField]: 'APPROVED' });
+                        conditions.push({ isMajor: true, [approvalField]: 'APPROVED' });
                     }
-                    return baseWhere;
+                    return { OR: conditions };
                 }
 
                 // Members only see approved items in their dept OR global major items
-                const memberOr: any[] = [
-                    { departmentId: userDeptId, [approvalField]: 'APPROVED' }
-                ];
+                conditions.push({ departmentId: userDeptId, [approvalField]: 'APPROVED' });
                 if (modelName !== 'Meeting') {
-                    memberOr.push({ isMajor: true, [approvalField]: 'APPROVED' });
+                    conditions.push({ isMajor: true, [approvalField]: 'APPROVED' });
                 }
 
-                return { OR: memberOr };
+                return { OR: conditions };
             };
 
             const wrap = async (name: string, promise: Promise<any>) => {

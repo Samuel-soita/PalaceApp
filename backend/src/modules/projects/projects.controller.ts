@@ -139,6 +139,7 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
                 progress: 0,
                 approvalStatus: 'PENDING_APPROVAL',
                 category: category || 'NEW_PROJECT',
+                createdById: user.id,
             } as any,
         });
 
