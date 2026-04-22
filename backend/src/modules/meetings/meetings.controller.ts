@@ -142,6 +142,19 @@ export const getMeetings = catchAsync(async (req: Request, res: Response) => {
     });
 });
 
+export const getMeetingById = catchAsync(async (req: Request, res: Response) => {
+    const meeting = await prisma.meeting.findUnique({
+        where: { id: req.params.id },
+        include: {
+            organizer: { select: { name: true } },
+            followUpPerson: { select: { name: true } },
+            department: { select: { name: true } }
+        }
+    });
+    if (!meeting) throw new AppError('Meeting not found', 404);
+    res.json(meeting);
+});
+
 export const updateMeeting = catchAsync(async (req: Request, res: Response) => {
     const { id } = req.params;
     const data = req.body;

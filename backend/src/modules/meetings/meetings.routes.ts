@@ -8,6 +8,7 @@ const router = Router();
 
 router.post('/', authenticate, authorize(['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'SECRETARY', 'DEPARTMENT_LEADER']), validate(CreateMeetingSchema), meetingController.createMeeting);
 router.get('/', authenticate, meetingController.getMeetings);
+router.get('/:id', authenticate, meetingController.getMeetingById);
 router.put('/:id', authenticate, authorize(['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'SECRETARY', 'DEPARTMENT_LEADER']), validate(UpdateMeetingSchema), meetingController.updateMeeting);
 router.post('/:id/approve', authenticate, authorize(['WATUA', 'SUPER_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR']), meetingController.approveMeeting);
 router.delete('/:id', authenticate, authorize(['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR']), meetingController.deleteMeeting);

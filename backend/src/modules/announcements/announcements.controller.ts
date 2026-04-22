@@ -92,6 +92,18 @@ export const getAllAnnouncements = catchAsync(async (req: Request, res: Response
     res.json(announcements);
 });
 
+export const getAnnouncementById = catchAsync(async (req: Request, res: Response) => {
+    const announcement = await prisma.announcement.findUnique({
+        where: { id: req.params.id },
+        include: {
+            author: { select: { id: true, name: true } },
+            department: true,
+        },
+    });
+    if (!announcement) throw new AppError('Announcement not found', 404);
+    res.json(announcement);
+});
+
 export const createAnnouncement = catchAsync(async (req: AuthRequest, res: Response) => {
     const { title, content, priority, expiry, departmentId, isGlobal, isMajor, pastorIds, eventDate, eventTime, location } = req.body;
     const user = req.user!;

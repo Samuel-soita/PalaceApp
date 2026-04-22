@@ -96,6 +96,15 @@ export const getPlansByDepartment = catchAsync(async (req: AuthRequest, res: Res
     res.json(plans);
 });
 
+export const getPlanById = catchAsync(async (req: AuthRequest, res: Response) => {
+    const plan = await prisma.plan.findFirst({
+        where: { id: req.params.id, deletedAt: null },
+        include: { department: true }
+    });
+    if (!plan) throw new AppError('Plan not found', 404);
+    res.json(plan);
+});
+
 export const createPlan = catchAsync(async (req: AuthRequest, res: Response) => {
     const { type, title, description, departmentId, pastorIds } = req.body;
     
