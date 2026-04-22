@@ -7,6 +7,7 @@ import { CreatePlanSchema, UpdatePlanSchema } from '../../schemas/PlanSchema.js'
 const router = Router();
 
 router.get('/', authenticate, plansController.getPlans);
+router.get('/:id', authenticate, plansController.getPlanById);
 router.get('/department/:departmentId', authenticate, plansController.getPlansByDepartment);
 router.post('/', authenticate, authorize(['SUPER_ADMIN', 'DEPARTMENT_LEADER', 'WATUA', 'SYSTEM_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'SECRETARY']), validate(CreatePlanSchema), plansController.createPlan);
 router.patch('/:id', authenticate, authorize(['SUPER_ADMIN', 'DEPARTMENT_LEADER', 'WATUA', 'SYSTEM_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'SECRETARY']), validate(UpdatePlanSchema), plansController.updatePlan);

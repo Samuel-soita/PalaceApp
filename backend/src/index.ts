@@ -59,7 +59,13 @@ app.use(compression({
     }
 }));
 app.use(cors({
-    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : true,
+    origin: [
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'https://palace-app-livid.vercel.app',
+        'https://palacehub.vercel.app',
+        'https://prayer-palace.vercel.app'
+    ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Idempotency-Key', 'X-Device-Id', 'X-Client-Version', 'X-Platform']

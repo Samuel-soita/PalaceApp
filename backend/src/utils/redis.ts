@@ -128,7 +128,7 @@ export async function getOrSetCache<T>(key: string, fetchFn: () => Promise<T>, t
         // Otherwise, start a new fetch with a timeout and track it
         const fetchPromise = (async () => {
             const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error(`Fetch timed out for key: ${key}`)), 10000)
+                setTimeout(() => reject(new Error(`Fetch timed out for key: ${key}`)), 30000)
             );
 
             try {
@@ -147,10 +147,13 @@ export async function getOrSetCache<T>(key: string, fetchFn: () => Promise<T>, t
         })();
 
         pendingPromises.set(key, fetchPromise);
-        return fetchPromise;
-    } catch (error) {
+        return await fetchPromise;
+    } catch (error: any) {
         console.warn(`[Cache Miss/Error] ${key}:`, error);
-        // If it's a timeout or Redis error, try one last fresh fetch without caching
+        if (error?.message && error.message.includes('Fetch timed out')) {
+            throw error; // Prevent cascading database overload on timeout
+        }
+        // If it's a Redis error or some other transient issue, try one last fresh fetch without caching
         return fetchFn();
     }
 }

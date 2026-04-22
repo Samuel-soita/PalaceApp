@@ -49,6 +49,8 @@ model User {
   budgetContributions                            BudgetContributor[]
   assignedChildren                               Child[]                @relation("PastorAssignments")
   children                                       Child[]                @relation("ParentChildren")
+  submittedReports                               DepartmentReport[]     @relation("ReportSubmitter")
+  authoredDevotions                              Devotion[]             @relation("UserDevotions")
   devotionInteractions                           DevotionInteraction[]
   Event                                          Event[]
   eventApprovals                                 EventApproval[]
@@ -66,8 +68,10 @@ model User {
   planApprovals                                  PlanApproval[]
   Project                                        Project[]
   projectApprovals                               ProjectApproval[]
+  repairApprovals                                RepairApproval[]
   sessions                                       Session[]
   supportRequests                                SupportRequest[]
+  requestedRepairs                               TechnicalRepair[]      @relation("RepairRequester")
   transactionsRequested                          Transaction[]          @relation("TransactionRequester")
   transactionApprovals                           TransactionApproval[]
   authenticator                                  User?                  @relation("UserAuthenticator", fields: [authenticatedById], references: [id])
@@ -75,10 +79,6 @@ model User {
   department                                     Department?            @relation("DeptLeader", fields: [departmentId], references: [id])
   managedDepartments                             Department[]           @relation("DeptManagers")
   taggedInMessages                               Message[]              @relation("MessageTags")
-  authoredDevotions                              Devotion[]             @relation("UserDevotions")
-  submittedReports                               DepartmentReport[]     @relation("ReportSubmitter")
-  requestedRepairs                               TechnicalRepair[]      @relation("RepairRequester")
-  repairApprovals                                RepairApproval[]
 
   @@index([name])
   @@index([status])
@@ -136,16 +136,15 @@ model Devotion {
   content      String
   themeOfMonth String
   themeOfYear  String
-  authorId     String?
   date         DateTime              @unique @default(now())
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @default(now()) @updatedAt
   deletedAt    DateTime?
   version      Int                   @default(0)
-
+  authorId     String?
+  affirmations Affirmation[]
   author       User?                 @relation("UserDevotions", fields: [authorId], references: [id])
   interactions DevotionInteraction[]
-  affirmations Affirmation[]
 }
 
 model DevotionInteraction {
@@ -163,30 +162,29 @@ model DevotionInteraction {
 }
 
 model Department {
-  id            String         @id @default(uuid())
-  name          String         @unique
+  id            String             @id @default(uuid())
+  name          String             @unique
   description   String?
   leaderId      String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
   deletedAt     DateTime?
   deletedBy     String?
   deletedReason String?
-  version       Int            @default(0)
+  version       Int                @default(0)
   account       Account?
   announcements Announcement[]
   budgets       Budget[]
   children      Child[]
+  reports       DepartmentReport[]
   events        Event[]
   meetings      Meeting[]
   messages      Message[]
   plans         Plan[]
   projects      Project[]
-  leaders       User[]         @relation("DeptLeader")
-
-  managers      User[]         @relation("DeptManagers")
-  reports       DepartmentReport[]
   repairs       TechnicalRepair[]
+  leaders       User[]             @relation("DeptLeader")
+  managers      User[]             @relation("DeptManagers")
 
   @@index([deletedAt])
   @@index([updatedAt])
@@ -201,7 +199,7 @@ model Event {
   location          String
   departmentId      String
   budgetNeeded      Float            @default(0)
-  budgetSource      String           @default("DEPARTMENT") // DEPARTMENT, CHURCH
+  budgetSource      String           @default("DEPARTMENT")
   volunteersNeeded  Int              @default(0)
   eventType         String           @default("DEPARTMENT_EVENT")
   status            String           @default("PLANNED")
@@ -297,7 +295,6 @@ model Announcement {
   @@index([updatedAt])
 }
 
-
 model Project {
   id                String            @id @default(uuid())
   title             String
@@ -305,9 +302,9 @@ model Project {
   deadline          DateTime?
   departmentId      String
   status            String            @default("PLANNED")
-  category          String            @default("NEW_PROJECT") // HOST_PROJECT, NEW_PROJECT, INITIATIVE
+  category          String            @default("NEW_PROJECT")
   budget            Float             @default(0)
-  budgetSource      String            @default("DEPARTMENT") // DEPARTMENT, CHURCH
+  budgetSource      String            @default("DEPARTMENT")
   progress          Int               @default(0)
   whatsappGroupLink String?
   approvalStatus    String            @default("PENDING_APPROVAL")
@@ -332,16 +329,15 @@ model Project {
   @@index([updatedAt])
 }
 
-
 model Plan {
   id             String         @id @default(uuid())
   departmentId   String
-  type           String         // STRATEGIC, MONTHLY, QUARTERLY, BIANNUAL, YEARLY
+  type           String
   title          String
-  content       String         @default("")
-  budgetSource   String         @default("DEPARTMENT") // DEPARTMENT, CHURCH
-  approvalStatus String         @default("PENDING_APPROVAL") // PENDING_APPROVAL, APPROVED, REJECTED
-  status         String         @default("PLANNED")         // PLANNED, ACTIVE, COMPLETED/TACKLED
+  content        String         @default("")
+  budgetSource   String         @default("DEPARTMENT")
+  approvalStatus String         @default("PENDING_APPROVAL")
+  status         String         @default("PLANNED")
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   isMajor        Boolean        @default(false)
@@ -572,8 +568,6 @@ model Baptism {
   @@index([deletedAt])
 }
 
-
-
 model Partnership {
   id              String              @id @default(uuid())
   userId          String
@@ -686,7 +680,6 @@ model PermissionOverride {
   @@unique([userId, permissionId])
 }
 
-
 model JobQueue {
   id          String    @id @default(uuid())
   type        String
@@ -781,40 +774,39 @@ model BudgetContributor {
 model DepartmentReport {
   id            String     @id @default(uuid())
   departmentId  String
-  type          String     // MONTHLY, QUARTERLY, BIANNUAL, YEARLY
+  type          String
   content       String?
   fileUrl       String?
   fileName      String?
   submittedById String
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
-  downloadedAt   DateTime?
-  department     Department @relation(fields: [departmentId], references: [id])
-  submittedBy    User       @relation("ReportSubmitter", fields: [submittedById], references: [id])
+  downloadedAt  DateTime?
+  department    Department @relation(fields: [departmentId], references: [id])
+  submittedBy   User       @relation("ReportSubmitter", fields: [submittedById], references: [id])
 
   @@index([departmentId])
   @@index([type])
 }
 
 model TechnicalRepair {
-  id                 String   @id @default(uuid())
+  id                 String           @id @default(uuid())
   departmentId       String
   instrumentName     String
   problemDescription String
   estimatedCost      Float
-  budgetSource       String   @default("DEPARTMENT") // DEPARTMENT, CHURCH
-  status             String   @default("PENDING_PASTOR_1") // PENDING_PASTOR_1, PENDING_PASTOR_2, PENDING_ADMIN, PENDING_BISHOP, APPROVED, TACKLED, REJECTED
+  budgetSource       String           @default("DEPARTMENT")
+  status             String           @default("PENDING_PASTOR_1")
   requesterId        String
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
   deletedAt          DateTime?
   deletedBy          String?
   deletedReason      String?
-  version            Int      @default(0)
-  
-  department         Department @relation(fields: [departmentId], references: [id])
-  requester          User       @relation("RepairRequester", fields: [requesterId], references: [id])
+  version            Int              @default(0)
   approvals          RepairApproval[]
+  department         Department       @relation(fields: [departmentId], references: [id])
+  requester          User             @relation("RepairRequester", fields: [requesterId], references: [id])
 
   @@index([departmentId])
   @@index([status])
@@ -823,14 +815,14 @@ model TechnicalRepair {
 }
 
 model RepairApproval {
-  id         String          @id @default(uuid())
-  repairId   String
-  userId     String
-  role       String          // PASTOR_1, PASTOR_2, ADMIN, BISHOP
-  approved   Boolean         @default(true)
-  createdAt  DateTime        @default(now())
-  repair     TechnicalRepair @relation(fields: [repairId], references: [id])
-  user       User            @relation(fields: [userId], references: [id])
+  id        String          @id @default(uuid())
+  repairId  String
+  userId    String
+  role      String
+  approved  Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  repair    TechnicalRepair @relation(fields: [repairId], references: [id])
+  user      User            @relation(fields: [userId], references: [id])
 
   @@unique([repairId, userId])
 }
@@ -856,11 +848,11 @@ model MinistrySettings {
 }
 
 model Affirmation {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   content    String
-  date       DateTime @unique @default(now())
-  createdAt  DateTime @default(now())
-  version    Int      @default(0)
+  date       DateTime  @unique @default(now())
+  createdAt  DateTime  @default(now())
+  version    Int       @default(0)
   devotionId String?
   devotion   Devotion? @relation(fields: [devotionId], references: [id])
 }

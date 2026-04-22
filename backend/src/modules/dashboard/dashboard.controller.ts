@@ -40,8 +40,16 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 baseWhere.OR.push({ targetPastorId: userId });
 
                 if (['WATUA', 'BISHOP', 'SUPER_ADMIN'].includes(role)) {
-                    if (departmentId) return { departmentId };
-                    return {}; // See everything
+                    if (departmentId) {
+                        return { departmentId };
+                    }
+                    return {
+                        OR: [
+                            { [approvalField]: 'APPROVED' },
+                            { approvals: { some: { userId } } },
+                            { targetPastorId: userId }
+                        ]
+                    };
                 }
 
                 if (isLeader) { // PASTOR, ASSOCIATE_PASTOR, DEPARTMENT_LEADER
