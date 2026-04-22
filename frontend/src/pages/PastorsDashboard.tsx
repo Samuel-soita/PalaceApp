@@ -263,6 +263,10 @@ export default function PastorsDashboard() {
                         ...(syncData?.projects || []).filter((p: any) => isForMe(p) && p.approvalStatus === 'PENDING_APPROVAL').map((p: any) => ({ ...p, type: 'PROJECT' })),
                         ...(syncData?.events || []).filter((e: any) => isForMe(e) && e.approvalStatus === 'PENDING_APPROVAL').map((e: any) => ({ ...e, type: 'EVENT' })),
                         ...(syncData?.plans || []).filter((p: any) => isForMe(p) && p.approvalStatus === 'PENDING_APPROVAL').map((p: any) => ({ ...p, type: 'PLAN' })),
+                        ...(syncData?.announcements || []).filter((a: any) => isForMe(a) && a.status === 'PENDING').map((a: any) => ({ ...a, type: 'ANNOUNCEMENT' })),
+                        ...(syncData?.meetings || []).filter((m: any) => isForMe(m) && m.meetingStatus === 'PENDING_APPROVAL').map((m: any) => ({ ...m, type: 'MEETING' })),
+                        ...(syncData?.repairs || []).filter((r: any) => isForMe(r) && r.status?.includes('PENDING')).map((r: any) => ({ ...r, type: 'REPAIR' })),
+                        ...(syncData?.transactions || []).filter((t: any) => isForMe(t) && t.status?.includes('PENDING')).map((t: any) => ({ ...t, type: 'FINANCE' }))
                     ];
 
                     if (pendingApprovals.length === 0) return null;
