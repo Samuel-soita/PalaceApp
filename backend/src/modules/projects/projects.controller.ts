@@ -140,6 +140,7 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
                 approvalStatus: 'PENDING_APPROVAL',
                 category: category || 'NEW_PROJECT',
                 createdById: user.id,
+                targetPastorId: (pastorIds && pastorIds.length > 0) ? pastorIds[0] : null
             } as any,
         });
 
@@ -155,7 +156,8 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
                 eventDate: deadline ? new Date(deadline) : new Date(),
                 location: 'CHURCH GROUNDS',
                 authorId: user.id,
-                departmentId: targetDeptId
+                departmentId: targetDeptId,
+                projectId: newProject.id
             } as any
         });
 
@@ -163,15 +165,17 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
         const approvalData: any[] = (pastorIds || []).map((pid: string) => ({
             projectId: newProject.id,
             userId: pid,
-            role: 'PASTOR'
+            role: 'PASTOR',
+            approved: false
         }));
 
         const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
-        if (bishop) {
+        if (bishop && !pastorIds?.includes(bishop.id)) {
             approvalData.push({
                 projectId: newProject.id,
                 userId: bishop.id,
-                role: 'SUPER_ADMIN'
+                role: 'SUPER_ADMIN',
+                approved: false
             });
         }
 
@@ -207,30 +211,45 @@ export const approveProject = catchAsync(async (req: AuthRequest, res: Response)
     });
     if (!project) throw new AppError('Project not found', 404);
 
-    const existing = await prisma.projectApproval.findUnique({
-        where: { projectId_userId: { projectId: id, userId: user.id } }
+    const existingApproval = await prisma.projectApproval.findFirst({
+        where: { projectId: id, userId: user.id }
     });
-    if (existing) throw new AppError('You have already signed off on this project.', 400);
+    
+    if (!existingApproval && !['SUPER_ADMIN', 'WATUA'].includes(user.role)) {
+        throw new AppError('You are not authorized to approve this project mission.', 403);
+    }
+    
+    if (existingApproval && existingApproval.approved) throw new AppError('You have already signed off on this project.', 400);
 
     // Recording approval in a transaction to ensure integrity
     await prisma.$transaction(async (tx) => {
-        await tx.projectApproval.create({
-            data: {
+        await tx.projectApproval.upsert({
+            where: { projectId_userId: { projectId: id, userId: user.id } },
+            update: { approved: true },
+            create: {
                 projectId: id,
                 userId: user.id,
-                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role) ? 'PASTOR' : user.role)
+                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role) ? 'PASTOR' : user.role),
+                approved: true
             }
         });
 
         const allApprovals = await tx.projectApproval.findMany({ where: { projectId: id } });
-        const bishopApproved = allApprovals.some((a: any) => a.role === 'BISHOP');
-        const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR').length;
+        const bishopApproved = allApprovals.some((a: any) => a.role === 'BISHOP' && a.approved);
+        const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR' && a.approved).length;
 
         if (bishopApproved && pastorCount >= 2) {
             await tx.project.update({
                 where: { id },
                 data: { approvalStatus: 'APPROVED' }
             });
+
+            // 📢 AUTOMATED BROADCAST PUBLISHING
+            await tx.announcement.updateMany({
+                where: { projectId: id, status: 'PENDING' },
+                data: { status: 'PUBLISHED' }
+            });
+
             await logAudit(user.id, 'PUBLISH', 'PROJECT', id, { title: project.title }, req.ip, req.get('user-agent'));
         }
     });

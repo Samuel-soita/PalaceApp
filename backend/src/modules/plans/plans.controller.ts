@@ -133,6 +133,7 @@ export const createPlan = catchAsync(async (req: AuthRequest, res: Response) => 
                 approvalStatus: 'PENDING_APPROVAL',
                 status: 'PLANNED',
                 createdById: req.user!.id,
+                targetPastorId: (pastorIds && pastorIds.length > 0) ? pastorIds[0] : null
             } as any,
         });
 
@@ -140,16 +141,18 @@ export const createPlan = catchAsync(async (req: AuthRequest, res: Response) => 
         const approvalData: any[] = (pastorIds || []).map((pid: string) => ({
             planId: newPlan.id,
             userId: pid,
-            role: 'PASTOR'
+            role: 'PASTOR',
+            approved: false
         }));
 
         // Add Bishop (SUPER_ADMIN)
         const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
-        if (bishop) {
+        if (bishop && !pastorIds?.includes(bishop.id)) {
             approvalData.push({
                 planId: newPlan.id,
                 userId: bishop.id,
-                role: 'SUPER_ADMIN'
+                role: 'SUPER_ADMIN',
+                approved: false
             });
         }
 
@@ -165,6 +168,21 @@ export const createPlan = catchAsync(async (req: AuthRequest, res: Response) => 
             await tx.notification.createMany({ data: notifications });
         }
         
+        // ─── Automated Tactical Broadcast ───
+        await tx.announcement.create({
+            data: {
+                title: `NEW STRATEGIC PLAN: ${title.toUpperCase()}`,
+                content: `New ministry plan initiated: ${description || title}. Strategic alignment in progress.`,
+                priority: 'NORMAL',
+                isGlobal: req.body.isMajor === true,
+                isMajor: req.body.isMajor === true,
+                status: 'PENDING',
+                authorId: req.user!.id,
+                departmentId: targetDeptId,
+                planId: newPlan.id
+            } as any
+        });
+
         return newPlan;
     });
 
@@ -181,26 +199,34 @@ export const approvePlan = catchAsync(async (req: AuthRequest, res: Response) =>
     const { id } = req.params;
     const user = req.user!;
 
-    const existing = await prisma.planApproval.findUnique({
-        where: { planId_userId: { planId: id, userId: user.id } }
+    const existingApproval = await prisma.planApproval.findFirst({
+        where: { planId: id, userId: user.id }
     });
-    if (existing) throw new AppError('Already approved', 400);
+
+    if (!existingApproval && !['SUPER_ADMIN', 'WATUA'].includes(user.role)) {
+        throw new AppError('You are not authorized to approve this strategic plan.', 403);
+    }
+
+    if (existingApproval && existingApproval.approved) throw new AppError('Already approved', 400);
 
     const planData = await prisma.plan.findUnique({ where: { id } });
     if (!planData) throw new AppError('Plan not found', 404);
 
     const totalApprovals = await prisma.$transaction(async (tx) => {
-        await tx.planApproval.create({
-            data: {
+        await tx.planApproval.upsert({
+            where: { planId_userId: { planId: id, userId: user.id } },
+            update: { approved: true },
+            create: {
                 planId: id,
                 userId: user.id,
-                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role) ? 'PASTOR' : user.role)
+                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role) ? 'PASTOR' : user.role),
+                approved: true
             }
         });
 
         const allApprovals = await tx.planApproval.findMany({ where: { planId: id } });
-        const bishopApproved = allApprovals.some((a: any) => a.role === 'BISHOP');
-        const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR').length;
+        const bishopApproved = allApprovals.some((a: any) => a.role === 'BISHOP' && a.approved);
+        const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR' && a.approved).length;
 
         const quorumMet = bishopApproved && pastorCount >= 2;
 
@@ -209,8 +235,14 @@ export const approvePlan = catchAsync(async (req: AuthRequest, res: Response) =>
                 where: { id },
                 data: { approvalStatus: 'APPROVED' }
             });
+
+            // 📢 AUTOMATED BROADCAST PUBLISHING
+            await tx.announcement.updateMany({
+                where: { planId: id, status: 'PENDING' },
+                data: { status: 'PUBLISHED' }
+            });
         }
-        return allApprovals.length;
+        return allApprovals.filter(a => a.approved).length;
     });
 
     const refreshedPlan = await prisma.plan.findUnique({ where: { id } });

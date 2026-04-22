@@ -135,7 +135,9 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                 </DialogTitle>
                 <DialogContent>
                     {/* 👨‍⚖️ COMMAND APPROVAL OVERRIDE */}
-                    {project && project.approvalStatus !== 'APPROVED' && (project.targetPastorId === user?.id || ['WATUA', 'BISHOP'].includes(user?.role || '')) && (
+                    {project && project.approvalStatus !== 'APPROVED' && 
+                        ((project.approvals || []).some((a: any) => a.userId === user?.id && !a.approved) || 
+                         ['WATUA', 'BISHOP', 'SUPER_ADMIN'].includes(user?.role || '')) && (
                         <Box sx={{ mb: 4, p: 3, bgcolor: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: 0, textAlign: 'center' }}>
                             <Typography variant="subtitle2" fontWeight="950" color="orange" mb={1}>
                                 ACTION REQUIRED: PROJECT CLEARANCE

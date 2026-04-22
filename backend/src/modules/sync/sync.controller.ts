@@ -20,6 +20,18 @@ export const getDeltaSync = async (req: any, res: Response) => {
         const getStandardWhere = (options: { majField?: string | null, supportsDept?: boolean, supportsSoftDelete?: boolean, modelName?: string } = {}) => {
             const { majField = 'isMajor', supportsDept = true, supportsSoftDelete = true, modelName } = options;
             
+            // 1. ADMINISTRATIVE OVERRIDE: Global oversight for Bishop, Systems Admin, and Watua engineers
+            if (['SUPER_ADMIN', 'SYSTEM_ADMIN', 'WATUA', 'BISHOP'].includes(role)) {
+                return {
+                    AND: [
+                        { OR: [
+                            { updatedAt: { gt: timestamp } },
+                            ...(supportsSoftDelete ? [{ deletedAt: { gt: timestamp } }] : [])
+                        ]}
+                    ]
+                };
+            }
+
             // Core visibility conditions (OR block)
             const visibilityConditions: any[] = [];
             

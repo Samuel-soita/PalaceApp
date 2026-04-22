@@ -132,6 +132,7 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
     }
 
     const event = await prisma.$transaction(async (tx) => {
+        const { pastorIds, ...restBody } = req.body;
         const newEvent = await tx.event.create({
             data: {
                 title, description, location, eventType, 
@@ -144,9 +145,33 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
                 status: 'PLANNED',
                 approvalStatus: 'PENDING_APPROVAL',
                 volunteersNeeded: Number(req.body.volunteersNeeded || 0),
-                createdById: user.id
+                createdById: user.id,
+                targetPastorId: (pastorIds && pastorIds.length > 0) ? pastorIds[0] : null
             } as any
         });
+
+        // 👨‍⚖️ Initializing Approval Chain
+        if (pastorIds && pastorIds.length > 0) {
+            const approvalData = pastorIds.map((pid: string) => ({
+                eventId: newEvent.id,
+                userId: pid,
+                role: 'PASTOR',
+                approved: false
+            }));
+
+            // Add Bishop (SUPER_ADMIN)
+            const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
+            if (bishop && !pastorIds.includes(bishop.id)) {
+                approvalData.push({
+                    eventId: newEvent.id,
+                    userId: bishop.id,
+                    role: 'SUPER_ADMIN',
+                    approved: false
+                });
+            }
+
+            await tx.eventApproval.createMany({ data: approvalData });
+        }
 
         // ─── Automated Tactical Broadcast ───
         await tx.announcement.create({
@@ -161,7 +186,8 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
                 eventTime: time,
                 location: location,
                 authorId: user.id,
-                departmentId: targetDeptId
+                departmentId: targetDeptId,
+                eventId: newEvent.id
             } as any
         });
 
@@ -187,24 +213,32 @@ export const approveEvent = catchAsync(async (req: AuthRequest, res: Response) =
     
     if (!event) throw new AppError('Event not found', 404);
 
-    const existing = await prisma.eventApproval.findUnique({
-        where: { eventId_userId: { eventId: id, userId: user.id } }
+    const existingApproval = await prisma.eventApproval.findFirst({
+        where: { eventId: id, userId: user.id }
     });
+
+    if (!existingApproval && !['SUPER_ADMIN', 'WATUA'].includes(user.role)) {
+        throw new AppError('You are not authorized to approve this event mission.', 403);
+    }
     
-    if (existing) throw new AppError('You have already approved this event.', 400);
+    if (existingApproval && existingApproval.approved) throw new AppError('You have already approved this event.', 400);
 
     const totalApprovals = await prisma.$transaction(async (tx) => {
-        await tx.eventApproval.create({
-            data: {
+        // Record or Update approval
+        await tx.eventApproval.upsert({
+            where: { eventId_userId: { eventId: id, userId: user.id } },
+            update: { approved: true },
+            create: {
                 eventId: id,
                 userId: user.id,
-                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role) ? 'PASTOR' : user.role)
+                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role) ? 'PASTOR' : user.role),
+                approved: true
             }
         });
 
         const allApprovals = await tx.eventApproval.findMany({ where: { eventId: id } });
-        const bishopApproved = allApprovals.some((a: any) => a.role === 'BISHOP');
-        const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR').length;
+        const bishopApproved = allApprovals.some((a: any) => a.role === 'BISHOP' && a.approved);
+        const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR' && a.approved).length;
 
         const quorumMet = bishopApproved && pastorCount >= 2;
 
@@ -213,9 +247,16 @@ export const approveEvent = catchAsync(async (req: AuthRequest, res: Response) =
                 where: { id },
                 data: { approvalStatus: 'APPROVED' }
             });
+
+            // 📢 AUTOMATED BROADCAST PUBLISHING
+            await tx.announcement.updateMany({
+                where: { eventId: id, status: 'PENDING' },
+                data: { status: 'PUBLISHED' }
+            });
+
             await logAudit(user.id, 'PUBLISH', 'EVENT', id, { title: event.title }, req.ip, req.get('user-agent'));
         }
-        return allApprovals.length;
+        return allApprovals.filter(a => a.approved).length;
     });
 
         // Side effects handled via transaction result logic if needed, 

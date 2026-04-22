@@ -72,6 +72,9 @@ export function useLocalFirstDashboard(departmentId?: string) {
                     data.account && db.account.put({ ...data.account, id: 'MAIN' }),
                     data.projects && db.projects.bulkPut(data.projects),
                     data.events && db.events.bulkPut(data.events),
+                    data.plans && db.plans.bulkPut(data.plans),
+                    data.meetings && db.meetings.bulkPut(data.meetings),
+                    data.announcements && db.announcements.bulkPut(data.announcements),
                     data.transactions && db.transactions.bulkPut(data.transactions),
                     data.departmentMembers && db.users.bulkPut(data.departmentMembers)
                     // ... other modules are handled by pwa-sync.ts daemon

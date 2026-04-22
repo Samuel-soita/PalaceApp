@@ -181,7 +181,9 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
                 </DialogTitle>
                 <DialogContent>
                     {/* 👨‍⚖️ COMMAND APPROVAL OVERRIDE */}
-                    {event && event.approvalStatus !== 'APPROVED' && (event.targetPastorId === user?.id || ['WATUA', 'BISHOP'].includes(user?.role || '')) && (
+                    {event && event.approvalStatus !== 'APPROVED' && 
+                        ((event.approvals || []).some((a: any) => a.userId === user?.id && !a.approved) || 
+                         ['WATUA', 'BISHOP', 'SUPER_ADMIN'].includes(user?.role || '')) && (
                         <Box sx={{ mb: 4, p: 3, bgcolor: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: 0, textAlign: 'center' }}>
                             <Typography variant="subtitle2" fontWeight="950" color="orange" mb={1}>
                                 ACTION REQUIRED: EVENT CLEARANCE
