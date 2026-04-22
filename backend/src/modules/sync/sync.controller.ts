@@ -21,14 +21,29 @@ export const getDeltaSync = async (req: any, res: Response) => {
             const { majField = 'isMajor', supportsDept = true, supportsSoftDelete = true, modelName } = options;
             
             // Core visibility conditions (OR block)
-            const visibilityConditions: any[] = [
-                { createdById: userId },
-                { targetPastorId: userId },
-                { approvals: { some: { userId } } }
-            ];
+            const visibilityConditions: any[] = [];
+            
+            // Model-specific originator fields
+            if (modelName === 'Announcement' || modelName === 'Devotion') {
+                visibilityConditions.push({ authorId: userId });
+            } else if (modelName === 'Meeting') {
+                visibilityConditions.push({ organizerId: userId });
+            } else if (modelName === 'Transaction') {
+                visibilityConditions.push({ requestedById: userId });
+            } else if (modelName === 'TechnicalRepair') {
+                visibilityConditions.push({ requesterId: userId });
+            } else if (['Project', 'Event', 'Plan'].includes(modelName as string)) {
+                visibilityConditions.push({ createdById: userId });
+            }
 
-            if (modelName === 'Announcement') visibilityConditions.push({ authorId: userId });
-            if (modelName === 'Meeting') visibilityConditions.push({ organizerId: userId });
+            // 2. ALWAYS allow assigned authorizers to see missions for approval
+            if (['Project', 'Event', 'Plan', 'Meeting', 'Announcement', 'Transaction', 'TechnicalRepair'].includes(modelName as string)) {
+                visibilityConditions.push({ approvals: { some: { userId } } });
+            }
+            
+            if (['Project', 'Event', 'Plan', 'Meeting', 'Announcement'].includes(modelName as string)) {
+                visibilityConditions.push({ targetPastorId: userId });
+            }
             
             if (supportsDept) {
                 if (effectiveDeptId) {
@@ -134,37 +149,24 @@ export const getDeltaSync = async (req: any, res: Response) => {
                     break;
 
                 case 'finance':
-                    if (isAdmin) {
-                        result = await prisma.transaction.findMany({
-                            where: {
-                                OR: [{ updatedAt: { gt: timestamp } }, { deletedAt: { gt: timestamp } }]
-                            },
-                            orderBy: { updatedAt: 'desc' }
-                        });
-                    } else {
-                        result = await prisma.transaction.findMany({
-                            where: {
-                                requestedById: userId,
-                                OR: [{ updatedAt: { gt: timestamp } }, { deletedAt: { gt: timestamp } }]
-                            },
-                            orderBy: { updatedAt: 'desc' }
-                        });
-                    }
+                    result = await prisma.transaction.findMany({ 
+                        where: getStandardWhere({ modelName: 'Transaction', majField: null }),
+                        include: { approvals: true, requester: { select: { name: true } } },
+                        orderBy: { updatedAt: 'desc' }
+                    });
                     break;
 
                 case 'meetings':
                     result = await prisma.meeting.findMany({ 
-                        where: {
-                            OR: [{ updatedAt: { gt: timestamp } }, { deletedAt: { gt: timestamp } }],
-                            ...(isAdmin ? (effectiveDeptId ? { departmentId: effectiveDeptId } : {}) : (userDeptId ? { departmentId: userDeptId } : {}))
-                        },
+                        where: getStandardWhere({ modelName: 'Meeting', majField: null }),
+                        include: { approvals: true, department: { select: { name: true } } },
                         orderBy: { updatedAt: 'desc' }
                     });
                     break;
 
                 case 'devotions':
                     result = await prisma.devotion.findMany({ 
-                        where: getStandardWhere({ majField: null, supportsDept: false }),
+                        where: getStandardWhere({ majField: null, supportsDept: false, modelName: 'Devotion' }),
                         orderBy: { updatedAt: 'desc' }
                     });
                     break;
@@ -207,12 +209,7 @@ export const getDeltaSync = async (req: any, res: Response) => {
 
                 case 'repairs':
                     result = (prisma as any).technicalRepair ? await (prisma as any).technicalRepair.findMany({
-                        where: isAdmin ? {
-                            OR: [{ updatedAt: { gt: timestamp } }, { deletedAt: { gt: timestamp } }]
-                        } : {
-                            requesterId: userId,
-                            OR: [{ updatedAt: { gt: timestamp } }, { deletedAt: { gt: timestamp } }]
-                        },
+                        where: getStandardWhere({ modelName: 'TechnicalRepair', majField: null }),
                         include: { department: true, requester: { select: { name: true, role: true } }, approvals: { include: { user: { select: { name: true, role: true } } } } },
                         orderBy: { updatedAt: 'desc' }
                     }) : [];
