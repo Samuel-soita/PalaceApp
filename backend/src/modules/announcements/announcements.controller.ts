@@ -157,16 +157,18 @@ export const createAnnouncement = catchAsync(async (req: AuthRequest, res: Respo
         const approvalData: any[] = (pastorIds || []).map((pid: string) => ({
             announcementId: newAnnouncement.id,
             userId: pid,
-            role: 'PASTOR'
+            role: 'PASTOR',
+            approved: false
         }));
 
         // Add Bishop (SUPER_ADMIN)
         const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
-        if (bishop) {
+        if (bishop && !pastorIds?.includes(bishop.id)) {
             approvalData.push({
                 announcementId: newAnnouncement.id,
                 userId: bishop.id,
-                role: 'SUPER_ADMIN'
+                role: 'SUPER_ADMIN',
+                approved: false
             });
         }
 
@@ -195,22 +197,29 @@ export const approveAnnouncement = catchAsync(async (req: AuthRequest, res: Resp
     const { id } = req.params;
     const user = req.user!;
 
-    const existing = await prisma.announcementApproval.findUnique({
-        where: { announcementId_userId: { announcementId: id, userId: user.id } }
+    const existingApproval = await prisma.announcementApproval.findFirst({
+        where: { announcementId: id, userId: user.id }
     });
+
+    if (!existingApproval && !['SUPER_ADMIN', 'WATUA'].includes(user.role)) {
+        throw new AppError('You are not authorized to authorize this broadcast.', 403);
+    }
     
-    if (existing) throw new AppError('You have already approved this announcement.', 400);
+    if (existingApproval && existingApproval.approved) throw new AppError('You have already approved this announcement.', 400);
 
     const announcementData = await prisma.announcement.findUnique({ where: { id } });
     if (!announcementData) throw new AppError('Announcement not found', 404);
 
     const totalApprovals = await prisma.$transaction(async (tx) => {
-        // Record approval
-            await tx.announcementApproval.create({
-            data: {
+        // Record or Update approval
+        await tx.announcementApproval.upsert({
+            where: { announcementId_userId: { announcementId: id, userId: user.id } },
+            update: { approved: true },
+            create: {
                 announcementId: id,
                 userId: user.id,
-                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role) ? 'PASTOR' : user.role)
+                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role) ? 'PASTOR' : user.role),
+                approved: true
             }
         });
 
@@ -219,8 +228,8 @@ export const approveAnnouncement = catchAsync(async (req: AuthRequest, res: Resp
             where: { announcementId: id }
         });
 
-        const bishopApproved = allApprovals.some((a: any) => a.role === 'BISHOP');
-        const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR').length;
+        const bishopApproved = allApprovals.some((a: any) => a.role === 'BISHOP' && a.approved);
+        const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR' && a.approved).length;
 
         // Strictly: 1 Bishop + 2 Pastors
         const quorumMet = bishopApproved && pastorCount >= 2;
@@ -245,7 +254,7 @@ export const approveAnnouncement = catchAsync(async (req: AuthRequest, res: Resp
             });
         }
 
-        return allApprovals.length;
+        return allApprovals.filter(a => a.approved).length;
     });
 
     const refreshedAnnouncement = await prisma.announcement.findUnique({ where: { id } });

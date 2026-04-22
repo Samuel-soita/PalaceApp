@@ -28,6 +28,12 @@ export const getDashboardSync = async (req: any, res: Response) => {
                                      modelName === 'Meeting' ? 'meetingStatus' : 
                                      'approvalStatus') as string;
 
+                // 1. ADMINISTRATIVE OVERRIDE: Global oversight for Bishop and Systems Admin
+                if (['WATUA', 'BISHOP', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(role)) {
+                    if (departmentId) return { departmentId };
+                    return {}; // Return empty to see everything
+                }
+
                 // Base condition setup
                 const conditions: any[] = [];
                 
@@ -40,16 +46,7 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 conditions.push({ approvals: { some: { userId } } });
                 conditions.push({ targetPastorId: userId });
 
-                // 3. Role-based visibility
-                if (['WATUA', 'BISHOP', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(role)) {
-                    if (departmentId) {
-                        return { departmentId };
-                    }
-                    // Admins see everything PENDING or APPROVED
-                    conditions.push({ [approvalField]: { in: ['APPROVED', 'PENDING_APPROVAL', 'PENDING'] } });
-                    return { OR: conditions };
-                }
-
+                // 3. Role-based visibility for non-admins
                 if (isLeader) { // PASTOR, ASSOCIATE_PASTOR, DEPARTMENT_LEADER
                     // Leaders see everything in their department
                     if (departmentId) conditions.push({ departmentId });
@@ -182,13 +179,17 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 wrap('globalMetrics', isAdmin ? Promise.all([
                     prisma.user.count(),
                     prisma.user.count({ where: { isPartner: true } }),
-                    prisma.transaction.aggregate({ where: { status: 'PENDING_BISHOP_APPROVAL' }, _count: true }),
-                    prisma.child.count({ where: { isDedicated: false } })
-                ]).then(([totalUsers, totalPartners, pendingApprovals, pendingDedications]) => ({
+                    prisma.transaction.count({ where: { status: 'PENDING_BISHOP_APPROVAL' } }),
+                    prisma.project.count({ where: { approvalStatus: 'PENDING_APPROVAL', deletedAt: null } }),
+                    prisma.event.count({ where: { approvalStatus: 'PENDING_APPROVAL', deletedAt: null } }),
+                    prisma.plan.count({ where: { approvalStatus: 'PENDING_APPROVAL', deletedAt: null } }),
+                    prisma.meeting.count({ where: { meetingStatus: 'PENDING_APPROVAL', deletedAt: null } }),
+                    prisma.announcement.count({ where: { status: 'PENDING', deletedAt: null } })
+                ]).then(([totalUsers, totalPartners, pendingTx, pendingProjects, pendingEvents, pendingPlans, pendingMeetings, pendingAnnouncements]) => ({
                     totalUsers,
                     totalPartners,
-                    pendingApprovals: pendingApprovals._count,
-                    pendingDedications
+                    pendingApprovals: pendingTx + pendingProjects + pendingEvents + pendingPlans + pendingMeetings + pendingAnnouncements,
+                    breakdown: { pendingTx, pendingProjects, pendingEvents, pendingPlans, pendingMeetings, pendingAnnouncements }
                 })) : Promise.resolve(null)),
                 wrap('auditLogs', isAdmin ? prisma.auditLog.findMany({
                     take: 20,

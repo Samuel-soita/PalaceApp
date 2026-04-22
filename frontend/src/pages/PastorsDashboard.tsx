@@ -253,9 +253,10 @@ export default function PastorsDashboard() {
                     </Box>
                 </Box>
 
-                {/* 🛡️ APPROVAL MISSION TERMINAL (Items assigned to current user) */}
+                {/* 🛡️ MISSION GOVERNANCE & APPROVALS (Items needing action or oversight) */}
                 {(() => {
                     const isForMe = (item: any) => 
+                        item.createdById === user?.id ||
                         item.targetPastorId === user?.id || 
                         (item.approvals || []).some((a: any) => a.userId === user?.id);
 
@@ -265,7 +266,7 @@ export default function PastorsDashboard() {
                         ...(syncData?.plans || []).filter((p: any) => isForMe(p) && p.approvalStatus === 'PENDING_APPROVAL').map((p: any) => ({ ...p, type: 'PLAN' })),
                         ...(syncData?.announcements || []).filter((a: any) => isForMe(a) && a.status === 'PENDING').map((a: any) => ({ ...a, type: 'ANNOUNCEMENT' })),
                         ...(syncData?.meetings || []).filter((m: any) => isForMe(m) && m.meetingStatus === 'PENDING_APPROVAL').map((m: any) => ({ ...m, type: 'MEETING' })),
-                        ...(syncData?.repairs || []).filter((r: any) => isForMe(r) && r.status?.includes('PENDING')).map((r: any) => ({ ...r, type: 'REPAIR' })),
+                        ...(syncData?.repairs || []).filter((r: any) => isForMe(r) && (r.status?.includes('PENDING') || r.status === 'WAIT_APPROVAL')).map((r: any) => ({ ...r, type: 'REPAIR' })),
                         ...(syncData?.transactions || []).filter((t: any) => isForMe(t) && t.status?.includes('PENDING')).map((t: any) => ({ ...t, type: 'FINANCE' }))
                     ];
 

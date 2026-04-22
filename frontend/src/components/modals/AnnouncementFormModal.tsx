@@ -117,7 +117,9 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                 </DialogTitle>
                 <DialogContent sx={{ px: 4 }}>
                     {/* 👨‍⚖️ COMMAND APPROVAL OVERRIDE */}
-                    {announcement && announcement.status !== 'PUBLISHED' && (announcement.targetPastorId === user?.id || ['WATUA', 'SUPER_ADMIN'].includes(user?.role || '')) && (
+                    {announcement && announcement.status !== 'PUBLISHED' && 
+                        ((announcement.approvals || []).some((a: any) => a.userId === user?.id && !a.approved) || 
+                         ['WATUA', 'BISHOP', 'SUPER_ADMIN'].includes(user?.role || '')) && (
                         <Box sx={{ mb: 4, mt: 2, p: 3, bgcolor: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: 0, textAlign: 'center' }}>
                             <Typography variant="subtitle2" fontWeight="950" color="orange" mb={1}>
                                 ACTION REQUIRED: BROADCAST CLEARANCE

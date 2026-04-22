@@ -41,18 +41,20 @@ export const createMeeting = catchAsync(async (req: any, res: Response) => {
                 approvalData.push({
                     meetingId: newMeeting.id,
                     userId: pid,
-                    role: 'PASTOR'
+                    role: 'PASTOR',
+                    approved: false
                 });
             });
         }
 
         // Add Bishop (SUPER_ADMIN)
         const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
-        if (bishop) {
+        if (bishop && !data.pastorIds?.includes(bishop.id)) {
             approvalData.push({
                 meetingId: newMeeting.id,
                 userId: bishop.id,
-                role: 'SUPER_ADMIN'
+                role: 'SUPER_ADMIN',
+                approved: false
             });
         }
 
@@ -204,6 +206,13 @@ export const approveMeeting = catchAsync(async (req: any, res: Response) => {
     });
 
     if (!meeting) throw new AppError('Meeting not found', 404);
+
+    const existingApproval = meeting.approvals.find((a: any) => a.userId === userId);
+    if (!existingApproval && !['SUPER_ADMIN', 'WATUA'].includes(userRole)) {
+        throw new AppError('You are not authorized to authorize this meeting.', 403);
+    }
+
+    if (existingApproval && existingApproval.approved) throw new AppError('Already approved', 400);
 
     await prisma.$transaction(async (tx) => {
         // Record the approval

@@ -222,6 +222,7 @@ model Event {
   targetPastor      User?            @relation("EventTarget", fields: [targetPastorId], references: [id])
   author            User?            @relation("EventAuthor", fields: [createdById], references: [id])
   approvals         EventApproval[]
+  broadcasts        Announcement[]   @relation("EventBroadcasts")
   messages          Message[]
   supportRequests   SupportRequest[]
 
@@ -287,9 +288,15 @@ model Announcement {
   deletedReason                          String?
   version                                Int                    @default(0)
   targetPastorId                         String?
+  projectId                              String?
+  eventId                                String?
+  planId                                 String?
   author                                 User                   @relation(fields: [authorId], references: [id])
   department                             Department?            @relation(fields: [departmentId], references: [id])
   User_Announcement_targetPastorIdToUser User?                  @relation("Announcement_targetPastorIdToUser", fields: [targetPastorId], references: [id])
+  project                                Project?               @relation("ProjectBroadcasts", fields: [projectId], references: [id])
+  event                                  Event?                 @relation("EventBroadcasts", fields: [eventId], references: [id])
+  plan                                   Plan?                  @relation("PlanBroadcasts", fields: [planId], references: [id])
   approvals                              AnnouncementApproval[]
 
   @@index([status])
@@ -327,6 +334,7 @@ model Project {
   targetPastor      User?             @relation("ProjectTarget", fields: [targetPastorId], references: [id])
   author            User?             @relation("ProjectAuthor", fields: [createdById], references: [id])
   approvals         ProjectApproval[]
+  broadcasts        Announcement[]   @relation("ProjectBroadcasts")
   updates           ProjectUpdate[]
 
   @@index([status])
@@ -358,6 +366,7 @@ model Plan {
   targetPastor   User?          @relation("PlanTarget", fields: [targetPastorId], references: [id])
   author         User?          @relation("PlanAuthor", fields: [createdById], references: [id])
   approvals      PlanApproval[]
+  broadcasts     Announcement[] @relation("PlanBroadcasts")
 
   @@index([approvalStatus])
   @@index([departmentId])
@@ -474,6 +483,7 @@ model AnnouncementApproval {
   announcementId String
   userId         String
   role           String
+  approved       Boolean      @default(false)
   createdAt      DateTime     @default(now())
   announcement   Announcement @relation(fields: [announcementId], references: [id])
   user           User         @relation(fields: [userId], references: [id])
@@ -503,6 +513,7 @@ model EventApproval {
   eventId   String
   userId    String
   role      String
+  approved  Boolean  @default(false)
   createdAt DateTime @default(now())
   event     Event    @relation(fields: [eventId], references: [id])
   user      User     @relation(fields: [userId], references: [id])
@@ -515,6 +526,7 @@ model ProjectApproval {
   projectId String
   userId    String
   role      String
+  approved  Boolean  @default(false)
   createdAt DateTime @default(now())
   project   Project  @relation(fields: [projectId], references: [id])
   user      User     @relation(fields: [userId], references: [id])
@@ -527,6 +539,7 @@ model PlanApproval {
   planId    String
   userId    String
   role      String
+  approved  Boolean  @default(false)
   createdAt DateTime @default(now())
   plan      Plan     @relation(fields: [planId], references: [id])
   user      User     @relation(fields: [userId], references: [id])
