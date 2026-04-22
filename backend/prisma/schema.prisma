@@ -52,7 +52,12 @@ model User {
   submittedReports                               DepartmentReport[]     @relation("ReportSubmitter")
   authoredDevotions                              Devotion[]             @relation("UserDevotions")
   devotionInteractions                           DevotionInteraction[]
-  Event                                          Event[]
+  authoredEvents                                 Event[]                @relation("EventAuthor")
+  authoredPlans                                  Plan[]                 @relation("PlanAuthor")
+  authoredProjects                               Project[]              @relation("ProjectAuthor")
+  assignedEvents                                 Event[]                @relation("EventTarget")
+  assignedPlans                                  Plan[]                 @relation("PlanTarget")
+  assignedProjects                               Project[]              @relation("ProjectTarget")
   eventApprovals                                 EventApproval[]
   assignedFollowUps                              Meeting[]              @relation("MeetingFollowUp")
   meetingsOrganized                              Meeting[]              @relation("MeetingOrganizer")
@@ -64,9 +69,7 @@ model User {
   partnerships                                   Partnership[]          @relation("UserPartnerships")
   pastorModuleAccess                             PastorModuleAccess[]   @relation("PastorModulePermissions")
   permissionOverrides                            PermissionOverride[]   @relation("UserOverrides")
-  Plan                                           Plan[]
   planApprovals                                  PlanApproval[]
-  Project                                        Project[]
   projectApprovals                               ProjectApproval[]
   repairApprovals                                RepairApproval[]
   sessions                                       Session[]
@@ -214,8 +217,10 @@ model Event {
   deletedReason     String?
   version           Int              @default(0)
   targetPastorId    String?
+  createdById       String?
   department        Department       @relation(fields: [departmentId], references: [id])
-  User              User?            @relation(fields: [targetPastorId], references: [id])
+  targetPastor      User?            @relation("EventTarget", fields: [targetPastorId], references: [id])
+  author            User?            @relation("EventAuthor", fields: [createdById], references: [id])
   approvals         EventApproval[]
   messages          Message[]
   supportRequests   SupportRequest[]
@@ -316,9 +321,11 @@ model Project {
   deletedReason     String?
   version           Int               @default(0)
   targetPastorId    String?
+  createdById       String?
   messages          Message[]
   department        Department        @relation(fields: [departmentId], references: [id])
-  User              User?             @relation(fields: [targetPastorId], references: [id])
+  targetPastor      User?             @relation("ProjectTarget", fields: [targetPastorId], references: [id])
+  author            User?             @relation("ProjectAuthor", fields: [createdById], references: [id])
   approvals         ProjectApproval[]
   updates           ProjectUpdate[]
 
@@ -346,8 +353,10 @@ model Plan {
   deletedReason  String?
   version        Int            @default(0)
   targetPastorId String?
+  createdById    String?
   department     Department     @relation(fields: [departmentId], references: [id])
-  User           User?          @relation(fields: [targetPastorId], references: [id])
+  targetPastor   User?          @relation("PlanTarget", fields: [targetPastorId], references: [id])
+  author         User?          @relation("PlanAuthor", fields: [createdById], references: [id])
   approvals      PlanApproval[]
 
   @@index([approvalStatus])

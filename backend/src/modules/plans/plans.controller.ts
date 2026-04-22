@@ -132,6 +132,7 @@ export const createPlan = catchAsync(async (req: AuthRequest, res: Response) => 
                 isMajor: req.body.isMajor === true,
                 approvalStatus: 'PENDING_APPROVAL',
                 status: 'PLANNED',
+                createdById: req.user!.id,
             } as any,
         });
 

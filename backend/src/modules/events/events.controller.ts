@@ -143,7 +143,8 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
                 departmentId: targetDeptId,
                 status: 'PLANNED',
                 approvalStatus: 'PENDING_APPROVAL',
-                volunteersNeeded: Number(req.body.volunteersNeeded || 0)
+                volunteersNeeded: Number(req.body.volunteersNeeded || 0),
+                createdById: user.id
             } as any
         });
 

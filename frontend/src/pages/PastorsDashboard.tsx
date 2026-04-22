@@ -255,10 +255,14 @@ export default function PastorsDashboard() {
 
                 {/* 🛡️ APPROVAL MISSION TERMINAL (Items assigned to current user) */}
                 {(() => {
+                    const isForMe = (item: any) => 
+                        item.targetPastorId === user?.id || 
+                        (item.approvals || []).some((a: any) => a.userId === user?.id);
+
                     const pendingApprovals = [
-                        ...(syncData?.projects || []).filter((p: any) => p.targetPastorId === user?.id && p.approvalStatus === 'PENDING').map((p: any) => ({ ...p, type: 'PROJECT' })),
-                        ...(syncData?.events || []).filter((e: any) => e.targetPastorId === user?.id && e.approvalStatus === 'PENDING').map((e: any) => ({ ...e, type: 'EVENT' })),
-                        ...(syncData?.plans || []).filter((p: any) => p.targetPastorId === user?.id && p.approvalStatus === 'PENDING').map((p: any) => ({ ...p, type: 'PLAN' })),
+                        ...(syncData?.projects || []).filter((p: any) => isForMe(p) && p.approvalStatus === 'PENDING_APPROVAL').map((p: any) => ({ ...p, type: 'PROJECT' })),
+                        ...(syncData?.events || []).filter((e: any) => isForMe(e) && e.approvalStatus === 'PENDING_APPROVAL').map((e: any) => ({ ...e, type: 'EVENT' })),
+                        ...(syncData?.plans || []).filter((p: any) => isForMe(p) && p.approvalStatus === 'PENDING_APPROVAL').map((p: any) => ({ ...p, type: 'PLAN' })),
                     ];
 
                     if (pendingApprovals.length === 0) return null;
