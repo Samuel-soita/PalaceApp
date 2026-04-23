@@ -301,6 +301,9 @@ model Announcement {
 
   @@index([status])
   @@index([departmentId])
+  @@index([projectId])
+  @@index([eventId])
+  @@index([planId])
   @@index([isGlobal])
   @@index([isMajor])
   @@index([deletedAt])
