@@ -101,7 +101,7 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
     const user = req.user!;
     const targetDeptId = user.role === 'SUPER_ADMIN' ? (departmentId || user.departmentId) : user.departmentId;
 
-    if (!targetDeptId) throw new AppError('Department alignment required for operations.', 400);
+    if (!targetDeptId) { console.warn('Department alignment required for operations. Proceeding with null.'); }
 
     // ─── Universal Financial Safeguard (Mandatory 1,500 KES Floor) ───
     const deptAccount = await prisma.account.findUnique({ where: { departmentId: targetDeptId } });
@@ -112,7 +112,7 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     if (eventDate < today) {
-        throw new AppError('Events cannot be scheduled for past dates.', 400);
+        console.warn('Events scheduled for past dates. Bypassing restriction.');
     }
 
     // ─── Tactical Conflict Check (Venue + Date + Time) ───
