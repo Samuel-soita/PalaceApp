@@ -158,61 +158,6 @@ export const updateMeeting = catchAsync(async (req: Request, res: Response) => {
     res.json(updatedMeeting);
 });
 
-export const approveMeeting = catchAsync(async (req: any, res: Response) => {
-    const { id } = req.params;
-    const userId = req.user.id;
-    const userRole = req.user.role;
-
-    const meeting = await prisma.meeting.findUnique({
-        where: { id },
-        include: { approvals: true }
-    });
-
-    if (!meeting) throw new AppError('Meeting not found', 404);
-
-    const existingApproval = meeting.approvals.find((a: any) => a.userId === userId);
-    if (!existingApproval && !['SUPER_ADMIN', 'WATUA'].includes(userRole)) {
-        throw new AppError('You are not authorized to authorize this meeting.', 403);
-    }
-
-    if (existingApproval && existingApproval.approved) throw new AppError('Already approved', 400);
-
-    await prisma.$transaction(async (tx) => {
-        // Record the approval
-        await tx.meetingApproval.upsert({
-            where: { meetingId_userId: { meetingId: id, userId } },
-            update: { approved: true },
-            create: {
-                meetingId: id,
-                userId,
-                role: userRole === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(userRole) ? 'PASTOR' : userRole),
-                approved: true
-            }
-        });
-
-        const currentApprovals = await tx.meetingApproval.findMany({
-            where: { meetingId: id, approved: true }
-        });
-
-        const hasBishop = currentApprovals.some((a: any) => a.role === 'BISHOP');
-        const pastorCount = currentApprovals.filter((a: any) => a.role === 'PASTOR').length;
-
-        if (userRole === 'WATUA' || (hasBishop && pastorCount >= 2)) {
-            await tx.meeting.update({
-                where: { id },
-                data: { meetingStatus: 'SCHEDULED' }
-            });
-
-            // Invalidate Cache
-            const keys = await redis.keys('meetings:*');
-            if (keys.length > 0) await redis.del(...keys);
-        }
-    });
-    
-    await logAudit(userId, 'MEETING_APPROVED', 'MEETING', id);
-
-    res.json({ message: 'Meeting approved successfully' });
-});
 
 export const deleteMeeting = catchAsync(async (req: Request, res: Response) => {
     const meeting = await prisma.meeting.findUnique({ where: { id: req.params.id } });

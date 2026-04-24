@@ -192,16 +192,11 @@ export const getDashboardSync = async (req: any, res: Response) => {
                     prisma.user.count(),
                     prisma.user.count({ where: { isPartner: true } }),
                     prisma.transaction.count({ where: { status: 'PENDING_BISHOP_APPROVAL' } }),
-                    prisma.project.count({ where: { approvalStatus: 'PENDING_APPROVAL', deletedAt: null } }),
-                    prisma.event.count({ where: { approvalStatus: 'PENDING_APPROVAL', deletedAt: null } }),
-                    prisma.plan.count({ where: { approvalStatus: 'PENDING_APPROVAL', deletedAt: null } }),
-                    prisma.meeting.count({ where: { meetingStatus: 'PENDING_APPROVAL', deletedAt: null } }),
-                    prisma.announcement.count({ where: { status: 'PENDING', deletedAt: null } })
-                ]).then(([totalUsers, totalPartners, pendingTx, pendingProjects, pendingEvents, pendingPlans, pendingMeetings, pendingAnnouncements]) => ({
+                ]).then(([totalUsers, totalPartners, pendingTx]) => ({
                     totalUsers,
                     totalPartners,
-                    pendingApprovals: pendingTx + pendingProjects + pendingEvents + pendingPlans + pendingMeetings + pendingAnnouncements,
-                    breakdown: { pendingTx, pendingProjects, pendingEvents, pendingPlans, pendingMeetings, pendingAnnouncements }
+                    pendingApprovals: pendingTx,
+                    breakdown: { pendingTx }
                 })) : Promise.resolve(null)),
                 wrap('auditLogs', isAdmin ? prisma.auditLog.findMany({
                     take: 20,
