@@ -399,7 +399,6 @@ async function main() {
                 approvalStatus: 'APPROVED'
             }
         });
-        await prisma.planApproval.create({ data: { planId: plan.id, userId: bishop.id, role: 'SUPER_ADMIN' } });
 
         // Project
         const project = await prisma.project.create({
@@ -480,7 +479,7 @@ async function main() {
                 meetingType: 'STRATEGY',
                 agenda: 'Tactical alignment for the upcoming quarter.',
                 organizerId: leader.id,
-                meetingStatus: 'APPROVED'
+                meetingStatus: 'SCHEDULED'
             }
         });
     }
@@ -549,7 +548,6 @@ async function main() {
                 requestedById: leader.id,
             }
         });
-        await prisma.transactionApproval.create({ data: { transactionId: t.id, userId: systemAdmin.id, role: 'SYSTEM_ADMIN' } });
         
         // Update account balance
         await prisma.account.update({

@@ -207,7 +207,7 @@ model Event {
   eventType         String           @default("DEPARTMENT_EVENT")
   status            String           @default("PLANNED")
   isMajor           Boolean          @default(false)
-  approvalStatus    String           @default("PENDING_APPROVAL")
+  approvalStatus    String           @default("APPROVED")
   whatsappGroupLink String?
   attachmentUrl     String?
   createdAt         DateTime         @default(now())
@@ -246,7 +246,7 @@ model Meeting {
   followUpPersonId                  String?
   followUpDeadline                  DateTime?
   followUpStatus                    String            @default("PENDING")
-  meetingStatus                     String            @default("PENDING_APPROVAL")
+  meetingStatus                     String            @default("SCHEDULED")
   minutes                           String?
   attendance                        String?
   createdAt                         DateTime          @default(now())
@@ -273,7 +273,7 @@ model Announcement {
   content                                String
   priority                               String                 @default("NORMAL")
   isGlobal                               Boolean                @default(false)
-  status                                 String                 @default("PENDING")
+  status                                 String                 @default("PUBLISHED")
   expiry                                 DateTime?
   eventDate                              DateTime?
   eventTime                              String?
@@ -322,7 +322,7 @@ model Project {
   budgetSource      String            @default("DEPARTMENT")
   progress          Int               @default(0)
   whatsappGroupLink String?
-  approvalStatus    String            @default("PENDING_APPROVAL")
+  approvalStatus    String            @default("APPROVED")
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   isMajor           Boolean           @default(false)
@@ -354,7 +354,7 @@ model Plan {
   title          String
   content        String         @default("")
   budgetSource   String         @default("DEPARTMENT")
-  approvalStatus String         @default("PENDING_APPROVAL")
+  approvalStatus String         @default("APPROVED")
   status         String         @default("PLANNED")
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
@@ -420,7 +420,7 @@ model Transaction {
   type          String
   amount        Float
   description   String
-  status        String                @default("PENDING_LEADER_APPROVAL")
+  status        String                @default("APPROVED")
   requestedById String
   date          DateTime              @default(now())
   createdAt     DateTime              @default(now())
@@ -574,7 +574,7 @@ model AuditLog {
 model Baptism {
   id                String    @id @default(uuid())
   userId            String
-  status            String    @default("PENDING_PASTOR_APPROVAL")
+  status            String    @default("APPROVED")
   recordedAt        DateTime?
   notes             String?
   createdAt         DateTime  @default(now())
@@ -821,7 +821,7 @@ model TechnicalRepair {
   problemDescription String
   estimatedCost      Float
   budgetSource       String           @default("DEPARTMENT")
-  status             String           @default("PENDING_PASTOR_1")
+  status             String           @default("APPROVED")
   requesterId        String
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
