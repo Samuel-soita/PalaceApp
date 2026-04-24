@@ -435,35 +435,35 @@ export class PalaceLocalDatabase extends Dexie {
     constructor() {
         super('palace-local-first-db');
         
-        // 🚀 Version 15: Indexed createdAt on key tables for reliable orderBy queries
-        this.version(15).stores({
-            events: 'id, departmentId, date, syncStatus, deviceId, version',
+        // 🚀 Version 16: Indexed createdAt on all mission-critical tables for reliable orderBy queries
+        this.version(16).stores({
+            events: 'id, departmentId, date, createdAt, syncStatus, deviceId, version',
             users: 'id, role, departmentId, status, idNumber, membershipNumber, syncStatus, deviceId, version',
             departments: 'id, name, syncStatus, deviceId, version',
             roles: 'id, name, syncStatus, deviceId, version',
             permissions: 'id, code, module, syncStatus, deviceId, version',
             rolePermissions: 'id, roleId, permissionId, syncStatus, deviceId, version',
-            projects: 'id, departmentId, status, syncStatus, deviceId, version',
-            plans: 'id, departmentId, status, syncStatus, deviceId, version',
+            projects: 'id, departmentId, status, createdAt, syncStatus, deviceId, version',
+            plans: 'id, departmentId, status, createdAt, syncStatus, deviceId, version',
             announcements: 'id, departmentId, date, createdAt, syncStatus, deviceId, version',
             meetings: 'id, departmentId, date, createdAt, syncStatus, deviceId, version',
-            devotions: 'id, authorId, date, syncStatus, deviceId, version',
+            devotions: 'id, authorId, date, createdAt, syncStatus, deviceId, version',
             messages: 'id, senderId, receiverId, timestamp, syncStatus, deviceId, version',
-            baptisms: 'id, userId, status, syncStatus, deviceId, version',
-            children: 'id, parentId, workflowStatus, syncStatus, deviceId, version',
-            transactions: 'id, type, requestedById, status, syncStatus, deviceId, version',
+            baptisms: 'id, userId, status, createdAt, syncStatus, deviceId, version',
+            children: 'id, parentId, workflowStatus, createdAt, syncStatus, deviceId, version',
+            transactions: 'id, type, requestedById, status, createdAt, syncStatus, deviceId, version',
             account: 'id',
-            repairs: 'id, departmentId, status, syncStatus, deviceId, version',
-            appointments: 'id, memberId, targetId, status, syncStatus, deviceId, version',
-            partnerships: 'id, userId, status, syncStatus, deviceId, version',
-            partnershipLedgers: 'id, partnershipId, referenceCode, syncStatus, deviceId, version',
+            repairs: 'id, departmentId, status, createdAt, syncStatus, deviceId, version',
+            appointments: 'id, memberId, targetId, status, createdAt, syncStatus, deviceId, version',
+            partnerships: 'id, userId, status, createdAt, syncStatus, deviceId, version',
+            partnershipLedgers: 'id, partnershipId, referenceCode, createdAt, syncStatus, deviceId, version',
             auditLogs: 'id, action, targetId, performedBy, deviceId, timestamp, syncStatus',
             deviceSettings: 'id, deviceId',
             localCredentials: 'id, hashedPin',
             settings: 'id',
             affirmations: 'id',
-            reports: 'id, departmentId, type, syncStatus',
-            supportRequests: 'id, requesterId, eventId, status, syncStatus',
+            reports: 'id, departmentId, type, createdAt, syncStatus',
+            supportRequests: 'id, requesterId, eventId, status, createdAt, syncStatus',
             syncQueue: 'id, timestamp, status, deviceId'
         });
     }

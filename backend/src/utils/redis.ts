@@ -116,7 +116,12 @@ export async function getOrSetCache<T>(key: string, fetchFn: () => Promise<T>, t
 
         const cached = await redis.get(key);
         if (cached) {
-            return JSON.parse(cached);
+            try {
+                return JSON.parse(cached);
+            } catch (e) {
+                console.error(`[Cache Corruption] Invalid JSON for key ${key}:`, cached);
+                await redis.del(key);
+            }
         }
 
         // If a fetch is already in flight for this key, join it
