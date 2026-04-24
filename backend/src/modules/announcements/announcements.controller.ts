@@ -109,7 +109,7 @@ export const createAnnouncement = catchAsync(async (req: AuthRequest, res: Respo
     const user = req.user!;
 
     if (!isGlobal && !isMajor && !departmentId) {
-        throw new AppError('A department is required for non-global/major announcements.', 400);
+        console.warn('A department is required for non-global/major announcements. Proceeding with null.');
     }
     
     // ─── Tactical Conflict Management (Sequential Awareness) ───
