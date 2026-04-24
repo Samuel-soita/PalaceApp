@@ -70,17 +70,23 @@ export const getDeltaSync = async (req: any, res: Response) => {
             }
 
             // Final where clause: (Any Visibility Condition) AND (Recently Updated or Deleted)
-            return {
-                AND: [
-                    { OR: visibilityConditions },
-                    {
-                        OR: [
-                            { updatedAt: { gt: timestamp } },
-                            ...(supportsSoftDelete ? [{ deletedAt: { gt: timestamp } }] : [])
-                        ]
-                    }
+            const finalWhere: any = {
+                OR: [
+                    { updatedAt: { gt: timestamp } },
+                    ...(supportsSoftDelete ? [{ deletedAt: { gt: timestamp } }] : [])
                 ]
             };
+
+            if (visibilityConditions.length > 0) {
+                return {
+                    AND: [
+                        { OR: visibilityConditions },
+                        finalWhere
+                    ]
+                };
+            }
+
+            return finalWhere;
         };
 
         console.log(`[SYNC_REQUEST] User: ${userId} (${role}), Module: ${module}, Since: ${since || 'Beginning'}`);
