@@ -143,35 +143,14 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
                 isMajor: isMajor === true || isMajor === 'true',
                 departmentId: targetDeptId,
                 status: 'PLANNED',
-                approvalStatus: 'PENDING_APPROVAL',
+                approvalStatus: 'APPROVED',
                 volunteersNeeded: Number(req.body.volunteersNeeded || 0),
                 createdById: user.id,
                 targetPastorId: (pastorIds && pastorIds.length > 0) ? pastorIds[0] : null
             } as any
         });
 
-        // 👨‍⚖️ Initializing Approval Chain
-        if (pastorIds && pastorIds.length > 0) {
-            const approvalData = pastorIds.map((pid: string) => ({
-                eventId: newEvent.id,
-                userId: pid,
-                role: 'PASTOR',
-                approved: false
-            }));
-
-            // Add Bishop (SUPER_ADMIN)
-            const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
-            if (bishop && !pastorIds.includes(bishop.id)) {
-                approvalData.push({
-                    eventId: newEvent.id,
-                    userId: bishop.id,
-                    role: 'SUPER_ADMIN',
-                    approved: false
-                });
-            }
-
-            await tx.eventApproval.createMany({ data: approvalData });
-        }
+        // Approval chain removed as per user request
 
         // ─── Automated Tactical Broadcast ───
         await tx.announcement.create({
@@ -181,7 +160,7 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
                 priority: 'NORMAL',
                 isGlobal: isMajor === true || isMajor === 'true',
                 isMajor: isMajor === true || isMajor === 'true',
-                status: 'PENDING',
+                status: 'PUBLISHED',
                 eventDate: new Date(date),
                 eventTime: time,
                 location: location,
@@ -296,9 +275,7 @@ export const updateEvent = catchAsync(async (req: AuthRequest, res: Response) =>
     if (!event) throw new AppError('Event not found.', 404);
 
     // ─── Operational Lock ───
-    if (event.approvalStatus === 'APPROVED' && user.role === 'DEPARTMENT_LEADER') {
-        throw new AppError('OPERATIONAL LOCK: Approved events cannot be modified. Contact Palace Command for changes.', 403);
-    }
+    // Operational lock removed
 
     const { date: newDate, time: newTime, location: newLoc, budgetSource, pastorIds, ...rest } = req.body;
 
@@ -363,9 +340,7 @@ export const deleteEvent = catchAsync(async (req: AuthRequest, res: Response) =>
         throw new AppError('Access denied: Executive or Sector priority required', 403);
     }
 
-    if (event.approvalStatus === 'APPROVED' && user.role !== 'SUPER_ADMIN') {
-        throw new AppError('Approved events are locked and cannot be deleted.', 403);
-    }
+    // Deletion restrictions removed
 
     await prisma.$transaction(async (tx) => {
         await tx.event.update({

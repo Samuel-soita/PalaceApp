@@ -143,7 +143,7 @@ export const createAnnouncement = catchAsync(async (req: AuthRequest, res: Respo
                 priority: priority || 'NORMAL',
                 isGlobal: !!isGlobal,
                 isMajor: isMajor || false,
-                status: 'PENDING',
+                status: 'PUBLISHED',
                 expiry: expiry ? new Date(expiry) : null,
                 eventDate: eventDate ? new Date(eventDate) : null,
                 eventTime: eventTime || null,
@@ -153,37 +153,6 @@ export const createAnnouncement = catchAsync(async (req: AuthRequest, res: Respo
             } as any,
         });
 
-        // 👨‍⚖️ Initializing Approval Chain for Announcements
-        const approvalData: any[] = (pastorIds || []).map((pid: string) => ({
-            announcementId: newAnnouncement.id,
-            userId: pid,
-            role: 'PASTOR',
-            approved: false
-        }));
-
-        // Add Bishop (SUPER_ADMIN)
-        const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
-        if (bishop && !pastorIds?.includes(bishop.id)) {
-            approvalData.push({
-                announcementId: newAnnouncement.id,
-                userId: bishop.id,
-                role: 'SUPER_ADMIN',
-                approved: false
-            });
-        }
-
-        if (approvalData.length > 0) {
-            await tx.announcementApproval.createMany({ data: approvalData });
-            
-            // Notifications to Authorizers
-            const notifications = approvalData.map((app: any) => ({
-                userId: app.userId,
-                title: '📢 Broadcast Authorization Required',
-                message: `New announcement "${title}" requires your executive clearance.`
-            }));
-            await tx.notification.createMany({ data: notifications });
-        }
-        
         return newAnnouncement;
     });
 
@@ -276,9 +245,7 @@ export const updateAnnouncement = catchAsync(async (req: Request, res: Response)
 
     if (!canUpdate) throw new AppError('Access denied: Executive or Sector permission required', 403);
 
-    if (announcement.status === 'PUBLISHED' && user.role !== 'SUPER_ADMIN') {
-        throw new AppError('Published announcements are locked and cannot be modified.', 403);
-    }
+    // Published announcements can now be modified by authorized personnel
 
     const updated = await prisma.announcement.update({
         where: { id: req.params.id },
@@ -301,9 +268,7 @@ export const deleteAnnouncement = catchAsync(async (req: Request, res: Response)
 
     if (!canDelete) throw new AppError('Access denied: Executive or Sector priority required', 403);
 
-    if (announcement.status === 'PUBLISHED' && user.role !== 'SUPER_ADMIN') {
-        throw new AppError('Published announcements are locked and cannot be deleted.', 403);
-    }
+    // Published announcements can now be deleted by authorized personnel
 
     await prisma.$transaction(async (tx) => {
         await tx.announcement.update({

@@ -7,6 +7,7 @@ import {
 import { useMutation } from '@tanstack/react-query';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../lib/db';
+import { CheckCircle, Briefcase, Zap } from 'lucide-react';
 import api from '../../lib/api-client';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -20,6 +21,7 @@ interface ProjectFormModalProps {
 
 export default function ProjectFormModal({ open, onClose, project, onSuccess, defaultDepartmentId }: ProjectFormModalProps) {
     const { user } = useAuth();
+    const [isSuccess, setIsSuccess] = useState(false);
     const [formData, setFormData] = useState({
         title: '',
         description: '',
@@ -28,7 +30,6 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
         budget: 0,
         isMajor: false,
         departmentId: defaultDepartmentId || user?.departmentId || '',
-        pastorIds: [] as string[],
         category: 'GENERAL' as 'INFRASTRUCTURE' | 'OUTREACH' | 'TECH' | 'YOUTH' | 'GENERAL',
         deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
         budgetSource: 'DEPARTMENT'
@@ -44,7 +45,6 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                 budget: project.budget,
                 isMajor: project.isMajor || false,
                 departmentId: project.departmentId,
-                pastorIds: [],
                 category: project.category || 'GENERAL',
                 deadline: project.deadline || new Date().toISOString(),
                 budgetSource: project.budgetSource || 'DEPARTMENT'
@@ -58,17 +58,15 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                 budget: 0,
                 isMajor: false,
                 departmentId: defaultDepartmentId || user?.departmentId || '',
-                pastorIds: [],
                 category: 'GENERAL',
                 deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
                 budgetSource: 'DEPARTMENT'
             });
         }
+        setIsSuccess(false);
     }, [project, open, user, defaultDepartmentId]);
 
     const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
-
-    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
     const mutation = useMutation(
         (data: any) => project 
@@ -76,24 +74,11 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
             : api.post('/projects', data),
         {
             onSuccess: () => {
-                onSuccess();
-                onClose();
-            }
-        }
-    );
-
-    const approveMutation = useMutation(
-        async (status: 'APPROVED' | 'REJECTED') => {
-            if (status === 'APPROVED') {
-                return await api.post(`/projects/${project.id}/approve`);
-            } else {
-                return await api.patch(`/projects/${project.id}/status`, { approvalStatus: 'REJECTED' });
-            }
-        },
-        {
-            onSuccess: () => {
-                onSuccess();
-                onClose();
+                setIsSuccess(true);
+                setTimeout(() => {
+                    onSuccess();
+                    onClose();
+                }, 2000);
             }
         }
     );
@@ -106,13 +91,26 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
             return;
         }
 
-        const { pastorIds, ...cleanPayload } = formData;
-        const finalPayload = project ? cleanPayload : { ...cleanPayload, pastorIds };
-        
-        mutation.mutate(finalPayload);
+        mutation.mutate(formData);
     };
 
-    const isLocked = project?.status === 'APPROVED' && user?.role === 'DEPARTMENT_LEADER';
+    if (isSuccess) {
+        return (
+            <Dialog open={open} onClose={onClose} PaperProps={{ className: "holographic-card", sx: { borderRadius: 0, border: '1px solid var(--cyan)', bgcolor: 'background.paper', p: 4 } }}>
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <Box sx={{ display: 'inline-flex', p: 2, borderRadius: '50%', bgcolor: 'rgba(0, 255, 255, 0.1)', mb: 2 }}>
+                        <CheckCircle size={48} color="var(--cyan)" />
+                    </Box>
+                    <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1, mb: 1 }}>
+                        PROJECT DEPLOYED
+                    </Typography>
+                    <Typography variant="body2" sx={{ opacity: 0.8, maxWidth: 300, mx: 'auto' }}>
+                        The strategic project has been initiated and is now visible to all authorized personnel.
+                    </Typography>
+                </Box>
+            </Dialog>
+        );
+    }
 
     return (
         <Dialog 
@@ -130,46 +128,11 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
             }}
         >
             <form onSubmit={handleSubmit}>
-                <DialogTitle sx={{ fontWeight: '950', fontSize: '1.5rem', letterSpacing: -1 }}>
-                    {project ? (project.status === 'APPROVED' ? 'VIEW PROJECT (LOCKED)' : 'EDIT PROJECT') : 'INITIATE PROJECT'}
+                <DialogTitle sx={{ fontWeight: '950', fontSize: '1.5rem', letterSpacing: -1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <Briefcase size={24} color="var(--cyan)" />
+                    {project ? 'UPDATE PROJECT' : 'INITIATE PROJECT'}
                 </DialogTitle>
                 <DialogContent>
-                    {/* 👨‍⚖️ COMMAND APPROVAL OVERRIDE */}
-                    {project && project.approvalStatus !== 'APPROVED' && 
-                        ((project.approvals || []).some((a: any) => a.userId === user?.id && !a.approved) || 
-                         ['WATUA', 'BISHOP', 'SUPER_ADMIN'].includes(user?.role || '')) && (
-                        <Box sx={{ mb: 4, p: 3, bgcolor: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: 0, textAlign: 'center' }}>
-                            <Typography variant="subtitle2" fontWeight="950" color="orange" mb={1}>
-                                ACTION REQUIRED: PROJECT CLEARANCE
-                            </Typography>
-                            <Typography variant="caption" sx={{ display: 'block', mb: 2, opacity: 0.8 }}>
-                                As the assigned authorizing officer, you are required to review this mission deployment.
-                            </Typography>
-                            <Box display="flex" gap={2} justifyContent="center">
-                                <Button 
-                                    variant="contained" 
-                                    color="success" 
-                                    size="small" 
-                                    onClick={() => approveMutation.mutate('APPROVED')}
-                                    disabled={approveMutation.isLoading}
-                                    sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
-                                >
-                                    APPROVE MISSION
-                                </Button>
-                                <Button 
-                                    variant="outlined" 
-                                    color="error" 
-                                    size="small" 
-                                    onClick={() => { if(window.confirm('Reject mission?')) approveMutation.mutate('REJECTED'); }}
-                                    disabled={approveMutation.isLoading}
-                                    sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
-                                >
-                                    REJECT
-                                </Button>
-                            </Box>
-                        </Box>
-                    )}
-
                     <Box display="flex" flexDirection="column" gap={3} mt={1}>
                         <TextField
                             label="Project Title"
@@ -280,7 +243,7 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                         <Box display="flex" alignItems="center" bgcolor="rgba(255,255,255,0.05)" p={2} borderRadius={2} border="1px dashed rgba(255,255,255,0.1)">
                             <Box flex={1}>
                                 <Typography variant="subtitle2" fontWeight="bold">CHURCH-WIDE INITIATIVE</Typography>
-                                <Typography variant="caption" color="textSecondary">If enabled, this project will appear on the Main Dashboard once approved by the Bishop + 2 Pastors.</Typography>
+                                <Typography variant="caption" color="textSecondary">If enabled, this project will appear on the Main Dashboard immediately.</Typography>
                             </Box>
                             <Checkbox 
                                 checked={formData.isMajor} 
@@ -303,44 +266,6 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                                 ))}
                             </TextField>
                         )}
-                        
-                        {!project && (
-                            <FormControl fullWidth required>
-                                <InputLabel id="pastors-label" sx={{ fontWeight: 700 }}>CHOOSE 2 AUTHORIZING PASTORS</InputLabel>
-                                <Select
-                                    labelId="pastors-label"
-                                    id="pastors-select"
-                                    multiple
-                                    label="CHOOSE 2 AUTHORIZING PASTORS"
-                                    value={formData.pastorIds}
-                                    sx={{ borderRadius: 0 }}
-                                    onChange={(e) => {
-                                        const val = e.target.value as string[];
-                                        if (val.length <= 2) setFormData({ ...formData, pastorIds: val });
-                                    }}
-                                    renderValue={(sel) => (
-                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                            {pastors?.filter((p: any) => sel.includes(p.id)).map((p: any) => (
-                                                <Chip 
-                                                    key={p.id} 
-                                                    label={p.name} 
-                                                    size="small" 
-                                                    sx={{ borderRadius: 0, fontWeight: 900, bgcolor: 'rgba(79, 139, 255, 0.2)', border: '1px solid var(--primary-glow)' }} 
-                                                />
-                                            ))}
-                                        </Box>
-                                    )}
-                                >
-                                    {pastors?.length === 0 && <MenuItem disabled>No Pastors found</MenuItem>}
-                                    {pastors?.map((p: any) => (
-                                        <MenuItem key={p.id} value={p.id} sx={{ py: 1.5 }}>
-                                            <Checkbox checked={formData.pastorIds.includes(p.id)} sx={{ color: 'var(--cyan)' }} />
-                                            <ListItemText primary={p.name} primaryTypographyProps={{ fontWeight: 700 }} />
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
-                        )}
                     </Box>
                 </DialogContent>
                 <DialogActions sx={{ p: 4, gap: 2, flexWrap: 'wrap' }}>
@@ -349,7 +274,7 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                     <Button 
                         type="submit" 
                         variant="contained" 
-                        disabled={mutation.isLoading || isLocked} 
+                        disabled={mutation.isLoading} 
                         sx={{ 
                             borderRadius: 0, 
                             fontWeight: 900, 
@@ -361,13 +286,6 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                         {project ? 'SAVE CHANGES' : 'DEPLOY PROJECT'}
                     </Button>
                 </DialogActions>
-                {project?.status === 'APPROVED' && (
-                    <Box sx={{ pb: 3, px: 4, textAlign: 'center' }}>
-                        <Typography variant="caption" color="error" fontWeight="950">
-                            MISSION CLEARED BY COMMAND. EDITING RESTRICTED.
-                        </Typography>
-                    </Box>
-                )}
             </form>
         </Dialog>
     );

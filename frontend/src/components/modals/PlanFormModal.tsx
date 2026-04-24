@@ -7,6 +7,7 @@ import {
 import { useMutation } from '@tanstack/react-query';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../lib/db';
+import { CheckCircle, Target, Zap } from 'lucide-react';
 import api from '../../lib/api-client';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -20,13 +21,13 @@ interface PlanFormModalProps {
 
 export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultDepartmentId }: PlanFormModalProps) {
     const { user } = useAuth();
+    const [isSuccess, setIsSuccess] = useState(false);
     const [formData, setFormData] = useState({
         title: '',
         type: 'MONTHLY',
         content: '',
         isMajor: false,
         departmentId: defaultDepartmentId || user?.departmentId || '',
-        pastorIds: [] as string[],
         budgetNeeded: 0,
         budgetSource: 'DEPARTMENT',
         status: 'PLANNED'
@@ -40,7 +41,6 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
                 content: plan.content || plan.description || '',
                 isMajor: plan.isMajor || false,
                 departmentId: plan.departmentId,
-                pastorIds: [],
                 budgetNeeded: plan.budgetNeeded || 0,
                 budgetSource: plan.budgetSource || 'DEPARTMENT',
                 status: plan.status || 'PLANNED'
@@ -52,15 +52,13 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
                 content: '',
                 isMajor: false,
                 departmentId: defaultDepartmentId || user?.departmentId || '',
-                pastorIds: [],
                 budgetNeeded: 0,
                 budgetSource: 'DEPARTMENT',
                 status: 'PLANNED'
             });
         }
+        setIsSuccess(false);
     }, [plan, open, user, defaultDepartmentId]);
-
-    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
     const mutation = useMutation(
         (data: any) => plan 
@@ -68,42 +66,41 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
             : api.post('/plans', data),
         {
             onSuccess: () => {
-                onSuccess();
-                onClose();
-            }
-        }
-    );
-
-    const approveMutation = useMutation(
-        async (status: 'APPROVED' | 'REJECTED') => {
-            if (status === 'APPROVED') {
-                return await api.post(`/plans/${plan.id}/approve`);
-            } else {
-                return await api.patch(`/plans/${plan.id}/status`, { approvalStatus: 'REJECTED' });
-            }
-        },
-        {
-            onSuccess: () => {
-                onSuccess();
-                onClose();
+                setIsSuccess(true);
+                setTimeout(() => {
+                    onSuccess();
+                    onClose();
+                }, 2000);
             }
         }
     );
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!plan && formData.pastorIds.length !== 2) {
-            alert("Exactly 2 Pastors must authorize this Strategic Plan.");
-            return;
-        }
         if (!formData.departmentId) {
             alert("Please select a Department for this Plan.");
             return;
         }
-        const { pastorIds, ...restFormData } = formData;
-        const submitPayload = plan ? restFormData : formData;
-        mutation.mutate(submitPayload);
+        mutation.mutate(formData);
     };
+
+    if (isSuccess) {
+        return (
+            <Dialog open={open} onClose={onClose} PaperProps={{ className: "holographic-card", sx: { borderRadius: 0, border: '1px solid var(--cyan)', bgcolor: 'background.paper', p: 4 } }}>
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <Box sx={{ display: 'inline-flex', p: 2, borderRadius: '50%', bgcolor: 'rgba(0, 255, 255, 0.1)', mb: 2 }}>
+                        <CheckCircle size={48} color="var(--cyan)" />
+                    </Box>
+                    <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1, mb: 1 }}>
+                        STRATEGY DEPLOYED
+                    </Typography>
+                    <Typography variant="body2" sx={{ opacity: 0.8, maxWidth: 300, mx: 'auto' }}>
+                        The strategic plan has been successfully synchronized and is now active across the ministry.
+                    </Typography>
+                </Box>
+            </Dialog>
+        );
+    }
 
     return (
         <Dialog 
@@ -121,46 +118,11 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
             }}
         >
             <form onSubmit={handleSubmit}>
-                <DialogTitle sx={{ fontWeight: '950', fontSize: '1.5rem', letterSpacing: -1 }}>
-                    {plan ? (plan.status === 'APPROVED' ? 'VIEW STRATEGY (LOCKED)' : 'EDIT STRATEGIC PLAN') : 'INITIATE STRATEGIC PLAN'}
+                <DialogTitle sx={{ fontWeight: '950', fontSize: '1.5rem', letterSpacing: -1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <Target size={24} color="var(--cyan)" />
+                    {plan ? 'EDIT STRATEGIC PLAN' : 'INITIATE STRATEGIC PLAN'}
                 </DialogTitle>
                 <DialogContent>
-                    {/* 👨‍⚖️ COMMAND APPROVAL OVERRIDE */}
-                    {plan && plan.approvalStatus !== 'APPROVED' && 
-                        ((plan.approvals || []).some((a: any) => a.userId === user?.id && !a.approved) || 
-                         ['WATUA', 'BISHOP', 'SUPER_ADMIN'].includes(user?.role || '')) && (
-                        <Box sx={{ mb: 4, p: 3, bgcolor: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: 0, textAlign: 'center' }}>
-                            <Typography variant="subtitle2" fontWeight="950" color="orange" mb={1}>
-                                ACTION REQUIRED: PLAN CLEARANCE
-                            </Typography>
-                            <Typography variant="caption" sx={{ display: 'block', mb: 2, opacity: 0.8 }}>
-                                Review the strategic parameters and grant authorization to proceed.
-                            </Typography>
-                            <Box display="flex" gap={2} justifyContent="center">
-                                <Button 
-                                    variant="contained" 
-                                    color="success" 
-                                    size="small" 
-                                    onClick={() => approveMutation.mutate('APPROVED')}
-                                    disabled={approveMutation.isLoading}
-                                    sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
-                                >
-                                    APPROVE PLAN
-                                </Button>
-                                <Button 
-                                    variant="outlined" 
-                                    color="error" 
-                                    size="small" 
-                                    onClick={() => { if(window.confirm('Reject plan?')) approveMutation.mutate('REJECTED'); }}
-                                    disabled={approveMutation.isLoading}
-                                    sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
-                                >
-                                    REJECT
-                                </Button>
-                            </Box>
-                        </Box>
-                    )}
-
                     <Box display="flex" flexDirection="column" gap={3} mt={1}>
                         <TextField
                             label="Plan Title"
@@ -220,7 +182,7 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
                         <Box display="flex" alignItems="center" bgcolor="rgba(255,255,255,0.05)" p={2} borderRadius={2} border="1px dashed rgba(255,255,255,0.1)">
                             <Box flex={1}>
                                 <Typography variant="subtitle2" fontWeight="bold">CHURCH-WIDE STRATEGY</Typography>
-                                <Typography variant="caption" color="textSecondary">Mark this plan as a global objective for the &quot;Prayer Palace&quot; mission. Requires 3-sig authorization.</Typography>
+                                <Typography variant="caption" color="textSecondary">Mark this plan as a global objective. Will be visible church-wide immediately.</Typography>
                             </Box>
                             <Checkbox 
                                 checked={formData.isMajor} 
@@ -228,44 +190,6 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
                                 sx={{ color: 'primary.main' }}
                             />
                         </Box>
-                        
-                        {!plan && (
-                            <FormControl fullWidth required>
-                                <InputLabel id="plan-pastors-label" sx={{ fontWeight: 700 }}>CHOOSE 2 AUTHORIZING PASTORS</InputLabel>
-                                <Select
-                                    labelId="plan-pastors-label"
-                                    id="plan-pastors-select"
-                                    multiple
-                                    label="CHOOSE 2 AUTHORIZING PASTORS"
-                                    value={formData.pastorIds}
-                                    sx={{ borderRadius: 0 }}
-                                    onChange={(e) => {
-                                        const val = e.target.value as string[];
-                                        if (val.length <= 2) setFormData({ ...formData, pastorIds: val });
-                                    }}
-                                    renderValue={(sel) => (
-                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                            {pastors?.filter((p: any) => sel.includes(p.id)).map((p: any) => (
-                                                <Chip 
-                                                    key={p.id} 
-                                                    label={p.name} 
-                                                    size="small" 
-                                                    sx={{ borderRadius: 0, fontWeight: 900, bgcolor: 'rgba(79, 139, 255, 0.2)', border: '1px solid var(--primary-glow)' }} 
-                                                />
-                                            ))}
-                                        </Box>
-                                    )}
-                                >
-                                    {pastors?.length === 0 && <MenuItem disabled>No Pastors found</MenuItem>}
-                                    {pastors?.map((p: any) => (
-                                        <MenuItem key={p.id} value={p.id} sx={{ py: 1.5 }}>
-                                            <Checkbox checked={formData.pastorIds.includes(p.id)} sx={{ color: 'var(--cyan)' }} />
-                                            <ListItemText primary={p.name} primaryTypographyProps={{ fontWeight: 700 }} />
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
-                        )}
                     </Box>
                 </DialogContent>
                 <DialogActions sx={{ p: 4, gap: 2 }}>
@@ -273,7 +197,7 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
                     <Button 
                         type="submit" 
                         variant="contained" 
-                        disabled={mutation.isLoading || (plan?.status === 'APPROVED' && user?.role === 'DEPARTMENT_LEADER')} 
+                        disabled={mutation.isLoading} 
                         sx={{ 
                             borderRadius: 0, 
                             fontWeight: 900, 
@@ -284,11 +208,6 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
                     >
                         {plan ? 'SAVE CHANGES' : 'DEPLOY STRATEGY'}
                     </Button>
-                    {plan?.status === 'APPROVED' && user?.role === 'DEPARTMENT_LEADER' && (
-                        <Typography variant="caption" color="error" fontWeight="950" sx={{ mt: 1, display: 'block', textAlign: 'center', width: '100%' }}>
-                            MISSION CLEARED BY COMMAND. EDITING RESTRICTED.
-                        </Typography>
-                    )}
                 </DialogActions>
             </form>
         </Dialog>

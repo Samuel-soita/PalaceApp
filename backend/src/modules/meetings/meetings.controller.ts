@@ -30,46 +30,11 @@ export const createMeeting = catchAsync(async (req: any, res: Response) => {
                 followUpPersonId: data.followUpPersonId,
                 followUpDeadline: data.followUpDeadline ? new Date(data.followUpDeadline) : null,
                 isPartnerOnly: data.isPartnerOnly || false,
-                meetingStatus: 'PENDING_APPROVAL'
+                meetingStatus: 'SCHEDULED'
             },
         });
 
-        // 👨‍⚖️ Initialize Approval Chain
-        const approvalData = [];
-        if (data.pastorIds && Array.isArray(data.pastorIds)) {
-            data.pastorIds.forEach((pid: string) => {
-                approvalData.push({
-                    meetingId: newMeeting.id,
-                    userId: pid,
-                    role: 'PASTOR',
-                    approved: false
-                });
-            });
-        }
-
-        // Add Bishop (SUPER_ADMIN)
-        const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
-        if (bishop && !data.pastorIds?.includes(bishop.id)) {
-            approvalData.push({
-                meetingId: newMeeting.id,
-                userId: bishop.id,
-                role: 'SUPER_ADMIN',
-                approved: false
-            });
-        }
-
-        if (approvalData.length > 0) {
-            await tx.meetingApproval.createMany({ data: approvalData });
-            
-            // 🔔 Notify Authorizers
-            const authorizerIds = approvalData.map(a => a.userId);
-            const notifications = authorizerIds.map(id => ({
-                userId: id,
-                title: '📅 Strategic Briefing Authorization Required',
-                message: `Meeting "${data.title}" requires your executive clearance.`
-            }));
-            await tx.notification.createMany({ data: notifications });
-        }
+        // Approval chain removed
 
         return newMeeting;
     });
@@ -173,9 +138,7 @@ export const updateMeeting = catchAsync(async (req: Request, res: Response) => {
         throw new AppError('Access denied: Executive or Sector permission required', 403);
     }
 
-    if (meeting.meetingStatus === 'SCHEDULED' && user.role !== 'SUPER_ADMIN') {
-        throw new AppError('Scheduled meetings are locked and cannot be modified.', 403);
-    }
+    // Operational lock removed
 
     const updateData: any = { ...data };
     if (updateData.date) updateData.date = new Date(updateData.date);
@@ -263,9 +226,7 @@ export const deleteMeeting = catchAsync(async (req: Request, res: Response) => {
         throw new AppError('Access denied: Executive or Sector priority required', 403);
     }
 
-    if (meeting.meetingStatus === 'SCHEDULED' && user.role !== 'SUPER_ADMIN') {
-        throw new AppError('Scheduled meetings are locked and cannot be deleted.', 403);
-    }
+    // Deletion restrictions removed
 
     await prisma.$transaction(async (tx) => {
         // Soft delete the meeting is handled globally, but we still trigger standard update
