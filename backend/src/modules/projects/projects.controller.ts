@@ -137,7 +137,7 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
                 isMajor: isMajor === true,
                 deadline: deadline ? new Date(deadline) : null,
                 progress: 0,
-                approvalStatus: 'PENDING_APPROVAL',
+                approvalStatus: 'APPROVED',
                 category: category || 'NEW_PROJECT',
                 createdById: user.id,
                 targetPastorId: (pastorIds && pastorIds.length > 0) ? pastorIds[0] : null
@@ -152,7 +152,7 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
                 priority: 'NORMAL',
                 isGlobal: !!isMajor,
                 isMajor: !!isMajor,
-                status: 'PENDING',
+                status: 'PUBLISHED',
                 eventDate: deadline ? new Date(deadline) : new Date(),
                 location: 'CHURCH GROUNDS',
                 authorId: user.id,
@@ -160,35 +160,6 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
                 projectId: newProject.id
             } as any
         });
-
-        // 👨‍⚖️ Initializing Approval Chain
-        const approvalData: any[] = (pastorIds || []).map((pid: string) => ({
-            projectId: newProject.id,
-            userId: pid,
-            role: 'PASTOR',
-            approved: false
-        }));
-
-        const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
-        if (bishop && !pastorIds?.includes(bishop.id)) {
-            approvalData.push({
-                projectId: newProject.id,
-                userId: bishop.id,
-                role: 'SUPER_ADMIN',
-                approved: false
-            });
-        }
-
-        if (approvalData.length > 0) {
-            await tx.projectApproval.createMany({ data: approvalData });
-            
-            const notifications = approvalData.map((app: any) => ({
-                userId: app.userId,
-                title: '📋 Project Clearance Required',
-                message: `Project "${title}" requires your strategic authorization.`
-            }));
-            await tx.notification.createMany({ data: notifications });
-        }
 
         return newProject;
     });
@@ -299,9 +270,7 @@ export const updateProject = catchAsync(async (req: AuthRequest, res: Response) 
         }
     }
 
-    if (existingProject.approvalStatus === 'APPROVED' && user.role === 'DEPARTMENT_LEADER') {
-        throw new AppError('OPERATIONAL LOCK: Approved projects are frozen. De-authorization from Bishop is required for modifications.', 403);
-    }
+    // Operational lock removed as per user request
 
     // ─── Universal Financial Safeguard on Update ───
     const deptAccount = await prisma.account.findUnique({ where: { departmentId: existingProject.departmentId } });
@@ -338,13 +307,7 @@ export const deleteProject = catchAsync(async (req: AuthRequest, res: Response) 
     const existingProject = await prisma.project.findFirst({ where: { id, deletedAt: null } });
     if (!existingProject) throw new AppError('Project not found', 404);
 
-    if (user.role === 'DEPARTMENT_LEADER') {
-        if (existingProject.status !== 'COMPLETED' && existingProject.status !== 'TACKLED' && existingProject.status !== 'REJECTED') {
-            throw new AppError('DELETION RESTRICTED: Projects can only be decommissioned after achievement (COMPLETED/TACKLED).', 403);
-        }
-    } else if (existingProject.approvalStatus === 'APPROVED' && user.role !== 'SUPER_ADMIN') {
-        throw new AppError('Approved projects require High Authorization (Bishop) to decommission.', 403);
-    }
+    // Deletion restrictions removed as per user request
 
     // Standardized Soft Delete
     await prisma.project.update({

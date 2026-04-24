@@ -130,43 +130,14 @@ export const createPlan = catchAsync(async (req: AuthRequest, res: Response) => 
                 departmentId: targetDeptId,
                 budgetSource: (req.body.budgetSource || 'DEPARTMENT') as any, // Cast for type sync
                 isMajor: req.body.isMajor === true,
-                approvalStatus: 'PENDING_APPROVAL',
+                approvalStatus: 'APPROVED',
                 status: 'PLANNED',
                 createdById: req.user!.id,
                 targetPastorId: (pastorIds && pastorIds.length > 0) ? pastorIds[0] : null
             } as any,
         });
 
-        // 👨‍⚖️ Initializing Approval Chain for Plans
-        const approvalData: any[] = (pastorIds || []).map((pid: string) => ({
-            planId: newPlan.id,
-            userId: pid,
-            role: 'PASTOR',
-            approved: false
-        }));
-
-        // Add Bishop (SUPER_ADMIN)
-        const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
-        if (bishop && !pastorIds?.includes(bishop.id)) {
-            approvalData.push({
-                planId: newPlan.id,
-                userId: bishop.id,
-                role: 'SUPER_ADMIN',
-                approved: false
-            });
-        }
-
-        if (approvalData.length > 0) {
-            await tx.planApproval.createMany({ data: approvalData });
-            
-            // 🔔 Notify Authorizers
-            const notifications = approvalData.map((app: any) => ({
-                userId: app.userId,
-                title: '📜 Plan Authorization Required',
-                message: `New strategic plan "${title}" requires your executive approval.`
-            }));
-            await tx.notification.createMany({ data: notifications });
-        }
+        // Approval chain removed as per user request
         
         // ─── Automated Tactical Broadcast ───
         await tx.announcement.create({
@@ -176,7 +147,7 @@ export const createPlan = catchAsync(async (req: AuthRequest, res: Response) => 
                 priority: 'NORMAL',
                 isGlobal: req.body.isMajor === true,
                 isMajor: req.body.isMajor === true,
-                status: 'PENDING',
+                status: 'PUBLISHED',
                 authorId: req.user!.id,
                 departmentId: targetDeptId,
                 planId: newPlan.id
@@ -289,9 +260,7 @@ export const updatePlan = catchAsync(async (req: AuthRequest, res: Response) => 
 
     if (!canUpdate) throw new AppError('Access denied: Executive or Sector permission required', 403);
 
-    if (plan.approvalStatus === 'APPROVED' && user.role === 'DEPARTMENT_LEADER') {
-        throw new AppError('OPERATIONAL LOCK: Approved plans are frozen. Contact Palace Command for modifications.', 403);
-    }
+    // Operational lock removed as per user request
 
     // ─── Universal Financial Safeguard on Update ───
     const deptAccount = await prisma.account.findUnique({ where: { departmentId: plan.departmentId } });
@@ -338,13 +307,7 @@ export const deletePlan = catchAsync(async (req: AuthRequest, res: Response) => 
 
     if (!canDelete) throw new AppError('Access denied: Executive or Sector priority required', 403);
 
-    if (user.role === 'DEPARTMENT_LEADER') {
-        if (plan.status !== 'COMPLETED' && plan.status !== 'TACKLED' && plan.status !== 'REJECTED') {
-            throw new AppError('DELETION RESTRICTED: Plans can only be decommissioned after achievement (COMPLETED/TACKLED).', 403);
-        }
-    } else if (plan.approvalStatus === 'APPROVED' && user.role !== 'SUPER_ADMIN') {
-        throw new AppError('Approved plans require High Authorization to decommission.', 403);
-    }
+    // Deletion restrictions removed as per user request
 
     await prisma.$transaction(async (tx) => {
         await tx.plan.update({
