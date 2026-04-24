@@ -6,9 +6,7 @@ import {
     createProject, 
     updateProject, 
     deleteProject, 
-    addProjectUpdate,
-    approveProject,
-    updateProjectStatus
+    addProjectUpdate
 } from './projects.controller.js';
 import { authenticate, authorize, departmentGuard } from '../../middleware/auth.middleware.js';
 import { validate } from '../../middleware/validate.middleware.js';
@@ -27,7 +25,7 @@ router.get('/department/:departmentId', departmentGuard, getProjectsByDepartment
 router.post('/', 
     authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'DEPARTMENT_LEADER', 'PASTOR']),
     validate(CreateProjectSchema),
-    createProject // Internal check in controller will still check departmentId consistency if needed
+    createProject 
 );
 
 router.patch('/:id', 
@@ -40,16 +38,6 @@ router.post('/:id/updates',
     authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'DEPARTMENT_LEADER', 'PASTOR']),
     validate(ProjectUpdateCommentSchema),
     addProjectUpdate
-);
-
-router.post('/:id/approve',
-    authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'PASTOR']),
-    approveProject
-);
-
-router.patch('/:id/status',
-    authorize(['WATUA', 'SUPER_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR']), 
-    updateProjectStatus
 );
 
 // 🗑️ DESTRUCTIVE ACTIONS

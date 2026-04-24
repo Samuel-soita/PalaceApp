@@ -221,7 +221,6 @@ export const BroadcastTrack = React.memo(({ announcements, onEdit, onDelete }: B
                                                 fullWidth
                                                 variant="contained"
                                                 startIcon={<Edit size={14} />}
-                                                disabled={selected.status === 'PUBLISHED'}
                                                 onClick={() => {
                                                     onEdit?.(selected);
                                                     handleClose();
@@ -234,13 +233,12 @@ export const BroadcastTrack = React.memo(({ announcements, onEdit, onDelete }: B
                                                     '&:hover': { bgcolor: cfg.color, filter: 'brightness(1.1)' }
                                                 }}
                                             >
-                                                {selected.status === 'PUBLISHED' ? 'LOCKED' : 'EDIT'}
+                                                EDIT
                                             </Button>
                                             <Button
                                                 fullWidth
                                                 variant="outlined"
                                                 startIcon={<Trash2 size={14} />}
-                                                disabled={selected.status === 'PUBLISHED'}
                                                 onClick={() => {
                                                     if (window.confirm('Are you sure you want to retract this broadcast?')) {
                                                         onDelete?.(selected);
