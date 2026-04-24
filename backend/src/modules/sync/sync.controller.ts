@@ -13,7 +13,7 @@ export const getDeltaSync = async (req: any, res: Response) => {
         const { id: userId, role, departmentId: userDeptId } = req.user;
 
         const timestamp = since ? new Date(since as string) : new Date(0);
-        const isAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA', 'PASTOR'].includes(role);
+        const isAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA', 'PASTOR', 'BISHOP', 'ASSOCIATE_PASTOR'].includes(role);
         const effectiveDeptId = (isAdmin && departmentId) ? departmentId : (isAdmin ? null : userDeptId);
 
         // Helper for standard scoping

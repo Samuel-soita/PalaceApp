@@ -245,7 +245,6 @@ export const InitiativesTrack = ({ projects, onEdit, onDelete }: InitiativesTrac
                                                 fullWidth
                                                 variant="contained"
                                                 startIcon={<Edit size={14} />}
-                                                disabled={selected.approvalStatus === 'APPROVED'}
                                                 onClick={() => {
                                                     onEdit?.(selected);
                                                     handleClose();
@@ -258,13 +257,12 @@ export const InitiativesTrack = ({ projects, onEdit, onDelete }: InitiativesTrac
                                                     '&:hover': { bgcolor: cfg.color, filter: 'brightness(1.1)' }
                                                 }}
                                             >
-                                                {selected.approvalStatus === 'APPROVED' ? 'LOCKED' : 'EDIT'}
+                                                { 'EDIT' }
                                             </Button>
                                             <Button
                                                 fullWidth
                                                 variant="outlined"
                                                 startIcon={<Trash2 size={14} />}
-                                                disabled={selected.approvalStatus === 'APPROVED'}
                                                 onClick={() => {
                                                     if (window.confirm('Are you sure you want to decommission this initiative?')) {
                                                         onDelete?.(selected);

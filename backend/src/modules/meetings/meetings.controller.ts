@@ -66,7 +66,7 @@ export const getMeetings = catchAsync(async (req: Request, res: Response) => {
         } else {
             where.OR = [
                 { departmentId: user.departmentId },
-                { meetingStatus: 'APPROVED' }
+                { meetingStatus: 'SCHEDULED' }
             ];
         }
     } else if (user.role === 'MEMBER') {

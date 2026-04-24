@@ -28,8 +28,8 @@ export const getDashboardSync = async (req: any, res: Response) => {
                                      modelName === 'Meeting' ? 'meetingStatus' : 
                                      'approvalStatus') as string;
 
-                // 1. ADMINISTRATIVE OVERRIDE: Global oversight for Bishop and Systems Admin
-                if (['WATUA', 'BISHOP', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(role)) {
+                // 1. ADMINISTRATIVE OVERRIDE: Global oversight for Bishop, Pastors, and Systems Admin
+                if (['WATUA', 'BISHOP', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR'].includes(role)) {
                     if (departmentId) return { departmentId };
                     return {}; // Return empty to see everything
                 }

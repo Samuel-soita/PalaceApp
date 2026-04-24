@@ -203,11 +203,9 @@ export const OperationalTimeline = ({ items, onEdit, onDelete }: OperationalTime
                                                 WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                                             {item.title}
                                         </Typography>
-                                        {(item.approvalStatus === 'PENDING' || item.approvalStatus === 'PENDING_APPROVAL' || item.meetingStatus === 'PENDING_APPROVAL' || item.status === 'PENDING') && (
-                                            <Chip label="PENDING" size="small" sx={{ height: 18, fontSize: '0.65rem', fontWeight: 950, bgcolor: 'orange', color: '#000', borderRadius: 0.5 }} />
-                                        )}
                                     </Box>
                                 </Box>
+
 
                                 {/* Footer meta */}
                                 <Box sx={{ mt: 'auto', display: 'flex', flexDirection: 'column', gap: 0.3 }}>
