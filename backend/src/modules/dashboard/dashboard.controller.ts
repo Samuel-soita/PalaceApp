@@ -52,17 +52,29 @@ export const getDashboardSync = async (req: any, res: Response) => {
                     if (departmentId) conditions.push({ departmentId });
                     else if (userDeptId) conditions.push({ departmentId: userDeptId });
                     
-                    // Plus global major items
-                    if (modelName !== 'Meeting') {
-                        conditions.push({ isMajor: true, [approvalField]: 'APPROVED' });
+                    // Plus global/major published/approved items
+                    if (modelName === 'Announcement') {
+                        conditions.push({ isMajor: true, status: 'PUBLISHED' });
+                        conditions.push({ isGlobal: true, status: 'PUBLISHED' });
+                    } else if (modelName === 'Meeting') {
+                        conditions.push({ isMajor: true, meetingStatus: 'SCHEDULED' });
+                    } else {
+                        conditions.push({ isMajor: true, approvalStatus: 'APPROVED' });
                     }
                     return { OR: conditions };
                 }
 
-                // Members only see approved items in their dept OR global major items
-                conditions.push({ departmentId: userDeptId, [approvalField]: 'APPROVED' });
-                if (modelName !== 'Meeting') {
-                    conditions.push({ isMajor: true, [approvalField]: 'APPROVED' });
+                // Members only see approved/published items in their dept OR global major items
+                if (modelName === 'Announcement') {
+                    if (userDeptId) conditions.push({ departmentId: userDeptId, status: 'PUBLISHED' });
+                    conditions.push({ isMajor: true, status: 'PUBLISHED' });
+                    conditions.push({ isGlobal: true, status: 'PUBLISHED' });
+                } else if (modelName === 'Meeting') {
+                    if (userDeptId) conditions.push({ departmentId: userDeptId, meetingStatus: 'SCHEDULED' });
+                    conditions.push({ isMajor: true, meetingStatus: 'SCHEDULED' });
+                } else {
+                    if (userDeptId) conditions.push({ departmentId: userDeptId, approvalStatus: 'APPROVED' });
+                    conditions.push({ isMajor: true, approvalStatus: 'APPROVED' });
                 }
 
                 return { OR: conditions };

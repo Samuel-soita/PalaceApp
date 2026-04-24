@@ -344,7 +344,6 @@ export const OperationalTimeline = ({ items, onEdit, onDelete }: OperationalTime
                                                 fullWidth
                                                 variant="contained"
                                                 startIcon={<Edit size={14} />}
-                                                disabled={selectedItem.approvalStatus === 'APPROVED' || selectedItem.meetingStatus === 'SCHEDULED' || selectedItem.status === 'PUBLISHED'}
                                                 onClick={() => {
                                                     onEdit?.(selectedItem);
                                                     handleClose();
@@ -357,13 +356,12 @@ export const OperationalTimeline = ({ items, onEdit, onDelete }: OperationalTime
                                                     '&:hover': { bgcolor: cfg.color, filter: 'brightness(1.1)' }
                                                 }}
                                             >
-                                                {selectedItem.approvalStatus === 'APPROVED' ? 'LOCKED' : 'EDIT'}
+                                                EDIT
                                             </Button>
                                             <Button
                                                 fullWidth
                                                 variant="outlined"
                                                 startIcon={<Trash2 size={14} />}
-                                                disabled={selectedItem.approvalStatus === 'APPROVED' || selectedItem.meetingStatus === 'SCHEDULED' || selectedItem.status === 'PUBLISHED'}
                                                 onClick={() => {
                                                     if (window.confirm(`Are you sure you want to decommission this ${selectedItem.type}?`)) {
                                                         onDelete?.(selectedItem);
