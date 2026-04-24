@@ -24,6 +24,18 @@ export async function processSyncDaemon() {
 
     isSyncing = true;
 
+    // --- AUTO-RECOVERY: RESET FAILED JOBS ON STARTUP ---
+    // If the backend was patched, we want previously blocked (400) items to retry automatically.
+    try {
+        const failedJobs = await db.syncQueue.where('status').equals('FAILED').toArray();
+        if (failedJobs.length > 0) {
+            console.info(`[Palace-Daemon] Found ${failedJobs.length} failed jobs. Attempting auto-recovery reset.`);
+            await db.syncQueue.where('status').equals('FAILED').modify({ status: 'PENDING', retryCount: 0 });
+        }
+    } catch (recoverErr) {
+        console.error('[Palace-Daemon] Recovery sweep failed', recoverErr);
+    }
+
     try {
         // 1. PULL DOWNSTREAM 
         // Sync full records if online and pull any updates
