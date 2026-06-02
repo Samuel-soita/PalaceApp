@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
 import { logAction } from '../../utils/audit.service.js';
 import { NotificationEngine } from '../../utils/NotificationEngine.js';
+import { broadcastSync } from '../../utils/socket.js';
 
 export const getAllPartnerships = async (req: any, res: Response) => {
     const { id: userId, role, canManagePartnerships } = req.user;
@@ -139,6 +140,8 @@ export const addLedgerTransaction = async (req: any, res: Response) => {
             deliveryChannel: 'IN_APP' // Expands to SMS/EMAIL in jobs
         });
 
+        broadcastSync('partnerships');
+
         res.status(201).json({ 
             message: 'Ledger transaction cryptographically bound and reconciled.', 
             partnership: updatedPartnership,
@@ -175,6 +178,7 @@ export const deletePartnership = async (req: any, res: Response) => {
             ipAddress: req.ip
         });
         
+        broadcastSync('partnerships');
         res.json({ message: 'Partnership record dissolved.' });
     } catch (error) {
         res.status(500).json({ error: 'Failed to dissolve partnership.' });
@@ -228,6 +232,7 @@ export const updatePartnership = async (req: any, res: Response) => {
             deliveryChannel: 'IN_APP'
         });
 
+        broadcastSync('partnerships');
         res.json({ message: 'Partnership commitment updated.', partnership: updatedPartnership });
     } catch (error) {
         console.error('Update Error:', error);

@@ -5,6 +5,7 @@ import { AuthRequest } from '../../middleware/auth.middleware.js';
 import { getOrSetCache } from '../../utils/redis.js';
 import redis from '../../utils/redis.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
+import { broadcastSync } from '../../utils/socket.js';
 
 export const getPlans = catchAsync(async (req: AuthRequest, res: Response) => {
     const { departmentId, isMajor, page = '1', limit = '10' } = req.query;
@@ -249,4 +250,5 @@ export const deletePlan = catchAsync(async (req: AuthRequest, res: Response) => 
 async function invalidatePlanCache() {
     const keys = await redis.keys('plans:*');
     if (keys.length > 0) await redis.del(...keys);
+    broadcastSync('plans');
 }

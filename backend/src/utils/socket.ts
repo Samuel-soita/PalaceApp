@@ -38,3 +38,9 @@ export const emitNotification = (userId: string, data: any) => {
         io.to(`user-${userId}`).emit('notification', data);
     }
 };
+
+export const broadcastSync = (moduleName: string) => {
+    if (io) {
+        io.emit('sync-update', { module: moduleName, timestamp: Date.now() });
+    }
+};

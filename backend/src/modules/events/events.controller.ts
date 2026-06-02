@@ -5,6 +5,7 @@ import { logAudit } from '../../utils/audit.js';
 import { getOrSetCache } from '../../utils/redis.js';
 import redis from '../../utils/redis.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
+import { broadcastSync } from '../../utils/socket.js';
 
 export const getEvents = catchAsync(async (req: AuthRequest, res: Response) => {
     const { departmentId, isMajor, page = '1', limit = '10' } = req.query;
@@ -282,4 +283,5 @@ export const deleteEvent = catchAsync(async (req: AuthRequest, res: Response) =>
 async function invalidateEventCache() {
     const keys = await redis.keys('events:*');
     if (keys.length > 0) await redis.del(...keys);
+    broadcastSync('events');
 }

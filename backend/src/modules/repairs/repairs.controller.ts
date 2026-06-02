@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
 import { logAudit } from '../../utils/audit.js';
+import { broadcastSync } from '../../utils/socket.js';
 
 export const createRepairRequest = async (req: Request, res: Response) => {
     try {
@@ -51,6 +52,7 @@ export const createRepairRequest = async (req: Request, res: Response) => {
             await prisma.notification.createMany({ data: notifications });
         }
 
+        broadcastSync('repairs');
         res.status(201).json(repair);
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Failed to create repair request' });
@@ -139,6 +141,7 @@ export const approveRepair = async (req: Request, res: Response) => {
             });
         }
 
+        broadcastSync('repairs');
         res.json(updated);
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Failed to approve' });
@@ -199,6 +202,7 @@ export const updateRepair = async (req: Request, res: Response) => {
             }
         });
 
+        broadcastSync('repairs');
         res.json(updated);
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Update failed' });
@@ -222,6 +226,7 @@ export const deleteRepair = async (req: Request, res: Response) => {
         }
 
         await prisma.technicalRepair.delete({ where: { id } });
+        broadcastSync('repairs');
         res.json({ message: 'Repair decommissioned.' });
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Delete failed' });
