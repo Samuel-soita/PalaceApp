@@ -122,6 +122,8 @@ function LeaderGuard({ children }: { children: React.ReactNode }) {
 import { PermissionService } from './lib/PermissionService';
 import { DeviceService } from './lib/DeviceService';
 import PublicUpdateToast from './components/PublicUpdateToast';
+import { socket, connectSocket } from './utils/socket';
+import { processSyncDaemon } from './lib/pwa-sync';
 
 function App() {
     const { user } = useAuth();
@@ -140,7 +142,17 @@ function App() {
 
         if (user) {
             initKernel();
+            connectSocket(user.id);
+            
+            socket.on('sync-update', (data) => {
+                console.log('[Palace-Daemon] Real-time sync update received for module:', data?.module);
+                processSyncDaemon();
+            });
         }
+        
+        return () => {
+            socket.off('sync-update');
+        };
     }, [user]);
 
     return (

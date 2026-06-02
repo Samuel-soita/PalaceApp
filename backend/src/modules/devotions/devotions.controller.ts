@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
 import { logAction } from '../../utils/audit.service.js';
+import { broadcastSync } from '../../utils/socket.js';
 
 export const getDailyDevotion = async (req: Request, res: Response) => {
     try {
@@ -36,6 +37,7 @@ export const interactWithDevotion = async (req: any, res: Response) => {
 
         if (existing) {
             await prisma.devotionInteraction.delete({ where: { id: existing.id } });
+            broadcastSync('devotions');
             return res.json({ message: 'Interaction removed.' });
         }
 
@@ -51,6 +53,7 @@ export const interactWithDevotion = async (req: any, res: Response) => {
             metadata: { value }
         });
 
+        broadcastSync('devotions');
         res.json({ message: 'Interaction recorded.', interaction });
     } catch (error) {
         console.error('[Devotion Interaction Error]', error);
@@ -130,6 +133,7 @@ export const createDevotion = async (req: Request, res: Response) => {
             afterState: { devotion, affirmation }
         });
 
+        broadcastSync('devotions');
         res.json({ success: true, data: { devotion, affirmation } });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });

@@ -4,6 +4,7 @@ import { getOrSetCache } from '../../utils/redis.js';
 import redis from '../../utils/redis.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
 import { logAudit } from '../../utils/audit.js';
+import { broadcastSync } from '../../utils/socket.js';
 
 export const createMeeting = catchAsync(async (req: any, res: Response) => {
     const user = req.user;
@@ -44,6 +45,7 @@ export const createMeeting = catchAsync(async (req: any, res: Response) => {
     // Invalidate Cache
     const keys = await redis.keys('meetings:*');
     if (keys.length > 0) await redis.del(...keys);
+    broadcastSync('meetings');
 
     res.status(201).json(meeting);
 });
@@ -154,6 +156,7 @@ export const updateMeeting = catchAsync(async (req: Request, res: Response) => {
     // Invalidate Cache
     const keys = await redis.keys('meetings:*');
     if (keys.length > 0) await redis.del(...keys);
+    broadcastSync('meetings');
 
     res.json(updatedMeeting);
 });
@@ -189,6 +192,7 @@ export const deleteMeeting = catchAsync(async (req: Request, res: Response) => {
     // Invalidate Cache
     const keys = await redis.keys('meetings:*');
     if (keys.length > 0) await redis.del(...keys);
+    broadcastSync('meetings');
 
     res.json({ message: 'Meeting deleted successfully' });
 });

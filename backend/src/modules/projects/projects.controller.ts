@@ -5,6 +5,7 @@ import { getOrSetCache } from '../../utils/redis.js';
 import redis from '../../utils/redis.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
+import { broadcastSync } from '../../utils/socket.js';
 
 /**
  * 🔍 Fetch Projects with multi-role visibility scoping
@@ -285,4 +286,5 @@ export const addProjectUpdate = catchAsync(async (req: AuthRequest, res: Respons
 async function invalidateProjectCache() {
     const keys = await redis.keys('projects:*');
     if (keys.length > 0) await redis.del(...keys);
+    broadcastSync('projects');
 }

@@ -1,5 +1,5 @@
 import prisma from './prisma.js';
-import { emitNotification, emitToRoom } from './socket.js';
+import { emitNotification, emitToRoom, broadcastSync } from './socket.js';
 
 interface NotificationPayload {
     userId?: string;
@@ -38,6 +38,7 @@ export class NotificationEngine {
                 } else {
                     await this.queueExternalDelivery(users, payload, deliveryChannel);
                 }
+                broadcastSync('notifications');
                 return;
             }
 
@@ -58,6 +59,7 @@ export class NotificationEngine {
                 } else {
                     await this.queueExternalDelivery(users, payload, deliveryChannel);
                 }
+                broadcastSync('notifications');
                 return;
             }
 
@@ -78,6 +80,7 @@ export class NotificationEngine {
                 } else {
                     if (user) await this.queueExternalDelivery([user], payload, deliveryChannel);
                 }
+                broadcastSync('notifications');
                 return;
             }
 

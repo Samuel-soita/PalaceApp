@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { catchAsync, AppError } from '../../utils/errors.js';
 import { logAudit } from '../../utils/audit.js';
+import { broadcastSync } from '../../utils/socket.js';
 
 // Helper to physically purge files and auto-delete > 10 days downloaded reports
 const purgeStaleReports = async () => {
@@ -73,6 +74,7 @@ export const createReport = catchAsync(async (req: Request, res: Response) => {
     });
 
     await logAudit(user.id, 'CREATE', 'DEPARTMENT_REPORT', report.id, { type, departmentId: targetDeptId });
+    broadcastSync('reports');
 
     res.status(201).json(report);
 });
@@ -169,6 +171,7 @@ export const deleteReport = catchAsync(async (req: Request, res: Response) => {
 
     await prisma.departmentReport.delete({ where: { id } });
     await logAudit((req as any).user.id, 'DELETE', 'DEPARTMENT_REPORT', id, { type: report.type });
+    broadcastSync('reports');
 
     res.json({ message: 'Report hard deleted successfully' });
 });

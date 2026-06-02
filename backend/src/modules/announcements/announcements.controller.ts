@@ -5,6 +5,8 @@ import { logAudit } from '../../utils/audit.js';
 import { getOrSetCache, invalidateCache } from '../../utils/redis.js';
 import { hasPermission } from '../../utils/permissions.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
+import { broadcastSync } from '../../utils/socket.js';
+import redis from '../../utils/redis.js';
 
 export const getAnnouncements = catchAsync(async (req: Request, res: Response) => {
     const { departmentId, isGlobal, isMajor, page = '1', limit = '10' } = req.query;
@@ -158,6 +160,8 @@ export const createAnnouncement = catchAsync(async (req: AuthRequest, res: Respo
 
     await logAudit(user.id, 'CREATE', 'ANNOUNCEMENT', announcement.id, { title, isGlobal });
 
+    await invalidateAnnouncementCache();
+
     res.status(201).json(announcement);
 });
 
@@ -181,6 +185,8 @@ export const updateAnnouncement = catchAsync(async (req: Request, res: Response)
     });
 
     await logAudit(user.id, 'UPDATE', 'ANNOUNCEMENT', updated.id, req.body);
+
+    await invalidateAnnouncementCache();
 
     res.json(updated);
 });
@@ -209,5 +215,14 @@ export const deleteAnnouncement = catchAsync(async (req: Request, res: Response)
     });
 
     await logAudit(user.id, 'DELETE', 'ANNOUNCEMENT', announcement.id, { title: announcement.title });
+    
+    await invalidateAnnouncementCache();
+
     res.json({ message: 'Announcement deleted successfully' });
 });
+
+async function invalidateAnnouncementCache() {
+    const keys = await redis.keys('announcements:*');
+    if (keys.length > 0) await redis.del(...keys);
+    broadcastSync('announcements');
+}
