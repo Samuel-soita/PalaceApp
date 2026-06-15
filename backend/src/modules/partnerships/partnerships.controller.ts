@@ -232,6 +232,10 @@ export const updatePartnership = async (req: any, res: Response) => {
             });
         });
 
+        if (!updatedPartnership) {
+            return res.status(404).json({ error: 'Partnership not found after update.' });
+        }
+
         await logAction({
             actorId,
             actorRole: req.user.role,
