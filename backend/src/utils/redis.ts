@@ -51,6 +51,9 @@ const initializeRedis = () => {
             const client = new Redis(process.env.REDIS_URL, {
                 maxRetriesPerRequest: 1,
                 connectTimeout: 5000,
+                commandTimeout: 3000,
+                enableOfflineQueue: false,
+                lazyConnect: true,
                 retryStrategy: (times: number) => {
                     const delay = Math.min(times * 200, 2000);
                     if (times > MAX_FAILURES) {
@@ -183,6 +186,14 @@ export async function setCachedData(key: string, data: any, ttlSeconds: number =
     }
 }
 
+const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> =>
+    Promise.race([
+        promise,
+        new Promise<T>((_, reject) =>
+            setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+        ),
+    ]);
+
 /**
  * Invalidate Cache (supports glob patterns if needed, though this is simple del)
  */
@@ -190,14 +201,16 @@ export async function invalidateCache(pattern: string) {
     try {
         if (redis.status !== 'ready') return;
 
-        if (pattern.includes('*')) {
-            const keys = await redis.keys(pattern);
-            if (keys.length > 0) {
-                await redis.del(...keys);
+        await withTimeout((async () => {
+            if (pattern.includes('*')) {
+                const keys = await redis.keys(pattern);
+                if (keys.length > 0) {
+                    await redis.del(...keys);
+                }
+            } else {
+                await redis.del(pattern);
             }
-        } else {
-            await redis.del(pattern);
-        }
+        })(), 3000, `Cache invalidation (${pattern})`);
     } catch (error) {
         console.error(`[Cache Invalidation Error] ${pattern}:`, error);
     }

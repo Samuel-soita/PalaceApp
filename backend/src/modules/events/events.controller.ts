@@ -2,8 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
 import prisma from '../../utils/prisma.js';
 import { logAudit } from '../../utils/audit.js';
-import { getOrSetCache } from '../../utils/redis.js';
-import redis from '../../utils/redis.js';
+import { getOrSetCache, invalidateCache } from '../../utils/redis.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
 import { isGlobalOperator, resolveTargetDepartmentId } from '../../utils/department-accounts.js';
 import { canAutoPublishContent } from '../../utils/approval-utils.js';
@@ -330,8 +329,6 @@ export const deleteEvent = catchAsync(async (req: AuthRequest, res: Response) =>
         throw new AppError('Approved events are locked and cannot be deleted.', 403);
     }
 
-    // Avoid interactive transactions for simple soft-delete (prevents P2028 under sync load)
-    await prisma.eventApproval.deleteMany({ where: { eventId: req.params.id } });
     await prisma.event.update({
         where: { id: req.params.id },
         data: {
@@ -341,10 +338,9 @@ export const deleteEvent = catchAsync(async (req: AuthRequest, res: Response) =>
         },
     });
 
-    await logAudit(user.id, 'DELETE', 'EVENT', event.id, { title: event.title }, req.ip, req.get('user-agent'));
+    logAudit(user.id, 'DELETE', 'EVENT', event.id, { title: event.title }, req.ip, req.get('user-agent'));
 
-    // Invalidate Event Cache
-    await invalidateEventCache();
+    void invalidateEventCache();
 
     res.json({ message: 'Event deleted successfully' });
 });
@@ -352,6 +348,5 @@ export const deleteEvent = catchAsync(async (req: AuthRequest, res: Response) =>
  * ⚡ Cache Invalidation Helper
  */
 async function invalidateEventCache() {
-    const keys = await redis.keys('events:*');
-    if (keys.length > 0) await redis.del(...keys);
+    void invalidateCache('events:*');
 }

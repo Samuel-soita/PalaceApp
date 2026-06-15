@@ -58,14 +58,16 @@ app.use(compression({
         return compression.filter(req, res);
     }
 }));
+const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'https://palace-app-livid.vercel.app',
+    'https://palacehub.vercel.app',
+    'https://prayer-palace.vercel.app',
+];
+
 app.use(cors({
-    origin: [
-        'http://localhost:3000',
-        'http://localhost:5173',
-        'https://palace-app-livid.vercel.app',
-        'https://palacehub.vercel.app',
-        'https://prayer-palace.vercel.app'
-    ],
+    origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Idempotency-Key', 'X-Device-Id', 'X-Client-Version', 'X-Platform']
@@ -189,6 +191,12 @@ if (useCluster && cluster.isPrimary) {
     // --- SOPHISTICATED GLOBAL ERROR HANDLER ---
     app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
         TelemetryEngine.incrementError();
+
+        const origin = req.headers.origin;
+        if (origin && allowedOrigins.includes(origin)) {
+            res.setHeader('Access-Control-Allow-Origin', origin);
+            res.setHeader('Access-Control-Allow-Credentials', 'true');
+        }
         
         let statusCode = err.statusCode || 500;
         let message = err.message || 'Mission Integrity Compromised: System Error Detected.';
@@ -208,6 +216,10 @@ if (useCluster && cluster.isPrimary) {
         if (err.code === 'P2002') {
             statusCode = 409;
             message = `Conflict: A record with this unique identifier already exists (${err.meta?.target})`;
+        }
+        if (err.code === 'P2028') {
+            statusCode = 503;
+            message = 'Database is busy. Please retry in a moment.';
         }
 
         // 3. Handle JWT Errors

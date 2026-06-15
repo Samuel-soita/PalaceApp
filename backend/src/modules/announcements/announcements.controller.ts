@@ -302,14 +302,13 @@ export const deleteAnnouncement = catchAsync(async (req: Request, res: Response)
         throw new AppError('Published announcements are locked and cannot be deleted.', 403);
     }
 
-    // Avoid interactive transactions for simple soft-delete (prevents P2028 under sync load)
-    await prisma.announcementApproval.deleteMany({ where: { announcementId: req.params.id } });
+    // Single soft-delete — no transaction or approval purge (prevents P2028 / pool exhaustion)
     await prisma.announcement.update({
         where: { id: req.params.id },
         data: { deletedAt: new Date() },
     });
 
-    await invalidateCache('announcements:*');
-    await logAudit(user.id, 'DELETE', 'ANNOUNCEMENT', announcement.id, { title: announcement.title });
+    void invalidateCache('announcements:*');
+    logAudit(user.id, 'DELETE', 'ANNOUNCEMENT', announcement.id, { title: announcement.title });
     res.json({ message: 'Announcement deleted successfully' });
 });

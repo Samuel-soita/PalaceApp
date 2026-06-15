@@ -2,8 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
 import { logAudit } from '../../utils/audit.js';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
-import { getOrSetCache } from '../../utils/redis.js';
-import redis from '../../utils/redis.js';
+import { getOrSetCache, invalidateCache } from '../../utils/redis.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
 import { isGlobalOperator, resolveTargetDepartmentId } from '../../utils/department-accounts.js';
 import { canAutoPublishContent, bishopRoleApproved } from '../../utils/approval-utils.js';
@@ -326,8 +325,6 @@ export const deletePlan = catchAsync(async (req: AuthRequest, res: Response) => 
         throw new AppError('Approved plans require High Authorization to decommission.', 403);
     }
 
-    // Avoid interactive transactions for simple soft-delete (prevents P2028 under sync load)
-    await prisma.planApproval.deleteMany({ where: { planId: req.params.id } });
     await prisma.plan.update({
         where: { id: req.params.id },
         data: {
@@ -336,9 +333,9 @@ export const deletePlan = catchAsync(async (req: AuthRequest, res: Response) => 
         },
     });
 
-    await logAudit(user.id, 'DELETE', 'PLAN', plan.id, { title: plan.title }, req.ip, req.get('user-agent'));
+    logAudit(user.id, 'DELETE', 'PLAN', plan.id, { title: plan.title }, req.ip, req.get('user-agent'));
 
-    await invalidatePlanCache();
+    void invalidatePlanCache();
 
     res.json({ message: 'Plan deleted successfully' });
 });
@@ -347,6 +344,5 @@ export const deletePlan = catchAsync(async (req: AuthRequest, res: Response) => 
  * ⚡ Cache Invalidation Helper
  */
 async function invalidatePlanCache() {
-    const keys = await redis.keys('plans:*');
-    if (keys.length > 0) await redis.del(...keys);
+    void invalidateCache('plans:*');
 }
