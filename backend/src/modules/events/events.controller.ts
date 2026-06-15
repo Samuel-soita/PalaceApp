@@ -330,18 +330,15 @@ export const deleteEvent = catchAsync(async (req: AuthRequest, res: Response) =>
         throw new AppError('Approved events are locked and cannot be deleted.', 403);
     }
 
-    await prisma.$transaction(async (tx) => {
-        await tx.event.update({
-            where: { id: req.params.id },
-            data: { 
-                deletedAt: new Date(),
-                deletedBy: user.id,
-                deletedReason: req.body.reason || 'Decommissioned by Sector Command'
-            }
-        });
-        
-        // Remove related hard-delete records
-        await tx.eventApproval.deleteMany({ where: { eventId: req.params.id } });
+    // Avoid interactive transactions for simple soft-delete (prevents P2028 under sync load)
+    await prisma.eventApproval.deleteMany({ where: { eventId: req.params.id } });
+    await prisma.event.update({
+        where: { id: req.params.id },
+        data: {
+            deletedAt: new Date(),
+            deletedBy: user.id,
+            deletedReason: req.body.reason || 'Decommissioned by Sector Command',
+        },
     });
 
     await logAudit(user.id, 'DELETE', 'EVENT', event.id, { title: event.title }, req.ip, req.get('user-agent'));

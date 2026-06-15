@@ -15,6 +15,10 @@ if (dbUrl) {
 
 const basePrisma = new PrismaClient({
   log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+  transactionOptions: {
+    maxWait: 20000,
+    timeout: 60000,
+  },
 });
 
 /**

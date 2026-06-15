@@ -326,17 +326,14 @@ export const deletePlan = catchAsync(async (req: AuthRequest, res: Response) => 
         throw new AppError('Approved plans require High Authorization to decommission.', 403);
     }
 
-    await prisma.$transaction(async (tx) => {
-        await tx.plan.update({
-            where: { id: req.params.id },
-            data: { 
-                deletedAt: new Date(),
-                deletedBy: user.id
-            }
-        });
-        
-        // Remove approvals
-        await tx.planApproval.deleteMany({ where: { planId: req.params.id } });
+    // Avoid interactive transactions for simple soft-delete (prevents P2028 under sync load)
+    await prisma.planApproval.deleteMany({ where: { planId: req.params.id } });
+    await prisma.plan.update({
+        where: { id: req.params.id },
+        data: {
+            deletedAt: new Date(),
+            deletedBy: user.id,
+        },
     });
 
     await logAudit(user.id, 'DELETE', 'PLAN', plan.id, { title: plan.title }, req.ip, req.get('user-agent'));
