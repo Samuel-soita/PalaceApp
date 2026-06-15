@@ -1,11 +1,11 @@
 import { db, SyncJob } from './db';
 import api from './api-client';
 import { DeviceService } from './DeviceService';
-import { handleSessionExpired, isSessionActive, expireSessionIfNeeded } from './auth-session';
+import { handleSessionExpired, isOnlineSessionActive, expireSessionIfNeeded } from './auth-session';
 
 /**
  * Local-first sync daemon — pull server state into Dexie, push syncQueue upstream.
- * Tuned for low CPU/network use: longer interval, tab-aware, batched pulls, throttled errors.
+ * Only runs with a valid online JWT; modules sync sequentially to avoid 401 bursts.
  */
 
 const SYNC_INTERVAL_MS = 30_000;
@@ -15,6 +15,8 @@ const ERROR_THROTTLE_MS = 60_000;
 let isSyncing = false;
 let lastRunAt = 0;
 let pullAborted = false;
+let syncDaemonStarted = false;
+let syncIntervalId: ReturnType<typeof setInterval> | null = null;
 let lastSyncTimestamp = Number(localStorage.getItem('palace-last-sync') || 0);
 const recentSyncErrors = new Map<string, number>();
 
@@ -22,23 +24,29 @@ function shouldSkipSync(): boolean {
     if (isSyncing || !navigator.onLine) return true;
     if (typeof document !== 'undefined' && document.hidden) return true;
     if (expireSessionIfNeeded()) return true;
-    if (!isSessionActive()) return true;
+    if (!isOnlineSessionActive()) return true;
     if (Date.now() - lastRunAt < MIN_SYNC_GAP_MS) return true;
     return false;
 }
 
 function notifySyncError(path: string, status?: number) {
+    if (status === 401) return;
     const key = `${path}:${status ?? 'unknown'}`;
     const last = recentSyncErrors.get(key) ?? 0;
     if (Date.now() - last < ERROR_THROTTLE_MS) return;
     recentSyncErrors.set(key, Date.now());
     window.dispatchEvent(new CustomEvent('pwa-sync-error', {
-        detail: { path, status, message: status === 401 ? 'Authentication Required' : 'Server Error' },
+        detail: { path, status, message: 'Server Error' },
     }));
 }
 
 function notifySyncHealthy() {
     window.dispatchEvent(new CustomEvent('pwa-sync-healthy'));
+}
+
+function abortPullSync(reason = 'Session expired') {
+    pullAborted = true;
+    handleSessionExpired(reason);
 }
 
 async function syncModule(
@@ -47,7 +55,7 @@ async function syncModule(
     isFullSync = false,
     sinceQuery: { params: { since: string } }
 ): Promise<boolean> {
-    if (pullAborted || !isSessionActive()) return false;
+    if (pullAborted || !isOnlineSessionActive()) return false;
     try {
         const res = await api.get(path, isFullSync ? {} : sinceQuery);
         const data = isFullSync ? (res.data.data || res.data) : res.data.data;
@@ -57,12 +65,9 @@ async function syncModule(
         return true;
     } catch (err: any) {
         const status = err.response?.status;
-        const isAuthError = status === 401 || err.code === 'SESSION_EXPIRED';
+        const isAuthError = status === 401 || err.code === 'SESSION_EXPIRED' || err.code === 'OFFLINE_SESSION';
         if (isAuthError) {
-            pullAborted = true;
-            if (status === 401) {
-                handleSessionExpired(err.response?.data?.error || 'Session expired');
-            }
+            abortPullSync(err.response?.data?.error || 'Session expired');
             return false;
         }
         console.warn(`[Palace-Daemon] Module sync failed: ${path}`, err.message);
@@ -73,16 +78,17 @@ async function syncModule(
 
 async function runPullSync() {
     pullAborted = false;
+    if (!isOnlineSessionActive()) return;
+
     const sinceQuery = { params: { since: new Date(lastSyncTimestamp).toISOString() } };
     const userStr = localStorage.getItem('user');
     const user = userStr ? JSON.parse(userStr) : null;
     const isAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA', 'PASTOR'].includes(user?.role);
     const isLeader = user?.role === 'DEPARTMENT_LEADER';
 
-    // Phase 1: infrastructure (sequential — small, required first)
     const infraOk = await syncModule('/departments', db.departments, true, sinceQuery);
+    if (pullAborted) return;
 
-    // Phase 2: core comms (batched parallel — max 4 at a time)
     const coreModules: Array<[string, any]> = [
         ['/sync/events', db.events],
         ['/sync/announcements', db.announcements],
@@ -93,23 +99,16 @@ async function runPullSync() {
     ];
 
     let coreSuccess = 0;
-    for (let i = 0; i < coreModules.length; i += 4) {
+    for (const [path, table] of coreModules) {
         if (pullAborted) break;
-        const batch = coreModules.slice(i, i + 4);
-        const batchResults = await Promise.all(
-            batch.map(([path, table]) => syncModule(path, table, false, sinceQuery))
-        );
-        coreSuccess += batchResults.filter(Boolean).length;
+        if (await syncModule(path, table, false, sinceQuery)) coreSuccess++;
     }
 
     if (pullAborted) return;
 
-    // Covenant partnerships — every signed-in user pulls their own record (admins get all)
     const partnershipOk = await syncModule('/sync/partnerships', db.partnerships, false, sinceQuery);
-
     if (pullAborted) return;
 
-    // Phase 3: secondary modules (only for privileged roles — reduces member load)
     let secondarySuccess = 0;
     if (isAdmin || isLeader) {
         const secondary: Array<[string, any] | null> = [
@@ -125,14 +124,10 @@ async function runPullSync() {
             (user?.role === 'WATUA' || user?.role === 'SUPER_ADMIN') ? ['/sync/audit_logs', db.auditLogs] : null,
         ];
 
-        const active = secondary.filter(Boolean) as Array<[string, any]>;
-        for (let i = 0; i < active.length; i += 4) {
+        for (const entry of secondary.filter(Boolean) as Array<[string, any]>) {
             if (pullAborted) break;
-            const batch = active.slice(i, i + 4);
-            const batchResults = await Promise.all(
-                batch.map(([path, table]) => syncModule(path, table, false, sinceQuery))
-            );
-            secondarySuccess += batchResults.filter(Boolean).length;
+            const [path, table] = entry;
+            if (await syncModule(path, table, false, sinceQuery)) secondarySuccess++;
         }
     }
 
@@ -144,13 +139,13 @@ async function runPullSync() {
 }
 
 async function runPushSync() {
+    if (!isOnlineSessionActive()) return;
+
     const deviceId = await DeviceService.getDeviceId();
 
-    // Reset previously failed jobs so patched backends can retry automatically
     try {
         const failedJobs = await db.syncQueue.where('status').equals('FAILED').toArray();
         if (failedJobs.length > 0) {
-            console.info(`[Palace-Daemon] Found ${failedJobs.length} failed jobs. Attempting auto-recovery reset.`);
             await db.syncQueue.where('status').equals('FAILED').modify({ status: 'PENDING', retryCount: 0 });
         }
     } catch (recoverErr) {
@@ -160,6 +155,7 @@ async function runPushSync() {
     const queue = await db.syncQueue.orderBy('timestamp').toArray();
 
     for (const job of queue) {
+        if (pullAborted || !isOnlineSessionActive()) break;
         if (job.status === 'SYNCED' || job.status === 'FAILED') continue;
 
         if (job.status === 'RETRYING') {
@@ -270,11 +266,8 @@ async function runPushSync() {
             const status = pushErr?.response?.status;
             const errorMessage = pushErr?.response?.data?.message || pushErr.message;
 
-            if (status === 401 || pushErr?.code === 'SESSION_EXPIRED') {
-                pullAborted = true;
-                if (status === 401) {
-                    handleSessionExpired(pushErr?.response?.data?.error || 'Session expired');
-                }
+            if (status === 401 || pushErr?.code === 'SESSION_EXPIRED' || pushErr?.code === 'OFFLINE_SESSION') {
+                abortPullSync(pushErr?.response?.data?.error || 'Session expired');
                 break;
             }
 
@@ -317,23 +310,52 @@ export async function processSyncDaemon() {
 
     try {
         await runPullSync();
-        await runPushSync();
+        if (!pullAborted) await runPushSync();
     } finally {
         isSyncing = false;
     }
 }
 
-if (typeof window !== 'undefined') {
-    window.addEventListener('online', () => setTimeout(processSyncDaemon, 500));
-    document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) setTimeout(processSyncDaemon, 500);
-    });
+function onOnline() {
+    if (isOnlineSessionActive()) setTimeout(processSyncDaemon, 500);
+}
 
-    setInterval(() => {
-        if (navigator.onLine) processSyncDaemon();
+function onVisible() {
+    if (!document.hidden && isOnlineSessionActive()) setTimeout(processSyncDaemon, 500);
+}
+
+function onSessionExpired() {
+    stopSyncDaemon();
+}
+
+/** Start background sync — only call when a valid online JWT is present. */
+export function startSyncDaemon() {
+    if (syncDaemonStarted || typeof window === 'undefined') return;
+    if (!isOnlineSessionActive()) return;
+
+    syncDaemonStarted = true;
+    window.addEventListener('online', onOnline);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('auth:session-expired', onSessionExpired);
+
+    syncIntervalId = setInterval(() => {
+        if (navigator.onLine && isOnlineSessionActive()) processSyncDaemon();
     }, SYNC_INTERVAL_MS);
 
-    setTimeout(processSyncDaemon, 1500);
+    setTimeout(processSyncDaemon, 2000);
+}
+
+/** Stop all scheduled sync work (logout / session expired). */
+export function stopSyncDaemon() {
+    pullAborted = true;
+    syncDaemonStarted = false;
+    if (syncIntervalId) {
+        clearInterval(syncIntervalId);
+        syncIntervalId = null;
+    }
+    window.removeEventListener('online', onOnline);
+    document.removeEventListener('visibilitychange', onVisible);
+    window.removeEventListener('auth:session-expired', onSessionExpired);
 }
 
 export const processQueue = processSyncDaemon;
@@ -365,9 +387,9 @@ export async function getQueuedActions() {
     return db.syncQueue.toArray();
 }
 
-/** Force immediate sync after local mutations (debounced). */
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 export function requestSyncSoon() {
+    if (!isOnlineSessionActive()) return;
     if (flushTimer) clearTimeout(flushTimer);
     flushTimer = setTimeout(() => {
         lastRunAt = 0;

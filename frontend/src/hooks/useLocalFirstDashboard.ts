@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import api from '../lib/api-client';
 import { db } from '../lib/db';
 import { useAuth } from '../contexts/AuthContext';
-import { isSessionActive } from '../lib/auth-session';
+import { isOnlineSessionActive } from '../lib/auth-session';
 
 /**
  * Local-first dashboard engine — instant Dexie load, background API hydration.
@@ -104,7 +104,7 @@ export function useLocalFirstDashboard(departmentId?: string) {
             },
         };
     }, {
-        enabled: !!user && isSessionActive(),
+        enabled: !!user && isOnlineSessionActive(),
         refetchInterval: navigator.onLine ? 60000 : false,
         staleTime: 30000,
         placeholderData: localData,

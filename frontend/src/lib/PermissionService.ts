@@ -1,6 +1,7 @@
 import { db, LocalRole, LocalPermission } from './db';
 import { DeviceService } from './DeviceService';
 import api from './api-client';
+import { isOnlineSessionActive } from './auth-session';
 
 /**
  * 🔒 Local-First Permission Engine (Dynamic Cloud Sync Mode)
@@ -58,6 +59,7 @@ export const PermissionService = {
      * Gracefully falls back to cached Dexie data if offline.
      */
     async syncWithCloud() {
+        if (!isOnlineSessionActive()) return false;
         console.log('🔄 Permission Engine: Synchronizing with Cloud Kernel...');
         try {
             // 1. Fetch live data from backend

@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { LocalAuthService } from '../lib/LocalAuthService';
 import { db } from '../lib/db';
-import { expireSessionIfNeeded, isTokenExpired, resetSessionState } from '../lib/auth-session';
+import { expireSessionIfNeeded, isOnlineSessionActive, isTokenExpired, resetSessionState } from '../lib/auth-session';
+import { startSyncDaemon, stopSyncDaemon } from '../lib/pwa-sync';
+import api from '../lib/api-client';
 
 interface AuthUser {
     id: string;
@@ -52,12 +54,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [loading, setLoading] = useState(true);
 
     const logout = useCallback(() => {
+        stopSyncDaemon();
         setUser(null);
         setToken(null);
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         sessionStorage.removeItem('welcome-splash-shown');
     }, []);
+
+    useEffect(() => {
+        let active = true;
+
+        const bootSession = async () => {
+            if (!token || token.startsWith('offline_token_')) {
+                stopSyncDaemon();
+                return;
+            }
+            if (expireSessionIfNeeded()) {
+                stopSyncDaemon();
+                return;
+            }
+
+            try {
+                await api.get('/departments');
+                if (active) startSyncDaemon();
+            } catch {
+                if (active) stopSyncDaemon();
+            }
+        };
+
+        bootSession();
+        return () => {
+            active = false;
+            stopSyncDaemon();
+        };
+    }, [token]);
 
     useEffect(() => {
         setLoading(false);

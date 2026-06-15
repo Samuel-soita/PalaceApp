@@ -15,7 +15,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import api from '../../lib/api-client';
-import { isSessionActive } from '../../lib/auth-session';
+import { isOnlineSessionActive } from '../../lib/auth-session';
 import ProfileModal from '../modals/ProfileModal';
 import { useRoutePreloader } from '../../hooks/useRoutePreloader';
 import SyncIndicator from '../SyncIndicator';
@@ -197,17 +197,17 @@ export default function TopNavbar() {
         if (!user?.id) return [];
         const res = await api.get(`/notifications/user/${user.id}`);
         return res.data;
-    }, { enabled: !!user?.id && isSessionActive(), refetchInterval: isSessionActive() ? 10000 : false });
+    }, { enabled: !!user?.id && isOnlineSessionActive(), refetchInterval: isOnlineSessionActive() ? 10000 : false });
 
     const { data: departmentsData } = useQuery(['sidebar-departments'], async () => {
         const res = await api.get('/departments');
         return res.data;
-    }, { enabled: (user?.role === 'SUPER_ADMIN' || user?.role === 'WATUA') && isSessionActive(), staleTime: 300000 });
+    }, { enabled: (user?.role === 'SUPER_ADMIN' || user?.role === 'WATUA') && isOnlineSessionActive(), staleTime: 300000 });
 
     const { data: settings } = useQuery(['ministrySettings'], async () => {
         const res = await api.get('/settings');
         return res.data;
-    }, { enabled: isSessionActive(), staleTime: 300000 });
+    }, { enabled: isOnlineSessionActive(), staleTime: 300000 });
 
     const unreadCount = (notifications || []).filter((n: any) => !n.read).length || 0;
 

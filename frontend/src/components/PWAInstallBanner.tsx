@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Button, Snackbar, Alert, Typography, IconButton } from '@mui/material';
-import { X, Download, RefreshCw, Wifi, WifiOff, Shield } from 'lucide-react';
+import { X, Download, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import { usePWA } from '../hooks/usePWA';
+
+const INSTALL_HINT_KEY = 'pwa-install-hint-shown';
 
 export default function PWAInstallBanner() {
     const { needRefresh, offlineReady, canInstall, triggerInstall, updateSW, dismissUpdate, dismissInstall } = usePWA();
     const [isOnline, setIsOnline] = useState(navigator.onLine);
     const [showOfflineReady, setShowOfflineReady] = useState(false);
+    const [showInstallHint, setShowInstallHint] = useState(false);
 
     useEffect(() => {
         const goOnline = () => setIsOnline(true);
@@ -27,8 +30,50 @@ export default function PWAInstallBanner() {
         }
     }, [offlineReady]);
 
+    useEffect(() => {
+        if (!canInstall) return;
+        if (sessionStorage.getItem(INSTALL_HINT_KEY)) return;
+        sessionStorage.setItem(INSTALL_HINT_KEY, '1');
+        setShowInstallHint(true);
+    }, [canInstall]);
+
     return (
         <>
+            {/* ── Install available toast (draws attention to banner below) ── */}
+            <Snackbar
+                open={showInstallHint && canInstall}
+                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+                onClose={() => setShowInstallHint(false)}
+            >
+                <Alert
+                    severity="info"
+                    variant="filled"
+                    icon={<Download size={16} />}
+                    onClose={() => setShowInstallHint(false)}
+                    sx={{
+                        background: 'rgba(79, 139, 255, 0.95)',
+                        fontWeight: 700,
+                        fontSize: '0.85rem',
+                        border: '1px solid rgba(79,139,255,0.5)',
+                    }}
+                    action={
+                        <Button
+                            size="small"
+                            color="inherit"
+                            onClick={async () => {
+                                setShowInstallHint(false);
+                                await triggerInstall();
+                            }}
+                            sx={{ fontWeight: 900, fontSize: '0.7rem', letterSpacing: 1 }}
+                        >
+                            INSTALL NOW
+                        </Button>
+                    }
+                >
+                    Add Prayer Palace to your home screen for offline access
+                </Alert>
+            </Snackbar>
+
             {/* ── Install Banner ─────────────────────────────── */}
             {canInstall && (
                 <Box
