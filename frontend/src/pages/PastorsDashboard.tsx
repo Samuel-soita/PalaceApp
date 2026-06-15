@@ -12,6 +12,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../lib/api-client';
+import { hasPastorModule } from '../utils/pastor-modules';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { Link } from 'react-router-dom';
 import RequestBaptismModal from '../components/modals/RequestBaptismModal';
@@ -30,17 +31,14 @@ import DepartmentReportModal from '../components/modals/DepartmentReportModal';
 import { OperationalTimeline } from '../components/dashboard/OperationalTimeline';
 import { BroadcastTrack } from '../components/dashboard/BroadcastTrack';
 import { useLocalFirstDashboard } from '../hooks/useLocalFirstDashboard';
-import SyncIndicator from '../components/SyncIndicator';
+import IntelDetailModal from '../components/modals/IntelDetailModal';
 
 export default function PastorsDashboard() {
     const { user, updateUser } = useAuth();
     const queryClient = useQueryClient();
 
-    // 👨‍⚖️ Module Scoping Helper
-    const hasModule = (moduleName: string) => {
-        if (['SUPER_ADMIN', 'SYSTEM_ADMIN', 'WATUA', 'BISHOP'].includes(user?.role || '')) return true;
-        return user?.pastorModules?.some(m => m.moduleName === moduleName);
-    };
+    // 👨‍⚖️ Module Scoping Helper (bishop + 2 pastors approval still required on create)
+    const hasModule = (key: Parameters<typeof hasPastorModule>[1]) => hasPastorModule(user, key);
 
     // Pastoral Tool States
     const [baptismsOpen, setBaptismsOpen] = useState(false);
@@ -60,6 +58,7 @@ export default function PastorsDashboard() {
         message: '',
         severity: 'info'
     });
+    const [intelDetail, setIntelDetail] = useState<any>(null);
 
     // Operational Commands
     const [projectModalOpen, setProjectModalOpen] = useState(false);
@@ -88,7 +87,7 @@ export default function PastorsDashboard() {
     const devotionMutation = useMutation(async ({ type, value }: { type: string, value: string }) => {
         return await api.post(`/devotions/${devotion?.id}/interact`, { type, value });
     }, {
-        onSuccess: () => queryClient.invalidateQueries(['daily-devotion'])
+        onSuccess: () => queryClient.invalidateQueries(['dashboard-sync'])
     });
 
     const enrollPartnershipMutation = useMutation(
@@ -253,16 +252,12 @@ export default function PastorsDashboard() {
                     </Box>
                 </Box>
 
-                {/* 🛡️ MISSION GOVERNANCE & APPROVALS (Items needing action or oversight) */}
+                {/* 🛡️ APPROVAL MISSION TERMINAL (Items assigned to current user) */}
                 {(() => {
-                    const isForMe = (item: any) => 
-                        item.createdById === user?.id ||
-                        item.targetPastorId === user?.id || 
-                        (item.approvals || []).some((a: any) => a.userId === user?.id);
-
                     const pendingApprovals = [
-                        ...(syncData?.repairs || []).filter((r: any) => isForMe(r) && (r.status?.includes('PENDING') || r.status === 'WAIT_APPROVAL')).map((r: any) => ({ ...r, type: 'REPAIR' })),
-                        ...(syncData?.transactions || []).filter((t: any) => isForMe(t) && t.status?.includes('PENDING')).map((t: any) => ({ ...t, type: 'FINANCE' }))
+                        ...(syncData?.projects || []).filter((p: any) => p.targetPastorId === user?.id && p.approvalStatus === 'PENDING').map((p: any) => ({ ...p, type: 'PROJECT' })),
+                        ...(syncData?.events || []).filter((e: any) => e.targetPastorId === user?.id && e.approvalStatus === 'PENDING').map((e: any) => ({ ...e, type: 'EVENT' })),
+                        ...(syncData?.plans || []).filter((p: any) => p.targetPastorId === user?.id && p.approvalStatus === 'PENDING').map((p: any) => ({ ...p, type: 'PLAN' })),
                     ];
 
                     if (pendingApprovals.length === 0) return null;
@@ -490,7 +485,7 @@ export default function PastorsDashboard() {
                                                         <Typography variant="caption" sx={{ opacity: 0.4, fontSize: '0.6rem', fontWeight: 700 }}>
                                                             {intel.createdAt || intel.date ? new Date(intel.createdAt || intel.date).toLocaleDateString() : 'N/A'}
                                                         </Typography>
-                                                        <Button size="small" sx={{ p: 0, minWidth: 0, color: 'var(--cyan)', fontWeight: 900, fontSize: '0.65rem' }}>DETAILS</Button>
+                                                        <Button size="small" onClick={() => setIntelDetail(intel)} sx={{ p: 1, minWidth: 44, minHeight: 44, color: 'var(--cyan)', fontWeight: 900, fontSize: '0.65rem' }}>DETAILS</Button>
                                                     </Box>
                                                 </CardContent>
                                             </Card>
@@ -592,7 +587,7 @@ export default function PastorsDashboard() {
                                             </Box>
                                             <Badge badgeContent={syncData?.baptisms?.length} color="error"><ChevronRight size={18} /></Badge>
                                         </Button>
-                                        {hasModule('Child Dedication Registry') && (
+                                        {hasModule('ChildDedication') && (
                                             <Button fullWidth onClick={() => setDedicationOpen(true)} sx={{ justifyContent: 'space-between', bgcolor: 'rgba(255,255,255,0.05)', p: 2, border: '1px solid rgba(255,255,255,0.1)' }}>
                                                 <Box display="flex" alignItems="center" gap={2}>
                                                     <Baby size={20} color="orange" />
@@ -609,7 +604,7 @@ export default function PastorsDashboard() {
                                             <ChevronRight size={18} />
                                         </Button>
 
-                                        {hasModule('Partnership Management') && (
+                                        {hasModule('PartnershipManagement') && (
                                             <Button
                                                 fullWidth
                                                 onClick={() => setPartnershipManagerOpen(true)}
@@ -650,7 +645,7 @@ export default function PastorsDashboard() {
                                         <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 2 }}>STRATEGIC COMMAND ACTIONS</Typography>
                                     </Box>
                                     <Grid container spacing={2}>
-                                        {hasModule('Event Oversight') && (
+                                        {hasModule('EventOversight') && (
                                             <Grid item xs={6}>
                                                 <Button fullWidth onClick={() => setEventModalOpen(true)} sx={{ height: 60, display: 'flex', flexDirection: 'column', gap: 0.5, bgcolor: 'rgba(79, 139, 255, 0.1)', border: '1px solid var(--primary)', borderRadius: 2 }}>
                                                     <Calendar size={18} color="var(--primary)" />
@@ -658,18 +653,22 @@ export default function PastorsDashboard() {
                                                 </Button>
                                             </Grid>
                                         )}
+                                        {hasModule('ProjectOversight') && (
                                         <Grid item xs={6}>
                                             <Button fullWidth onClick={() => setProjectModalOpen(true)} sx={{ height: 60, display: 'flex', flexDirection: 'column', gap: 0.5, bgcolor: 'rgba(0, 255, 255, 0.1)', border: '1px solid var(--cyan)', borderRadius: 2 }}>
                                                 <Star size={18} color="var(--cyan)" />
                                                 <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>NEW PROJECT</Typography>
                                             </Button>
                                         </Grid>
+                                        )}
+                                        {hasModule('ProjectOversight') && (
                                         <Grid item xs={6}>
                                             <Button fullWidth onClick={() => setPlanModalOpen(true)} sx={{ height: 60, display: 'flex', flexDirection: 'column', gap: 0.5, bgcolor: 'rgba(255, 165, 0, 0.1)', border: '1px solid orange', borderRadius: 2 }}>
                                                 <BookOpen size={18} color="orange" />
                                                 <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>NEW PLAN</Typography>
                                             </Button>
                                         </Grid>
+                                        )}
                                         {hasModule('DevotionPublishing') && (
                                             <Grid item xs={6}>
                                                 <Button fullWidth onClick={() => setDevotionModalOpen(true)} sx={{ height: 60, display: 'flex', flexDirection: 'column', gap: 0.5, bgcolor: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--glass-border)', borderRadius: 2 }}>
@@ -949,7 +948,8 @@ export default function PastorsDashboard() {
             <ProjectFormModal open={projectModalOpen} onClose={() => { setProjectModalOpen(false); setEditingProject(null); }} project={editingProject} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
             <PlanFormModal open={planModalOpen} onClose={() => { setPlanModalOpen(false); setEditingPlan(null); }} plan={editingPlan} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
             <AnnouncementFormModal open={announcementModalOpen} onClose={() => { setAnnouncementModalOpen(false); setEditingAnnouncement(null); }} announcement={editingAnnouncement} onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])} />
-            <DevotionFormModal open={devotionModalOpen} onClose={() => setDevotionModalOpen(false)} onSuccess={() => { queryClient.invalidateQueries(['devotion']); setToast({ open: true, message: 'Devotion published globally.', severity: 'success' }); }} />
+            <DevotionFormModal open={devotionModalOpen} onClose={() => setDevotionModalOpen(false)} onSuccess={() => { queryClient.invalidateQueries(['dashboard-sync']); setToast({ open: true, message: 'Devotion published globally.', severity: 'success' }); }} />
+            <IntelDetailModal open={!!intelDetail} onClose={() => setIntelDetail(null)} item={intelDetail} />
 
             <Snackbar open={toast.open} autoHideDuration={6000} onClose={() => setToast({ ...toast, open: false })}>
                 <Alert severity={toast.severity} sx={{ width: '100%', fontWeight: 800 }}>{toast.message}</Alert>

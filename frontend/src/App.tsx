@@ -107,6 +107,13 @@ function PastorGuard({ children }: { children: React.ReactNode }) {
     return <Navigate to="/" replace />;
 }
 
+function ContentPagesGuard({ children }: { children: React.ReactNode }) {
+    const { user } = useAuth();
+    const canAccess = ['PASTOR', 'ASSOCIATE_PASTOR', 'SUPER_ADMIN', 'WATUA', 'SYSTEM_ADMIN', 'SECRETARY', 'DEPARTMENT_LEADER'].includes(user?.role || '');
+    if (canAccess) return <>{children}</>;
+    return <Navigate to="/" replace />;
+}
+
 function WatuaGuard({ children }: { children: React.ReactNode }) {
     const { user } = useAuth();
     if (user?.role === 'WATUA') return <>{children}</>;
@@ -122,8 +129,6 @@ function LeaderGuard({ children }: { children: React.ReactNode }) {
 import { PermissionService } from './lib/PermissionService';
 import { DeviceService } from './lib/DeviceService';
 import PublicUpdateToast from './components/PublicUpdateToast';
-import { socket, connectSocket } from './utils/socket';
-import { processSyncDaemon } from './lib/pwa-sync';
 
 function App() {
     const { user } = useAuth();
@@ -142,17 +147,7 @@ function App() {
 
         if (user) {
             initKernel();
-            connectSocket(user.id);
-            
-            socket.on('sync-update', (data) => {
-                console.log('[Palace-Daemon] Real-time sync update received for module:', data?.module);
-                processSyncDaemon();
-            });
         }
-        
-        return () => {
-            socket.off('sync-update');
-        };
     }, [user]);
 
     return (
@@ -176,9 +171,9 @@ function App() {
                 <Route path="/health" element={<PrivateRoute><ExecutiveGuard><HealthDashboard /></ExecutiveGuard></PrivateRoute>} />
                 
                 {/* PASTOR & ABOVE (Global Visibility) */}
-                <Route path="/announcements" element={<PrivateRoute><PastorGuard><Announcements /></PastorGuard></PrivateRoute>} />
-                <Route path="/calendar" element={<PrivateRoute><PastorGuard><Events /></PastorGuard></PrivateRoute>} />
-                <Route path="/projects" element={<PrivateRoute><PastorGuard><Projects /></PastorGuard></PrivateRoute>} />
+                <Route path="/announcements" element={<PrivateRoute><ContentPagesGuard><Announcements /></ContentPagesGuard></PrivateRoute>} />
+                <Route path="/calendar" element={<PrivateRoute><ContentPagesGuard><Events /></ContentPagesGuard></PrivateRoute>} />
+                <Route path="/projects" element={<PrivateRoute><ContentPagesGuard><Projects /></ContentPagesGuard></PrivateRoute>} />
                 <Route path="/pastor" element={<PrivateRoute><PastorGuard><PastorsDashboard /></PastorGuard></PrivateRoute>} />
                 
                 {/* SCOPED MISSIONS */}

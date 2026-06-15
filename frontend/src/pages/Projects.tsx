@@ -10,7 +10,9 @@ import {
 import { Plus, Edit, Trash2, Briefcase, TrendingUp, Clock } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
+import { pastorAuthorizationBlocked } from '../utils/approval-rules';
 import { isUserManagingDepartment } from '../utils/auth-options';
+import { executeApiFirstMutation } from '../lib/api-first-mutation';
 
 interface ChurchProject {
     id: string;
@@ -60,35 +62,36 @@ export default function Projects() {
     const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
     const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
-        const actionId = id || crypto.randomUUID();
-        const timestamp = Date.now();
+        const actionId = id || payload.id;
+        const { department, syncStatus, version, ...apiPayload } = payload;
 
-        if (method !== 'DELETE') {
-            await db.projects.put({ 
-                ...payload, 
-                id: actionId, 
-                syncStatus: 'PENDING',
-                version: (payload.version || 0) + 1,
-                department: departments.find(d => d.id === payload.departmentId) || { name: 'Unknown' },
-                createdAt: new Date().toISOString()
+        try {
+            await executeApiFirstMutation({
+                entity: 'PROJECT',
+                method,
+                url: method === 'POST' ? '/projects' : `/projects/${actionId}`,
+                payload: apiPayload,
+                recordId: actionId,
+                table: 'projects',
+                offlineOptimistic: async (offlineId) => {
+                    if (method === 'DELETE') {
+                        await db.projects.delete(offlineId);
+                        return;
+                    }
+                    await db.projects.put({
+                        ...payload,
+                        id: offlineId,
+                        syncStatus: 'PENDING',
+                        version: (payload.version || 0) + 1,
+                        department: departments.find(d => d.id === payload.departmentId) || { name: 'Unknown' },
+                        createdAt: new Date().toISOString(),
+                    });
+                },
             });
-        } else {
-            if (id) await db.projects.delete(id);
+            handleClose();
+        } catch (err: any) {
+            alert(err.response?.data?.error || err.message || 'Failed to save project.');
         }
-
-        await db.syncQueue.put({
-            id: crypto.randomUUID(),
-            timestamp,
-            entity: 'PROJECT',
-            method,
-            url: method === 'POST' ? '/projects' : `/projects/${actionId}`,
-            payload: { ...payload, isOfflineSync: true, localVersion: payload.version },
-            status: 'PENDING',
-            retryCount: 0,
-            errorLog: []
-        });
-
-        handleClose();
     };
 
     const handleOpen = (project: ChurchProject | null = null) => {
@@ -128,8 +131,8 @@ export default function Projects() {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!editProject && formData.pastorIds.length !== 2) {
-            alert("You must select exactly 2 Pastors to authorize this ChurchProject before deployment.");
+        if (!editProject && pastorAuthorizationBlocked(user?.role, formData.pastorIds)) {
+            alert('You must select exactly 2 Pastors to authorize this ChurchProject before deployment.');
             return;
         }
 

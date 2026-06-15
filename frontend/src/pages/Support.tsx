@@ -10,6 +10,7 @@ import {
 import { Coins, Upload, Image as ImageIcon, CheckCircle, Clock, AlertTriangle, X } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
+import { executeApiFirstMutation } from '../lib/api-first-mutation';
 
 interface SupportRequest {
     id: string;
@@ -45,44 +46,33 @@ export default function Support() {
     });
 
     const createMutation = useMutation(
-        async (data: any) => {
-            const localId = crypto.randomUUID();
-            const timestamp = Date.now();
-
-            // 🚀 Tactical Support Entry
-            await db.supportRequests.put({
-                id: localId,
-                title: data.title,
-                description: data.description,
-                eventId: data.eventId,
-                amountRequired: 1500, // Policy mandatory
-                proofImageUrl: data.proofImageUrl,
-                status: 'OPEN',
-                syncStatus: 'PENDING',
-                deviceId: localStorage.getItem('device_id') || 'UNKNOWN',
-                lastModifiedBy: 'ME',
-                version: 0,
-                createdAt: new Date().toISOString()
-            });
-
-            // 📡 Queue for Global Backing
-            await db.syncQueue.put({
-                id: crypto.randomUUID(),
-                timestamp,
-                entity: 'SUPPORT_REQUEST',
-                method: 'POST',
-                url: '/support',
-                payload: { ...data, localId },
-                status: 'PENDING',
-                retryCount: 0,
-                errorLog: []
-            });
-
-            return { data: { _queued: true } };
-        },
+        async (data: any) => executeApiFirstMutation({
+            entity: 'SUPPORT_REQUEST',
+            method: 'POST',
+            url: '/support',
+            payload: data,
+            table: 'supportRequests',
+            offlineOptimistic: async (localId) => {
+                await db.supportRequests.put({
+                    id: localId,
+                    title: data.title,
+                    description: data.description,
+                    eventId: data.eventId,
+                    amountRequired: 1500,
+                    proofImageUrl: data.proofImageUrl,
+                    status: 'OPEN',
+                    syncStatus: 'PENDING',
+                    deviceId: localStorage.getItem('device_id') || 'UNKNOWN',
+                    lastModifiedBy: 'ME',
+                    version: 0,
+                    createdAt: new Date().toISOString(),
+                });
+            },
+        }),
         {
             onSuccess: () => {
                 queryClient.invalidateQueries(['support-requests']);
+                queryClient.invalidateQueries(['dashboard-sync']);
                 setCreateOpen(false);
                 setForm({ eventId: '', title: '', description: '' });
                 setSelectedImage(null);
@@ -92,31 +82,21 @@ export default function Support() {
     );
 
     const fundMutation = useMutation(
-        async (id: string) => {
-            const timestamp = Date.now();
-            
-            // 🚀 Tactical Funding Mark
-            await db.supportRequests.update(id, { 
-                status: 'FUNDED',
-                syncStatus: 'PENDING'
-            });
-
-            // 📡 Queue for Global Sync
-            await db.syncQueue.put({
-                id: crypto.randomUUID(),
-                timestamp,
-                entity: 'SUPPORT_REQUEST',
-                method: 'PATCH',
-                url: `/support/${id}/fund`,
-                payload: {},
-                status: 'PENDING',
-                retryCount: 0,
-                errorLog: []
-            });
-
-            return { data: { _queued: true } };
-        },
-        { onSuccess: () => queryClient.invalidateQueries(['support-requests']) }
+        async (id: string) => executeApiFirstMutation({
+            entity: 'SUPPORT_REQUEST',
+            method: 'PATCH',
+            url: `/support/${id}/fund`,
+            payload: {},
+            recordId: id,
+            table: 'supportRequests',
+            offlineOptimistic: async () => {
+                await db.supportRequests.update(id, { status: 'FUNDED', syncStatus: 'PENDING' });
+            },
+        }),
+        { onSuccess: () => {
+            queryClient.invalidateQueries(['support-requests']);
+            queryClient.invalidateQueries(['dashboard-sync']);
+        } }
     );
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

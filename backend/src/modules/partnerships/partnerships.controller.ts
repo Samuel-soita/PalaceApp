@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
 import { logAction } from '../../utils/audit.service.js';
 import { NotificationEngine } from '../../utils/NotificationEngine.js';
-import { broadcastSync } from '../../utils/socket.js';
 
 export const getAllPartnerships = async (req: any, res: Response) => {
     const { id: userId, role, canManagePartnerships } = req.user;
@@ -37,6 +36,13 @@ export const addLedgerTransaction = async (req: any, res: Response) => {
     const { id: partnershipId } = req.params;
     const { amount, paymentMethod, referenceCode, transactionType = 'CREDIT' } = req.body;
     const actorId = req.user.id;
+    const { role, canManagePartnerships } = req.user;
+
+    const isGlobalReconciler = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(role);
+    const isAssignedPastor = (role === 'PASTOR' || role === 'ASSOCIATE_PASTOR') && canManagePartnerships;
+    if (!isGlobalReconciler && !isAssignedPastor) {
+        return res.status(403).json({ error: 'You are not authorized to reconcile partnership ledgers.' });
+    }
 
     if (!amount || amount <= 0) {
         return res.status(400).json({ error: 'Transaction amount must be strictly positive.' });
@@ -115,7 +121,15 @@ export const addLedgerTransaction = async (req: any, res: Response) => {
                 }
             });
 
-            return [newLedger, p];
+            const hydrated = await tx.partnership.findUnique({
+                where: { id: partnershipId },
+                include: {
+                    user: { include: { department: true } },
+                    ledgers: { orderBy: { date: 'desc' } },
+                },
+            });
+
+            return [newLedger, hydrated ?? p];
         });
 
         // Fire Audit
@@ -139,8 +153,6 @@ export const addLedgerTransaction = async (req: any, res: Response) => {
             type: 'LEDGER_RECON',
             deliveryChannel: 'IN_APP' // Expands to SMS/EMAIL in jobs
         });
-
-        broadcastSync('partnerships');
 
         res.status(201).json({ 
             message: 'Ledger transaction cryptographically bound and reconciled.', 
@@ -178,7 +190,6 @@ export const deletePartnership = async (req: any, res: Response) => {
             ipAddress: req.ip
         });
         
-        broadcastSync('partnerships');
         res.json({ message: 'Partnership record dissolved.' });
     } catch (error) {
         res.status(500).json({ error: 'Failed to dissolve partnership.' });
@@ -203,13 +214,21 @@ export const updatePartnership = async (req: any, res: Response) => {
             const newBalance = Math.max(0, Number(amount) - totalPaid);
 
             // 2. Update record
-            return tx.partnership.update({
+            await tx.partnership.update({
                 where: { id },
                 data: {
                     amount: Number(amount),
                     balance: newBalance,
                     status: newBalance === 0 ? 'COMPLETED' : 'ACTIVE'
                 }
+            });
+
+            return tx.partnership.findUnique({
+                where: { id },
+                include: {
+                    user: { include: { department: true } },
+                    ledgers: { orderBy: { date: 'desc' } },
+                },
             });
         });
 
@@ -232,7 +251,6 @@ export const updatePartnership = async (req: any, res: Response) => {
             deliveryChannel: 'IN_APP'
         });
 
-        broadcastSync('partnerships');
         res.json({ message: 'Partnership commitment updated.', partnership: updatedPartnership });
     } catch (error) {
         console.error('Update Error:', error);

@@ -7,7 +7,7 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../lib/db';
-import { Shield, Users, CheckCircle, Zap, Megaphone } from 'lucide-react';
+import { Shield, Users, CheckCircle } from 'lucide-react';
 import api from '../../lib/api-client';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -21,7 +21,6 @@ interface AnnouncementFormModalProps {
 
 export default function AnnouncementFormModal({ open, onClose, announcement, onSuccess, defaultDepartmentId }: AnnouncementFormModalProps) {
     const { user } = useAuth();
-    const [isSuccess, setIsSuccess] = useState(false);
     const [formData, setFormData] = useState({
         title: '',
         content: '',
@@ -29,7 +28,10 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
         isMajor: false,
         audience: 'DEPARTMENTAL', // 'DEPARTMENTAL' or 'CHURCH_WIDE'
         departmentId: defaultDepartmentId || user?.departmentId || '',
+        pastorIds: [] as string[]
     });
+
+    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
     useEffect(() => {
         if (announcement) {
@@ -40,6 +42,7 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                 isMajor: announcement.isMajor || false,
                 audience: announcement.isMajor ? 'CHURCH_WIDE' : 'DEPARTMENTAL',
                 departmentId: announcement.departmentId || '',
+                pastorIds: []
             });
         } else {
             setFormData({
@@ -49,9 +52,9 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                 isMajor: false,
                 audience: 'DEPARTMENTAL',
                 departmentId: defaultDepartmentId || user?.departmentId || '',
+                pastorIds: []
             });
         }
-        setIsSuccess(false);
     }, [announcement, open, user, defaultDepartmentId]);
 
     const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
@@ -62,37 +65,36 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
             : api.post('/announcements', data),
         {
             onSuccess: () => {
-                setIsSuccess(true);
-                setTimeout(() => {
-                    onSuccess();
-                    onClose();
-                }, 2000);
+                onSuccess();
+                onClose();
+            }
+        }
+    );
+
+    const approveMutation = useMutation(
+        async (status: 'APPROVED' | 'REJECTED') => {
+            if (status === 'APPROVED') {
+                return await api.post(`/announcements/${announcement.id}/approve`);
+            } else {
+                return await api.put(`/announcements/${announcement.id}`, { status: 'REJECTED' });
+            }
+        },
+        {
+            onSuccess: () => {
+                onSuccess();
+                onClose();
             }
         }
     );
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        if (!announcement && formData.pastorIds.length !== 2) {
+            alert("You must select exactly 2 Pastors to authorize this Broadcast.");
+            return;
+        }
         mutation.mutate(formData);
     };
-
-    if (isSuccess) {
-        return (
-            <Dialog open={open} onClose={onClose} PaperProps={{ className: "holographic-card", sx: { borderRadius: 0, border: '1px solid var(--cyan)', bgcolor: 'background.paper', p: 4 } }}>
-                <Box sx={{ textAlign: 'center', py: 4 }}>
-                    <Box sx={{ display: 'inline-flex', p: 2, borderRadius: '50%', bgcolor: 'rgba(0, 255, 255, 0.1)', mb: 2 }}>
-                        <CheckCircle size={48} color="var(--cyan)" />
-                    </Box>
-                    <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1, mb: 1 }}>
-                        MISSION BROADCAST DEPLOYED
-                    </Typography>
-                    <Typography variant="body2" sx={{ opacity: 0.8, maxWidth: 300, mx: 'auto' }}>
-                        Intelligence has been synchronized across all relevant sectors. The broadcast is now live.
-                    </Typography>
-                </Box>
-            </Dialog>
-        );
-    }
 
     return (
         <Dialog 
@@ -110,11 +112,44 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
             }}
         >
             <form onSubmit={handleSubmit}>
-                <DialogTitle sx={{ fontWeight: 950, px: 4, pt: 4, letterSpacing: -1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                    <Megaphone size={24} color="var(--cyan)" />
-                    {announcement ? 'UPDATE MISSION INTEL' : 'DEPLOY NEW BROADCAST'}
+                <DialogTitle sx={{ fontWeight: 950, px: 4, pt: 4, letterSpacing: -1 }}>
+                    {announcement ? 'EDIT BROADCAST' : 'DEPLOY NEW BROADCAST'}
                 </DialogTitle>
                 <DialogContent sx={{ px: 4 }}>
+                    {/* 👨‍⚖️ COMMAND APPROVAL OVERRIDE */}
+                    {announcement && announcement.status !== 'APPROVED' && (announcement.targetPastorId === user?.id || ['WATUA', 'BISHOP'].includes(user?.role || '')) && (
+                        <Box sx={{ mb: 4, mt: 2, p: 3, bgcolor: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: 0, textAlign: 'center' }}>
+                            <Typography variant="subtitle2" fontWeight="950" color="orange" mb={1}>
+                                ACTION REQUIRED: BROADCAST CLEARANCE
+                            </Typography>
+                            <Typography variant="caption" sx={{ display: 'block', mb: 2, opacity: 0.8 }}>
+                                Review the intelligence parameters and grant authorization to broadcast.
+                            </Typography>
+                            <Box display="flex" gap={2} justifyContent="center">
+                                <Button 
+                                    variant="contained" 
+                                    color="success" 
+                                    size="small" 
+                                    onClick={() => approveMutation.mutate('APPROVED')}
+                                    disabled={approveMutation.isLoading}
+                                    sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
+                                >
+                                    APPROVE BROADCAST
+                                </Button>
+                                <Button 
+                                    variant="outlined" 
+                                    color="error" 
+                                    size="small" 
+                                    onClick={() => { if(window.confirm('Reject broadcast?')) approveMutation.mutate('REJECTED'); }}
+                                    disabled={approveMutation.isLoading}
+                                    sx={{ fontWeight: 950, borderRadius: 0, px: 3 }}
+                                >
+                                    REJECT
+                                </Button>
+                            </Box>
+                        </Box>
+                    )}
+
                     <Box display="flex" flexDirection="column" gap={3} sx={{ mt: 2 }}>
                         <TextField
                             label="Broadcast Title"
@@ -170,9 +205,13 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                             <Box display="flex" alignItems="center" bgcolor="rgba(79,139,255,0.05)" p={2} borderRadius={0} border="1px dashed var(--primary-glow)">
                                 <Box flex={1}>
                                     <Typography variant="subtitle2" fontWeight="bold">GLOBAL COMMAND CLEARANCE</Typography>
-                                    <Typography variant="caption" color="textSecondary">This broadcast will be routed to all sectors immediately upon deployment.</Typography>
+                                    <Typography variant="caption" color="textSecondary">This broadcast will be routed to all sectors. Requires Executive approval.</Typography>
                                 </Box>
-                                <Zap size={20} color="var(--cyan)" style={{ filter: 'drop-shadow(0 0 5px var(--cyan))' }} />
+                                <Checkbox 
+                                    checked={formData.isMajor} 
+                                    inputProps={{ readOnly: true }}
+                                    sx={{ color: 'primary.main' }}
+                                />
                             </Box>
                         )}
 
@@ -190,6 +229,44 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                                 ))}
                             </TextField>
                         )}
+
+                        {!announcement && (
+                            <FormControl fullWidth required>
+                                <InputLabel id="ann-pastors-label" sx={{ fontWeight: 700 }}>CHOOSE 2 AUTHORIZING PASTORS</InputLabel>
+                                <Select
+                                    labelId="ann-pastors-label"
+                                    id="ann-pastors-select"
+                                    multiple
+                                    label="CHOOSE 2 AUTHORIZING PASTORS"
+                                    value={formData.pastorIds}
+                                    sx={{ borderRadius: 0 }}
+                                    onChange={(e) => {
+                                        const values = e.target.value as string[];
+                                        if (values.length <= 2) setFormData({ ...formData, pastorIds: values });
+                                    }}
+                                    renderValue={(sel: any) => (
+                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                            {pastors?.filter((p: any) => (sel as string[]).includes(p.id)).map((p: any) => (
+                                                <Chip 
+                                                    key={p.id} 
+                                                    label={p.name} 
+                                                    size="small" 
+                                                    sx={{ borderRadius: 0, fontWeight: 900, bgcolor: 'rgba(79, 139, 255, 0.2)', border: '1px solid var(--primary-glow)' }} 
+                                                />
+                                            ))}
+                                        </Box>
+                                    )}
+                                >
+                                    {pastors?.length === 0 && <MenuItem disabled>No Pastors found</MenuItem>}
+                                    {pastors?.map((p: any) => (
+                                        <MenuItem key={p.id} value={p.id} sx={{ py: 1.5 }}>
+                                            <Checkbox checked={formData.pastorIds.includes(p.id)} sx={{ color: 'var(--cyan)' }} />
+                                            <ListItemText primary={p.name} primaryTypographyProps={{ fontWeight: 700 }} />
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        )}
                     </Box>
                 </DialogContent>
                 <DialogActions sx={{ px: 4, pb: 4, gap: 2 }}>
@@ -206,7 +283,7 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                             boxShadow: '0 0 20px var(--primary-glow)' 
                         }}
                     >
-                        {announcement ? 'UPDATE INTEL' : 'DEPLOY BROADCAST'}
+                        {announcement ? 'UPDATE BROADCAST' : 'DEPLOY BROADCAST'}
                     </Button>
                 </DialogActions>
             </form>

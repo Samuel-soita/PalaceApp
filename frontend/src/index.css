@@ -181,3 +181,26 @@
 .MuiInputLabel-root.Mui-focused {
   color: var(--primary) !important;
 }
+
+/* Mobile baseline: safe areas, readable dialogs, touch-friendly targets */
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@media (max-width: 600px) {
+  .MuiDialog-paper {
+    margin: 8px !important;
+    width: calc(100% - 16px) !important;
+    max-height: calc(100dvh - 16px) !important;
+  }
+
+  .MuiTableContainer-root {
+    -webkit-overflow-scrolling: touch;
+  }
+}

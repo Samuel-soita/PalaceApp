@@ -1,5 +1,6 @@
 import { prisma } from './prisma.js';
 import { seedPermissions } from './seed-permissions.js';
+import { ensureDepartmentAccounts } from './department-accounts.js';
 
 /**
  * System Bootstrap: PRODUCTION-READY (Zero-Seed compatible)
@@ -50,6 +51,10 @@ export async function bootstrapSystem() {
         }
     }
     console.log('[Bootstrap] Essential Departments verified/created.');
+
+    // 2b. Operational accounts (events/plans require >= 1500 KES reserve)
+    await ensureDepartmentAccounts();
+    console.log('[Bootstrap] Department operational accounts verified.');
 
     // 3. Root Watua user (Clearance Level 9: BISHOP_LEVEL)
     // Only created if no users exist in the system yet.

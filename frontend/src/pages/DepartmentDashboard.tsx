@@ -27,6 +27,7 @@ import FinancialLedger from '../components/dashboard/FinancialLedger';
 import RequestBaptismModal from '../components/modals/RequestBaptismModal';
 import { useLocalFirstDashboard } from '../hooks/useLocalFirstDashboard';
 import SyncIndicator from '../components/SyncIndicator';
+import IntelDetailModal from '../components/modals/IntelDetailModal';
 
 export default function DepartmentDashboard() {
     const { id } = useParams();
@@ -40,7 +41,10 @@ export default function DepartmentDashboard() {
     const effectiveId = ((id && id !== 'undefined') ? id : user?.departmentId) ?? undefined;
 
     // Permission-based flags
-    const canViewDepartment = hasPermission(PERMISSIONS.VIEW_DEPARTMENT) || user?.role === 'SUPER_ADMIN' || user?.role === 'WATUA';
+    const canViewDepartment = hasPermission(PERMISSIONS.VIEW_DEPARTMENT)
+        || user?.role === 'SUPER_ADMIN'
+        || user?.role === 'WATUA'
+        || user?.role === 'DEPARTMENT_LEADER';
 
     // Access validation
     useEffect(() => {
@@ -69,6 +73,7 @@ export default function DepartmentDashboard() {
     const [toast, setToast] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({
         open: false, message: '', severity: 'info'
     });
+    const [intelDetail, setIntelDetail] = useState<any>(null);
 
     const isReady = !!effectiveId && effectiveId !== 'undefined';
 
@@ -103,6 +108,7 @@ export default function DepartmentDashboard() {
         {
             onSuccess: () => {
                 setAppointmentModalOpen(false);
+                queryClient.invalidateQueries(['dashboard-sync', effectiveId]);
                 setToast({ open: true, message: 'Appointment request submitted to the Administrator.', severity: 'success' });
             },
             onError: (err: any) => {
@@ -456,7 +462,7 @@ export default function DepartmentDashboard() {
                                                         <Typography variant="subtitle2" fontWeight="950" sx={{ lineHeight: 1.2, color: intel.status === 'PENDING' ? 'orange' : 'white' }}>{intel.title?.toUpperCase()}</Typography>
                                                         <Box display="flex" justifyContent="space-between" alignItems="center" mt={1}>
                                                             <Typography variant="caption" sx={{ opacity: 0.4, fontSize: '0.6rem', fontWeight: 700 }}>{intel.createdAt || intel.date ? new Date(intel.createdAt || intel.date).toLocaleDateString() : "N/A"}</Typography>
-                                                            <Button size="small" sx={{ p: 0, minWidth: 0, color: 'var(--cyan)', fontWeight: 900, fontSize: '0.65rem', '&:hover': { color: 'white' } }}>DETAILS</Button>
+                                                            <Button size="small" onClick={() => setIntelDetail(intel)} sx={{ p: 1, minWidth: 44, minHeight: 44, color: 'var(--cyan)', fontWeight: 900, fontSize: '0.65rem', '&:hover': { color: 'white' } }}>DETAILS</Button>
                                                         </Box>
                                                     </CardContent>
                                                 </Card>
@@ -532,33 +538,10 @@ export default function DepartmentDashboard() {
                 onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} 
             />
             
-            <ProjectFormModal 
-                open={projectModal.open} 
-                onClose={() => setProjectModal({ open: false, data: null })} 
-                project={projectModal.data} 
-                defaultDepartmentId={effectiveId}
-                onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} 
-            />
-            
-            <EventFormModal 
-                open={eventModal.open} 
-                onClose={() => setEventModal({ open: false, data: null })} 
-                event={eventModal.data} 
-                defaultDepartmentId={effectiveId}
-                onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} 
-            />
-            
-            <PlanFormModal 
-                open={planModal.open} 
-                onClose={() => setPlanModal({ open: false, data: null })} 
-                plan={planModal.data} 
-                defaultDepartmentId={effectiveId}
-                onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} 
-            />
-            
             <AnnouncementFormModal 
                 open={announcementModal.open} 
                 onClose={() => setAnnouncementModal({ open: false, data: null })} 
+                defaultDepartmentId={effectiveId}
                 onSuccess={() => queryClient.invalidateQueries(['dashboard-sync', effectiveId])} 
             />
             
@@ -780,6 +763,8 @@ export default function DepartmentDashboard() {
                     </Box>
                 </Fade>
             </Modal>
+
+            <IntelDetailModal open={!!intelDetail} onClose={() => setIntelDetail(null)} item={intelDetail} />
 
             <Snackbar open={toast.open} autoHideDuration={6000} onClose={() => setToast({ ...toast, open: false })} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
                 <Alert severity={toast.severity} sx={{ width: '100%', fontWeight: 'bold', borderRadius: 0 }}>{toast.message}</Alert>

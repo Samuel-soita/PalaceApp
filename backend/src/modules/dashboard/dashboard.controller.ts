@@ -24,60 +24,52 @@ export const getDashboardSync = async (req: any, res: Response) => {
             });
 
             const getWhere = (modelName: string) => {
-                const approvalField = (modelName === 'Announcement' ? 'status' : 
-                                     modelName === 'Meeting' ? 'meetingStatus' : 
-                                     'approvalStatus') as string;
-
-                // 1. ADMINISTRATIVE OVERRIDE: Global oversight for Bishop, Pastors, and Systems Admin
-                if (['WATUA', 'BISHOP', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR'].includes(role)) {
-                    if (departmentId) return { departmentId };
-                    return {}; // Return empty to see everything
-                }
+                const approvalField = modelName === 'Announcement' ? 'status' : 
+                                    modelName === 'Meeting' ? 'meetingStatus' : 
+                                    'approvalStatus';
 
                 // Base condition setup
-                const conditions: any[] = [];
+                const baseWhere: any = { OR: [] };
                 
-                // 1. ALWAYS allow originators to see what they deployed
-                conditions.push({ createdById: userId });
-                if (modelName === 'Announcement') conditions.push({ authorId: userId });
-                if (modelName === 'Meeting') conditions.push({ organizerId: userId });
+                // Allow filtering by requested or own department
+                if (departmentId) baseWhere.OR.push({ departmentId });
+                else if (userDeptId) baseWhere.OR.push({ departmentId: userDeptId });
 
-                // 2. ALWAYS allow assigned authorizers to see missions for approval
-                conditions.push({ approvals: { some: { userId } } });
-                conditions.push({ targetPastorId: userId });
+                // ALWAYS allow assigned pastors to see missions they need to approve
+                baseWhere.OR.push({ approvals: { some: { userId } } });
+                baseWhere.OR.push({ targetPastorId: userId });
 
-                // 3. Role-based visibility for non-admins
-                if (isLeader) { // PASTOR, ASSOCIATE_PASTOR, DEPARTMENT_LEADER
-                    // Leaders see everything in their department
-                    if (departmentId) conditions.push({ departmentId });
-                    else if (userDeptId) conditions.push({ departmentId: userDeptId });
-                    
-                    // Plus global/major published/approved items
-                    if (modelName === 'Announcement') {
-                        conditions.push({ isMajor: true, status: 'PUBLISHED' });
-                        conditions.push({ isGlobal: true, status: 'PUBLISHED' });
-                    } else if (modelName === 'Meeting') {
-                        conditions.push({ isMajor: true, meetingStatus: 'SCHEDULED' });
-                    } else {
-                        conditions.push({ isMajor: true, approvalStatus: 'APPROVED' });
+                if (['WATUA', 'BISHOP', 'SUPER_ADMIN'].includes(role)) {
+                    if (departmentId) {
+                        return { departmentId };
                     }
-                    return { OR: conditions };
+                    return {
+                        OR: [
+                            { [approvalField]: 'APPROVED' },
+                            { approvals: { some: { userId } } },
+                            { targetPastorId: userId }
+                        ]
+                    };
                 }
 
-                // Members only see approved/published items in their dept OR global major items
-                if (modelName === 'Announcement') {
-                    if (userDeptId) conditions.push({ departmentId: userDeptId, status: 'PUBLISHED' });
-                    conditions.push({ isMajor: true, status: 'PUBLISHED' });
-                    conditions.push({ isGlobal: true, status: 'PUBLISHED' });
-                } else if (modelName === 'Meeting') {
-                    if (userDeptId) conditions.push({ departmentId: userDeptId, meetingStatus: 'SCHEDULED' });
-                    conditions.push({ isMajor: true, meetingStatus: 'SCHEDULED' });
-                } else {
-                    if (userDeptId) conditions.push({ departmentId: userDeptId, approvalStatus: 'APPROVED' });
-                    conditions.push({ isMajor: true, approvalStatus: 'APPROVED' });
+                if (isLeader) { // PASTOR, ASSOCIATE_PASTOR, DEPARTMENT_LEADER
+                    // Leaders see everything in their department OR assigned to them
+                    // Plus global major items (Meetings do not have an isMajor field)
+                    if (modelName !== 'Meeting') {
+                        baseWhere.OR.push({ isMajor: true, [approvalField]: 'APPROVED' });
+                    }
+                    return baseWhere;
                 }
 
-                return { OR: conditions };
+                // Members only see approved items in their dept OR global major items
+                const memberOr: any[] = [
+                    { departmentId: userDeptId, [approvalField]: 'APPROVED' }
+                ];
+                if (modelName !== 'Meeting') {
+                    memberOr.push({ isMajor: true, [approvalField]: 'APPROVED' });
+                }
+
+                return { OR: memberOr };
             };
 
             const wrap = async (name: string, promise: Promise<any>) => {
@@ -162,7 +154,11 @@ export const getDashboardSync = async (req: any, res: Response) => {
                     })),
                 wrap('ministrySettings', prisma.ministrySettings ? prisma.ministrySettings.findUnique({ where: { id: 'GLOBAL' } }) : Promise.resolve(null)),
                 wrap('affirmation', prisma.affirmation ? prisma.affirmation.findFirst({ where: { date: new Date(new Date().setHours(0,0,0,0)) } }) : Promise.resolve(null)),
-                wrap('partnership', prisma.partnership.findFirst({ where: { userId, status: 'ACTIVE' } })),
+                wrap('partnership', prisma.partnership.findFirst({
+                    where: { userId, deletedAt: null },
+                    orderBy: { updatedAt: 'desc' },
+                    include: { ledgers: { orderBy: { date: 'desc' }, take: 5 } },
+                })),
                 wrap('account', (isAdmin || isLeader) 
                     ? (effectiveDeptId 
                         ? prisma.account.findUnique({ where: { departmentId: effectiveDeptId } })
@@ -184,19 +180,21 @@ export const getDashboardSync = async (req: any, res: Response) => {
                     include: { approvals: true, requester: { select: { name: true } } }
                 }) : Promise.resolve([])),
                 wrap('allPartnerships', isAdmin ? prisma.partnership.findMany({
-                    take: 50,
-                    orderBy: { createdAt: 'desc' },
+                    where: { deletedAt: null },
+                    take: 200,
+                    orderBy: { updatedAt: 'desc' },
                     include: { user: { select: { name: true, membershipNumber: true } } }
                 }) : Promise.resolve([])),
                 wrap('globalMetrics', isAdmin ? Promise.all([
                     prisma.user.count(),
                     prisma.user.count({ where: { isPartner: true } }),
-                    prisma.transaction.count({ where: { status: 'PENDING_BISHOP_APPROVAL' } }),
-                ]).then(([totalUsers, totalPartners, pendingTx]) => ({
+                    prisma.transaction.aggregate({ where: { status: 'PENDING_BISHOP_APPROVAL' }, _count: true }),
+                    prisma.child.count({ where: { isDedicated: false } })
+                ]).then(([totalUsers, totalPartners, pendingApprovals, pendingDedications]) => ({
                     totalUsers,
                     totalPartners,
-                    pendingApprovals: pendingTx,
-                    breakdown: { pendingTx }
+                    pendingApprovals: pendingApprovals._count,
+                    pendingDedications
                 })) : Promise.resolve(null)),
                 wrap('auditLogs', isAdmin ? prisma.auditLog.findMany({
                     take: 20,

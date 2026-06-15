@@ -123,7 +123,7 @@ export default function PermissionEnginePanel() {
             </Box>
 
             {tab === 'MATRIX' ? (
-                <TableContainer component={Paper} className="holographic-card" sx={{ background: 'hsla(230,25%,10%,0.8) !important' }}>
+                <TableContainer component={Paper} className="holographic-card" sx={{ background: 'hsla(230,25%,10%,0.8) !important', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                     <Table size="small">
                         <TableHead>
                             <TableRow>
@@ -168,7 +168,7 @@ export default function PermissionEnginePanel() {
                     </Table>
                 </TableContainer>
             ) : (
-                <TableContainer component={Paper} className="holographic-card">
+                <TableContainer component={Paper} className="holographic-card" sx={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                     <Table size="small">
                         <TableHead>
                             <TableRow>

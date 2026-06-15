@@ -1,7 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../lib/db';
-import api from '../lib/api-client';
 import {
     Typography, Grid, Card, CardContent, Box, Button, TextField, Dialog, DialogTitle,
     DialogContent, DialogActions, MenuItem, LinearProgress, Chip, IconButton, Avatar, Paper,
@@ -11,6 +10,9 @@ import { Bell, Plus, Edit, Trash2, Megaphone, ShieldAlert, Clock, User, Filter }
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
 import { isUserManagingDepartment } from '../utils/auth-options';
+import { pastorAuthorizationBlocked } from '../utils/approval-rules';
+import { paginate, paginationMeta } from '../utils/pagination';
+import { executeApiFirstMutation } from '../lib/api-first-mutation';
 
 export default function Announcements() {
     const { user } = useAuth();
@@ -37,12 +39,13 @@ export default function Announcements() {
         []
     ) || [];
 
-    const meta = { total: announcements.length, totalPages: Math.ceil((announcements.length || 1) / limit) };
-
     const filteredAnnouncements = announcements.filter((ann: any) => {
         if (isGlobalAdmin) return true;
         return ann.isGlobal || ann.isMajor || (isUserManagingDepartment(user, ann.departmentId) && ann.status === 'PUBLISHED');
     });
+
+    const meta = paginationMeta(filteredAnnouncements.length, page, limit);
+    const pagedAnnouncements = paginate(filteredAnnouncements, page, limit);
 
     const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
     const userDepartments = departments.filter((d: any) => isUserManagingDepartment(user, d.id)) || [];
@@ -50,36 +53,37 @@ export default function Announcements() {
 
     const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
-    const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
-        const actionId = id || crypto.randomUUID();
-        const timestamp = Date.now();
+    const handleAction = async (payload: any, method: 'POST' | 'PUT' | 'DELETE', id?: string) => {
+        const actionId = id || payload.id;
+        const { author, department, createdAt, syncStatus, ...apiPayload } = payload;
 
-        if (method !== 'DELETE') {
-            await db.announcements.put({ 
-                ...payload, 
-                id: actionId, 
-                syncStatus: 'PENDING',
-                author: { name: user?.name || 'Local User' },
-                department: departments.find(d => d.id === payload.departmentId) || null,
-                createdAt: new Date().toISOString()
+        try {
+            await executeApiFirstMutation({
+                entity: 'ANNOUNCEMENT',
+                method,
+                url: method === 'POST' ? '/announcements' : `/announcements/${actionId}`,
+                payload: apiPayload,
+                recordId: actionId,
+                table: 'announcements',
+                offlineOptimistic: async (offlineId) => {
+                    if (method === 'DELETE') {
+                        await db.announcements.delete(offlineId);
+                        return;
+                    }
+                    await db.announcements.put({
+                        ...payload,
+                        id: offlineId,
+                        syncStatus: 'PENDING',
+                        author: { name: user?.name || 'Local User' },
+                        department: departments.find(d => d.id === payload.departmentId) || null,
+                        createdAt: new Date().toISOString(),
+                    });
+                },
             });
-        } else {
-            if (id) await db.announcements.delete(id);
+            handleClose();
+        } catch (err: any) {
+            alert(err.response?.data?.error || err.message || 'Failed to save announcement.');
         }
-
-        await db.syncQueue.put({
-            id: crypto.randomUUID(),
-            timestamp,
-            entity: 'ANNOUNCEMENT',
-            method,
-            url: method === 'POST' ? '/announcements' : `/announcements/${actionId}`,
-            payload: { ...payload, isOfflineSync: true },
-            status: 'PENDING',
-            retryCount: 0,
-            errorLog: []
-        });
-
-        handleClose();
     };
 
     const handleOpen = (ann: any = null) => {
@@ -114,24 +118,34 @@ export default function Announcements() {
     };
 
     const handleSubmit = () => {
-        if (!editAnn && formData.pastorIds.length !== 2) {
-            alert("Exactly 2 Pastors must authorize this Broadcast before it is deployed.");
+        if (pastorAuthorizationBlocked(user?.role, formData.pastorIds)) {
+            alert('Exactly 2 Pastors must authorize this Broadcast before it is deployed.');
             return;
         }
-        if (editAnn) handleAction({ ...formData, id: editAnn.id }, 'PATCH', editAnn.id);
-        else handleAction(formData, 'POST');
+        const payload = { ...formData };
+        if (!payload.departmentId && departments.length > 0) {
+            payload.departmentId = departments[0].id;
+        }
+        if (editAnn) handleAction({ ...payload, id: editAnn.id }, 'PUT', editAnn.id);
+        else handleAction(payload, 'POST');
     };
 
     const [syncError, setSyncError] = useState<string | null>(null);
 
-    useLiveQuery(() => {
-        const handleSyncError = (e: any) => {
-            if (e.detail.path.includes('announcements')) {
-                setSyncError(`Sync Interrupted: ${e.detail.status === 401 ? 'Authentication Required' : 'Server Error'}`);
+    useEffect(() => {
+        const handleSyncError = (e: Event) => {
+            const detail = (e as CustomEvent).detail;
+            if (detail?.path?.includes('announcements')) {
+                setSyncError(`Sync Interrupted: ${detail.status === 401 ? 'Authentication Required' : 'Server Error'}`);
             }
         };
+        const handleSyncHealthy = () => setSyncError(null);
         window.addEventListener('pwa-sync-error', handleSyncError);
-        return () => window.removeEventListener('pwa-sync-error', handleSyncError);
+        window.addEventListener('pwa-sync-healthy', handleSyncHealthy);
+        return () => {
+            window.removeEventListener('pwa-sync-error', handleSyncError);
+            window.removeEventListener('pwa-sync-healthy', handleSyncHealthy);
+        };
     }, []);
 
     return (
@@ -145,7 +159,7 @@ export default function Announcements() {
             )}
             <Box sx={{ mb: 6, display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'start', md: 'end' }, gap: 3 }}>
                 <div>
-                    <Typography variant="h3" fontWeight="950" className="glow-text" sx={{ letterSpacing: -2 }}>STRATEGIC <span className="text-primary/70">ALERTS</span></Typography>
+                    <Typography variant="h3" fontWeight="950" className="glow-text" sx={{ letterSpacing: -2, fontSize: { xs: '1.75rem', md: '3rem' } }}>STRATEGIC <span className="text-primary/70">ALERTS</span></Typography>
                     <Typography color="textSecondary" sx={{ fontWeight: 500, opacity: 0.6 }}>Mission-critical communications and tactical broadcasts.</Typography>
                 </div>
                 {isLeader && (
@@ -158,7 +172,7 @@ export default function Announcements() {
                 <LinearProgress sx={{ mb: 4, borderRadius: 1 }} />
             ) : (
                 <Grid container spacing={3}>
-                    {filteredAnnouncements?.map((ann: any) => (
+                    {pagedAnnouncements?.map((ann: any) => (
                         <Grid item xs={12} md={6} lg={4} key={ann.id}>
                             <Card className="holographic-card smooth-tilt" sx={{ height: '100%', borderRadius: 'var(--radius-lg)' }}>
                                 <CardContent sx={{ p: 4 }}>
@@ -201,19 +215,19 @@ export default function Announcements() {
             {meta.totalPages > 1 && (
                 <Box display="flex" justifyContent="center" mt={6} gap={2}>
                     <Button 
-                        disabled={page === 1} 
-                        onClick={() => setPage(p => p - 1)}
+                        disabled={meta.page === 1} 
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
                         variant="outlined"
                         sx={{ borderRadius: 2, fontWeight: 900 }}
                     >
                         PREV
                     </Button>
                     <Box display="flex" alignItems="center" px={3} sx={{ bgcolor: 'rgba(255,255,255,0.05)', borderRadius: 2 }}>
-                        <Typography variant="caption" fontWeight="900">PAGE {page} OF {meta.totalPages}</Typography>
+                        <Typography variant="caption" fontWeight="900">PAGE {meta.page} OF {meta.totalPages}</Typography>
                     </Box>
                     <button
-                        disabled={page >= meta.totalPages}
-                        onClick={() => setPage(p => p + 1)}
+                        disabled={meta.page >= meta.totalPages}
+                        onClick={() => setPage(p => Math.min(meta.totalPages, p + 1))}
                         className={`px-6 py-2 rounded-lg font-black transition-all ${page >= meta.totalPages ? 'opacity-30 cursor-not-allowed bg-white/5' : 'bg-primary text-black hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(var(--primary-rgb),0.3)]'}`}
                     >
                         NEXT SESSION

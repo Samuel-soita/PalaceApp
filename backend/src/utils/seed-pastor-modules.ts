@@ -1,4 +1,5 @@
 import { prisma } from './prisma.js';
+import { CANONICAL_PASTOR_MODULES } from './pastor-module-keys.js';
 
 /**
  * Ensures all PASTOR and ASSOCIATE_PASTOR accounts have the baseline
@@ -7,13 +8,7 @@ import { prisma } from './prisma.js';
 export async function seedPastorModules() {
     console.log('🚀 Starting Pastor Modules Seed...');
 
-    const baselineModules = [
-        'Child Dedication Registry',
-        'Partnership Management',
-        'Event Oversight',
-        'DevotionPublishing',
-        'Project Oversight'
-    ];
+    const baselineModules = CANONICAL_PASTOR_MODULES;
 
     const pastors = await prisma.user.findMany({
         where: {

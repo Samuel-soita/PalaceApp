@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
     Modal, Fade, Box, Typography, Card, CardContent, Grid, 
     Avatar, Chip, IconButton, Button, Stack, Divider, 
@@ -7,8 +7,10 @@ import {
 import { XCircle, Star, TrendingUp, DollarSign, Search, CheckCircle, RefreshCcw, Pencil, Edit3 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useAuth } from '../../contexts/AuthContext';
 import api from '../../lib/api-client';
 import { db } from '../../lib/db';
+import { requestSyncSoon } from '../../lib/pwa-sync';
 
 interface PartnershipManagerProps {
     open: boolean;
@@ -17,6 +19,9 @@ interface PartnershipManagerProps {
 
 export default function PartnershipManager({ open, onClose }: PartnershipManagerProps) {
     const queryClient = useQueryClient();
+    const { user } = useAuth();
+    const canReconcileLedger = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(user?.role || '')
+        || ((user?.role === 'PASTOR' || user?.role === 'ASSOCIATE_PASTOR') && user?.canManagePartnerships);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedPartner, setSelectedPartner] = useState<any>(null);
     const [paymentAmount, setPaymentAmount] = useState<string>('');
@@ -28,10 +33,61 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
 
     // --- MISSION: OFFLINE-FIRST PARTNERSHIP DATA ---
     const partnerships = useLiveQuery(() => db.partnerships.toArray(), []) || [];
-    const isLoading = false; // Data is in-memory local
+    const isLoading = false;
+
+    useEffect(() => {
+        if (!open || !navigator.onLine) return;
+        api.get('/partnerships/all')
+            .then((res) => {
+                const rows = Array.isArray(res.data) ? res.data : [];
+                if (rows.length) {
+                    db.partnerships.bulkPut(rows.map((p: any) => ({ ...p, syncStatus: 'SYNCED' })));
+                }
+            })
+            .catch(() => undefined);
+    }, [open]);
+
+    const refreshPartnerships = async () => {
+        if (!navigator.onLine) return;
+        try {
+            const res = await api.get('/partnerships/all');
+            const rows = Array.isArray(res.data) ? res.data : [];
+            if (rows.length) {
+                await db.partnerships.bulkPut(rows.map((p: any) => ({ ...p, syncStatus: 'SYNCED' })));
+            }
+            queryClient.invalidateQueries(['dashboard-sync']);
+            requestSyncSoon();
+        } catch {
+            setErrorMsg('Failed to refresh partnership records.');
+        }
+    };
+
+    const upsertPartnership = async (partnership: any) => {
+        if (!partnership?.id) return;
+        await db.partnerships.put({ ...partnership, syncStatus: 'SYNCED' });
+    };
 
     const addLedgerMutation = useMutation(
         async ({ id, amount, paymentMethod, referenceCode }: any) => {
+            if (!canReconcileLedger) {
+                throw new Error('You are not authorized to reconcile partnership ledgers.');
+            }
+
+            if (navigator.onLine) {
+                const res = await api.post(`/partnerships/${id}/ledger`, {
+                    amount,
+                    paymentMethod,
+                    referenceCode,
+                });
+                if (res.data.partnership) await upsertPartnership(res.data.partnership);
+                if (res.data.ledger) {
+                    await db.partnershipLedgers.put({ ...res.data.ledger, syncStatus: 'SYNCED' });
+                }
+                requestSyncSoon();
+                return res;
+            }
+
+            // Offline fallback only
             const localId = crypto.randomUUID();
             const timestamp = Date.now();
 
@@ -81,14 +137,7 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
             return { data: { _queued: true } };
         },
         {
-            onSuccess: (res: any) => {
-                const wasQueued = res.data._queued;
-                
-                if (wasQueued) {
-                    console.log('[Palace-Portal] Financial mission queued offline.');
-                }
-
-                queryClient.invalidateQueries(['all-partnerships']);
+            onSuccess: () => {
                 queryClient.invalidateQueries(['dashboard-sync']);
                 setSelectedPartner(null);
                 setPaymentAmount('');
@@ -103,6 +152,14 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
 
     const updatePartnershipMutation = useMutation(
         async ({ id, amount }: { id: string, amount: number }) => {
+            if (navigator.onLine) {
+                const res = await api.patch(`/partnerships/${id}`, { amount: Number(amount) });
+                if (res.data.partnership) await upsertPartnership(res.data.partnership);
+                requestSyncSoon();
+                return res;
+            }
+
+            // Offline fallback only
             const timestamp = Date.now();
 
             // 🚀 Tactical Offline Update
@@ -133,7 +190,7 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
         },
         {
             onSuccess: () => {
-                queryClient.invalidateQueries(['all-partnerships']);
+                queryClient.invalidateQueries(['dashboard-sync']);
                 setEditingPartner(null);
                 setNewCommitmentAmount('');
                 setErrorMsg('');
@@ -196,16 +253,18 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
                                     }}
                                 />
                             </Grid>
-                            <Grid item xs={4} md={2}>
+                            <Grid item xs={6} sm={4} md={2}>
                                 <Card sx={{ bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', textAlign: 'center', py: 1 }}>
                                     <Typography variant="caption" sx={{ opacity: 0.5 }}>TOTAL</Typography>
                                     <Typography variant="subtitle2" fontWeight={1000}>{partnerships.length}</Typography>
                                 </Card>
                             </Grid>
-                            <Grid item xs={4} md={2}>
-                                <IconButton sx={{ bgcolor: 'rgba(255,255,255,0.05)' }} onClick={() => queryClient.invalidateQueries(['all-partnerships'])}>
-                                    <RefreshCcw size={18} />
-                                </IconButton>
+                            <Grid item xs={6} sm={4} md={2}>
+                                <Box display="flex" justifyContent={{ xs: 'flex-end', md: 'center' }} alignItems="center" height="100%">
+                                    <IconButton sx={{ bgcolor: 'rgba(255,255,255,0.05)', minWidth: 44, minHeight: 44 }} onClick={refreshPartnerships}>
+                                        <RefreshCcw size={18} />
+                                    </IconButton>
+                                </Box>
                             </Grid>
                         </Grid>
                     </Box>
@@ -231,7 +290,7 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
                                                         </Box>
                                                     </Box>
                                                 </Grid>
-                                                <Grid item xs={4} sm={2}>
+                                                <Grid item xs={6} sm={2}>
                                                     <Box display="flex" alignItems="center" gap={1}>
                                                         <Box>
                                                             <Typography variant="caption" sx={{ opacity: 0.5 }}>COMMITMENT</Typography>
@@ -244,33 +303,37 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
                                                                 setNewCommitmentAmount(p.amount.toString());
                                                                 setErrorMsg('');
                                                             }}
-                                                            sx={{ color: 'orange', opacity: 0.6, '&:hover': { opacity: 1 } }}
+                                                            sx={{ color: 'orange', opacity: 0.6, minWidth: 44, minHeight: 44, '&:hover': { opacity: 1 } }}
                                                         >
                                                             <Pencil size={14} />
                                                         </IconButton>
                                                     </Box>
                                                 </Grid>
-                                                <Grid item xs={4} sm={2}>
+                                                <Grid item xs={6} sm={2}>
                                                     <Typography variant="caption" sx={{ opacity: 0.5 }}>PAID</Typography>
                                                     <Typography variant="subtitle2" fontWeight={1000} color="success.main">{p.paidAmount} KES</Typography>
                                                 </Grid>
-                                                <Grid item xs={4} sm={2}>
+                                                <Grid item xs={6} sm={2}>
                                                     <Typography variant="caption" sx={{ opacity: 0.5 }}>BALANCE</Typography>
                                                     <Typography variant="subtitle2" fontWeight={1000} color="error.main">{p.balance} KES</Typography>
                                                 </Grid>
                                                 <Grid item xs={12} sm={2} textAlign="right">
-                                                    <Button 
-                                                        size="small" 
-                                                        variant="contained" 
-                                                        onClick={() => {
-                                                            setSelectedPartner(p);
-                                                            setPaymentAmount('');
-                                                            setErrorMsg('');
-                                                        }}
-                                                        sx={{ bgcolor: 'orange', color: '#000', fontWeight: 1000, '&:hover': { bgcolor: '#ffb347' } }}
-                                                    >
-                                                        RECONCILE
-                                                    </Button>
+                                                    {canReconcileLedger ? (
+                                                        <Button 
+                                                            size="small" 
+                                                            variant="contained" 
+                                                            onClick={() => {
+                                                                setSelectedPartner(p);
+                                                                setPaymentAmount('');
+                                                                setErrorMsg('');
+                                                            }}
+                                                            sx={{ bgcolor: 'orange', color: '#000', fontWeight: 1000, '&:hover': { bgcolor: '#ffb347' } }}
+                                                        >
+                                                            RECONCILE
+                                                        </Button>
+                                                    ) : (
+                                                        <Chip label="VIEW ONLY" size="small" sx={{ opacity: 0.6 }} />
+                                                    )}
                                                 </Grid>
                                             </Grid>
                                         </CardContent>
@@ -315,7 +378,7 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
                                         >
                                             <MenuItem value="MPESA">MPESA (MANUAL)</MenuItem>
                                             <MenuItem value="CASH">CASH</MenuItem>
-                                            <MenuItem value="BANK">BANK TRANSFER</MenuItem>
+                                            <MenuItem value="BANK_TRANSFER">BANK TRANSFER</MenuItem>
                                         </TextField>
                                         <TextField
                                             fullWidth label="REFERENCE / RECEIPT NUMBER"

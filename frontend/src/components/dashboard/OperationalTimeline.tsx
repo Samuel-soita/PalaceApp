@@ -203,9 +203,11 @@ export const OperationalTimeline = ({ items, onEdit, onDelete }: OperationalTime
                                                 WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                                             {item.title}
                                         </Typography>
+                                        {(item.approvalStatus === 'PENDING' || item.approvalStatus === 'PENDING_APPROVAL' || item.meetingStatus === 'PENDING_APPROVAL' || item.status === 'PENDING') && (
+                                            <Chip label="PENDING" size="small" sx={{ height: 18, fontSize: '0.65rem', fontWeight: 950, bgcolor: 'orange', color: '#000', borderRadius: 0.5 }} />
+                                        )}
                                     </Box>
                                 </Box>
-
 
                                 {/* Footer meta */}
                                 <Box sx={{ mt: 'auto', display: 'flex', flexDirection: 'column', gap: 0.3 }}>
@@ -342,6 +344,7 @@ export const OperationalTimeline = ({ items, onEdit, onDelete }: OperationalTime
                                                 fullWidth
                                                 variant="contained"
                                                 startIcon={<Edit size={14} />}
+                                                disabled={selectedItem.approvalStatus === 'APPROVED' || selectedItem.meetingStatus === 'SCHEDULED' || selectedItem.status === 'PUBLISHED'}
                                                 onClick={() => {
                                                     onEdit?.(selectedItem);
                                                     handleClose();
@@ -354,12 +357,13 @@ export const OperationalTimeline = ({ items, onEdit, onDelete }: OperationalTime
                                                     '&:hover': { bgcolor: cfg.color, filter: 'brightness(1.1)' }
                                                 }}
                                             >
-                                                EDIT
+                                                {selectedItem.approvalStatus === 'APPROVED' ? 'LOCKED' : 'EDIT'}
                                             </Button>
                                             <Button
                                                 fullWidth
                                                 variant="outlined"
                                                 startIcon={<Trash2 size={14} />}
+                                                disabled={selectedItem.approvalStatus === 'APPROVED' || selectedItem.meetingStatus === 'SCHEDULED' || selectedItem.status === 'PUBLISHED'}
                                                 onClick={() => {
                                                     if (window.confirm(`Are you sure you want to decommission this ${selectedItem.type}?`)) {
                                                         onDelete?.(selectedItem);

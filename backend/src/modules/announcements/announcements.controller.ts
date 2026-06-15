@@ -5,8 +5,7 @@ import { logAudit } from '../../utils/audit.js';
 import { getOrSetCache, invalidateCache } from '../../utils/redis.js';
 import { hasPermission } from '../../utils/permissions.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
-import { broadcastSync } from '../../utils/socket.js';
-import redis from '../../utils/redis.js';
+import { canAutoPublishContent, bishopRoleApproved } from '../../utils/approval-utils.js';
 
 export const getAnnouncements = catchAsync(async (req: Request, res: Response) => {
     const { departmentId, isGlobal, isMajor, page = '1', limit = '10' } = req.query;
@@ -111,7 +110,7 @@ export const createAnnouncement = catchAsync(async (req: AuthRequest, res: Respo
     const user = req.user!;
 
     if (!isGlobal && !isMajor && !departmentId) {
-        console.warn('A department is required for non-global/major announcements. Proceeding with null.');
+        throw new AppError('A department is required for non-global/major announcements.', 400);
     }
     
     // ─── Tactical Conflict Management (Sequential Awareness) ───
@@ -137,6 +136,8 @@ export const createAnnouncement = catchAsync(async (req: AuthRequest, res: Respo
          }
     }
 
+    const autoPublish = canAutoPublishContent(user.role);
+
     const announcement = await prisma.$transaction(async (tx) => {
         const newAnnouncement = await tx.announcement.create({
             data: {
@@ -145,7 +146,7 @@ export const createAnnouncement = catchAsync(async (req: AuthRequest, res: Respo
                 priority: priority || 'NORMAL',
                 isGlobal: !!isGlobal,
                 isMajor: isMajor || false,
-                status: 'PUBLISHED',
+                status: autoPublish ? 'PUBLISHED' : 'PENDING',
                 expiry: expiry ? new Date(expiry) : null,
                 eventDate: eventDate ? new Date(eventDate) : null,
                 eventTime: eventTime || null,
@@ -155,16 +156,111 @@ export const createAnnouncement = catchAsync(async (req: AuthRequest, res: Respo
             } as any,
         });
 
+        if (autoPublish) {
+            return newAnnouncement;
+        }
+
+        // 👨‍⚖️ Initializing Approval Chain for Announcements
+        const approvalData: any[] = (pastorIds || []).map((pid: string) => ({
+            announcementId: newAnnouncement.id,
+            userId: pid,
+            role: 'PASTOR'
+        }));
+
+        const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
+        if (bishop) {
+            approvalData.push({
+                announcementId: newAnnouncement.id,
+                userId: bishop.id,
+                role: 'BISHOP'
+            });
+        }
+
+        if (approvalData.length > 0) {
+            await tx.announcementApproval.createMany({ data: approvalData });
+            
+            // Notifications to Authorizers
+            const notifications = approvalData.map((app: any) => ({
+                userId: app.userId,
+                title: '📢 Broadcast Authorization Required',
+                message: `New announcement "${title}" requires your executive clearance.`
+            }));
+            await tx.notification.createMany({ data: notifications });
+        }
+        
         return newAnnouncement;
     });
 
     await logAudit(user.id, 'CREATE', 'ANNOUNCEMENT', announcement.id, { title, isGlobal });
 
-    await invalidateAnnouncementCache();
-
     res.status(201).json(announcement);
 });
 
+// Multi-sig approval: Bishop (SUPER_ADMIN) + 2 Pastors required
+export const approveAnnouncement = catchAsync(async (req: AuthRequest, res: Response) => {
+    const { id } = req.params;
+    const user = req.user!;
+
+    const existing = await prisma.announcementApproval.findUnique({
+        where: { announcementId_userId: { announcementId: id, userId: user.id } }
+    });
+    
+    if (existing) throw new AppError('You have already approved this announcement.', 400);
+
+    const announcementData = await prisma.announcement.findUnique({ where: { id } });
+    if (!announcementData) throw new AppError('Announcement not found', 404);
+
+    const totalApprovals = await prisma.$transaction(async (tx) => {
+        // Record approval
+            await tx.announcementApproval.create({
+            data: {
+                announcementId: id,
+                userId: user.id,
+                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role) ? 'PASTOR' : user.role)
+            }
+        });
+
+        // Get all approvals for this announcement
+            const allApprovals = await tx.announcementApproval.findMany({
+            where: { announcementId: id }
+        });
+
+        const bishopApproved = bishopRoleApproved(allApprovals);
+        const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR').length;
+
+        // Strictly: 1 Bishop + 2 Pastors
+        const quorumMet = bishopApproved && pastorCount >= 2;
+
+        if (quorumMet) {
+            await tx.announcement.update({
+                where: { id },
+                            data: { status: 'PUBLISHED' }
+            });
+
+            // Notify all users if Major/Global, else notify department
+            const notificationTargets = ((announcementData as any).isMajor || announcementData.isGlobal)
+                ? await tx.user.findMany({ select: { id: true } })
+                : await tx.user.findMany({ where: { departmentId: announcementData.departmentId }, select: { id: true } });
+
+            await tx.notification.createMany({
+                data: notificationTargets.map(u => ({
+                    userId: u.id,
+                    title: '📣 Announcement Published',
+                    message: `"${announcementData.title}" has been approved and is now live.`
+                }))
+            });
+        }
+
+        return allApprovals.length;
+    });
+
+    const refreshedAnnouncement = await prisma.announcement.findUnique({ where: { id } });
+    if(refreshedAnnouncement?.status === 'PUBLISHED') {
+        await logAudit(user.id, 'PUBLISH', 'ANNOUNCEMENT', id, { title: announcementData.title });
+    }
+
+    res.json({ message: 'Approval recorded.', totalApprovals });
+});
 
 export const updateAnnouncement = catchAsync(async (req: Request, res: Response) => {
     const announcement = await prisma.announcement.findUnique({ where: { id: req.params.id } });
@@ -177,7 +273,9 @@ export const updateAnnouncement = catchAsync(async (req: Request, res: Response)
 
     if (!canUpdate) throw new AppError('Access denied: Executive or Sector permission required', 403);
 
-    // Published announcements can now be modified by authorized personnel
+    if (announcement.status === 'PUBLISHED' && user.role !== 'SUPER_ADMIN') {
+        throw new AppError('Published announcements are locked and cannot be modified.', 403);
+    }
 
     const updated = await prisma.announcement.update({
         where: { id: req.params.id },
@@ -185,8 +283,6 @@ export const updateAnnouncement = catchAsync(async (req: Request, res: Response)
     });
 
     await logAudit(user.id, 'UPDATE', 'ANNOUNCEMENT', updated.id, req.body);
-
-    await invalidateAnnouncementCache();
 
     res.json(updated);
 });
@@ -202,7 +298,9 @@ export const deleteAnnouncement = catchAsync(async (req: Request, res: Response)
 
     if (!canDelete) throw new AppError('Access denied: Executive or Sector priority required', 403);
 
-    // Published announcements can now be deleted by authorized personnel
+    if (announcement.status === 'PUBLISHED' && user.role !== 'SUPER_ADMIN') {
+        throw new AppError('Published announcements are locked and cannot be deleted.', 403);
+    }
 
     await prisma.$transaction(async (tx) => {
         await tx.announcement.update({
@@ -215,14 +313,5 @@ export const deleteAnnouncement = catchAsync(async (req: Request, res: Response)
     });
 
     await logAudit(user.id, 'DELETE', 'ANNOUNCEMENT', announcement.id, { title: announcement.title });
-    
-    await invalidateAnnouncementCache();
-
     res.json({ message: 'Announcement deleted successfully' });
 });
-
-async function invalidateAnnouncementCache() {
-    const keys = await redis.keys('announcements:*');
-    if (keys.length > 0) await redis.del(...keys);
-    broadcastSync('announcements');
-}

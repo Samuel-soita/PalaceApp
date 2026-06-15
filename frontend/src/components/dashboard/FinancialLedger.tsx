@@ -62,6 +62,12 @@ export default function FinancialLedger({ account, transactions, departmentId }:
         }
     );
 
+    const canSignTx = (tx: any) => (
+        (isLeader && !tx.approvals?.some((a: any) => a.role === 'DEPARTMENT_LEADER')) ||
+        (isBishop && !tx.approvals?.some((a: any) => a.role === 'SUPER_ADMIN')) ||
+        (isWatua && !tx.approvals?.some((a: any) => a.role === 'WATUA'))
+    ) && tx.status !== 'APPROVED' && tx.type === 'WITHDRAWAL';
+
     const getStatusChip = (status: string, approvals: any[]) => {
         const safeApprovals = approvals || [];
         const hasLeader = safeApprovals.some(a => a.role === 'DEPARTMENT_LEADER');
@@ -106,7 +112,7 @@ export default function FinancialLedger({ account, transactions, departmentId }:
     return (
         <Card className="holographic-card" sx={{ borderRadius: 0, border: '1px solid var(--glass-border)', background: 'linear-gradient(135deg, rgba(0,0,0,0.8), rgba(0,255,255,0.02))' }}>
             <CardContent sx={{ p: 2 }}>
-                <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                <Box display="flex" flexDirection={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} gap={2} mb={2}>
                     <Box display="flex" alignItems="center" gap={2}>
                         <Box sx={{ p: 1, bgcolor: 'rgba(0,255,255,0.1)', border: '1px solid var(--cyan)' }}>
                             <Landmark size={24} color="var(--cyan)" />
@@ -117,7 +123,7 @@ export default function FinancialLedger({ account, transactions, departmentId }:
                         </Box>
                     </Box>
                     {(isLeader || isBishop || isWatua) && (
-                        <Stack direction="row" spacing={1}>
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ width: { xs: '100%', sm: 'auto' } }}>
                             <Button 
                                 variant="outlined" 
                                 size="small"
@@ -167,7 +173,7 @@ export default function FinancialLedger({ account, transactions, departmentId }:
                     <Typography variant="caption" fontWeight="1000" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1, letterSpacing: 1, fontSize: '0.65rem' }}>
                         <History size={14} /> RECENT TRANSACTIONS (LAST 5)
                     </Typography>
-                    <TableContainer sx={{ bgcolor: 'transparent' }}>
+                    <TableContainer sx={{ bgcolor: 'transparent', display: { xs: 'none', md: 'block' }, overflowX: 'auto' }}>
                         <Table size="small">
                             <TableHead>
                                 <TableRow>
@@ -180,11 +186,7 @@ export default function FinancialLedger({ account, transactions, departmentId }:
                             </TableHead>
                             <TableBody>
                                 {transactions?.slice(0, 5).map((tx) => {
-                                    const canSign = (
-                                        (isLeader && !tx.approvals?.some((a: any) => a.role === 'DEPARTMENT_LEADER')) ||
-                                        (isBishop && !tx.approvals?.some((a: any) => a.role === 'SUPER_ADMIN')) ||
-                                        (isWatua && !tx.approvals?.some((a: any) => a.role === 'WATUA'))
-                                    ) && tx.status !== 'APPROVED' && tx.type === 'WITHDRAWAL';
+                                    const canSign = canSignTx(tx);
 
                                     return (
                                         <TableRow key={tx.id}>
@@ -224,6 +226,47 @@ export default function FinancialLedger({ account, transactions, departmentId }:
                             </TableBody>
                         </Table>
                     </TableContainer>
+
+                    <Box sx={{ display: { xs: 'flex', md: 'none' }, flexDirection: 'column', gap: 1.5 }}>
+                        {transactions?.slice(0, 5).map((tx) => {
+                            const canSign = canSignTx(tx);
+                            return (
+                                <Card key={tx.id} sx={{ bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: 0 }}>
+                                    <CardContent sx={{ p: 2 }}>
+                                        <Box display="flex" justifyContent="space-between" mb={1}>
+                                            <Typography variant="caption" sx={{ opacity: 0.6 }}>
+                                                {new Date(tx.createdAt).toLocaleDateString()}
+                                            </Typography>
+                                            {getStatusChip(tx.status, tx.approvals)}
+                                        </Box>
+                                        <Typography variant="subtitle2" fontWeight={900} sx={{ mb: 1, wordBreak: 'break-word' }}>
+                                            {tx.description?.toUpperCase()}
+                                        </Typography>
+                                        <Typography variant="body2" fontWeight={1000} sx={{ color: tx.type === 'INCOME' ? '#00ff00' : '#ff4f4f', mb: canSign ? 1.5 : 0 }}>
+                                            {tx.type === 'INCOME' ? '+' : '-'} {tx.amount.toLocaleString()} KES
+                                        </Typography>
+                                        {canSign && (
+                                            <Button
+                                                fullWidth
+                                                size="small"
+                                                variant="contained"
+                                                onClick={() => {
+                                                    if (!navigator.onLine) {
+                                                        alert('NETWORK CRITICAL: Approvals require an online connection.');
+                                                        return;
+                                                    }
+                                                    approveMutation.mutate(tx.id);
+                                                }}
+                                                sx={{ bgcolor: 'var(--cyan)', color: '#000', fontWeight: 950, borderRadius: 0, minHeight: 44 }}
+                                            >
+                                                SIGN MISSION
+                                            </Button>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            );
+                        })}
+                    </Box>
                 </Box>
             </CardContent>
 

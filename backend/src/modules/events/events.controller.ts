@@ -5,7 +5,8 @@ import { logAudit } from '../../utils/audit.js';
 import { getOrSetCache } from '../../utils/redis.js';
 import redis from '../../utils/redis.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
-import { broadcastSync } from '../../utils/socket.js';
+import { isGlobalOperator, resolveTargetDepartmentId } from '../../utils/department-accounts.js';
+import { canAutoPublishContent } from '../../utils/approval-utils.js';
 
 export const getEvents = catchAsync(async (req: AuthRequest, res: Response) => {
     const { departmentId, isMajor, page = '1', limit = '10' } = req.query;
@@ -100,20 +101,24 @@ export const getEventById = catchAsync(async (req: AuthRequest, res: Response) =
 export const createEvent = catchAsync(async (req: AuthRequest, res: Response) => {
     const { title, description, location, date, time, eventType, budgetNeeded, budgetSource = 'DEPARTMENT', isMajor, departmentId } = req.body;
     const user = req.user!;
-    const targetDeptId = user.role === 'SUPER_ADMIN' ? (departmentId || user.departmentId) : user.departmentId;
+    const targetDeptId = resolveTargetDepartmentId(user.role, user.departmentId, departmentId);
 
-    if (!targetDeptId) { console.warn('Department alignment required for operations. Proceeding with null.'); }
+    if (!targetDeptId) throw new AppError('Department alignment required for operations.', 400);
 
     // ─── Universal Financial Safeguard (Mandatory 1,500 KES Floor) ───
-    const deptAccount = await prisma.account.findUnique({ where: { departmentId: targetDeptId } });
-    const minRequired = 1500;
-    if (!deptAccount || deptAccount.balance < 1500) { console.warn("Bypassing financial safeguard for immediate deployment."); }
+    if (!isGlobalOperator(user.role)) {
+        const deptAccount = await prisma.account.findUnique({ where: { departmentId: targetDeptId } });
+        const minRequired = 1500;
+        if (!deptAccount || deptAccount.balance < minRequired) {
+            throw new AppError(`INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of ${minRequired} KES is required for all operations (Department or Church funded). Current balance: ${deptAccount?.balance || 0} KES.`, 402);
+        }
+    }
 
     const eventDate = new Date(date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     if (eventDate < today) {
-        console.warn('Events scheduled for past dates. Bypassing restriction.');
+        throw new AppError('Events cannot be scheduled for past dates.', 400);
     }
 
     // ─── Tactical Conflict Check (Venue + Date + Time) ───
@@ -130,8 +135,9 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
         throw new AppError(`TACTICAL CONFLICT: The venue "${location}" is already reserved for ${time} on ${new Date(date).toLocaleDateString()}. Cross-departmental overlap detected.`, 409);
     }
 
+    const autoApprove = canAutoPublishContent(user.role);
+
     const event = await prisma.$transaction(async (tx) => {
-        const { pastorIds, ...restBody } = req.body;
         const newEvent = await tx.event.create({
             data: {
                 title, description, location, eventType, 
@@ -142,16 +148,11 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
                 isMajor: isMajor === true || isMajor === 'true',
                 departmentId: targetDeptId,
                 status: 'PLANNED',
-                approvalStatus: 'APPROVED',
-                volunteersNeeded: Number(req.body.volunteersNeeded || 0),
-                createdById: user.id,
-                targetPastorId: (pastorIds && pastorIds.length > 0) ? pastorIds[0] : null
+                approvalStatus: autoApprove ? 'APPROVED' : 'PENDING_APPROVAL',
+                volunteersNeeded: Number(req.body.volunteersNeeded || 0)
             } as any
         });
 
-        // Approval chain removed as per user request
-
-        // ─── Automated Tactical Broadcast ───
         await tx.announcement.create({
             data: {
                 title: `NEW EVENT: ${title.toUpperCase()}`,
@@ -159,13 +160,12 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
                 priority: 'NORMAL',
                 isGlobal: isMajor === true || isMajor === 'true',
                 isMajor: isMajor === true || isMajor === 'true',
-                status: 'PUBLISHED',
+                status: autoApprove ? 'PUBLISHED' : 'PENDING',
                 eventDate: new Date(date),
                 eventTime: time,
                 location: location,
                 authorId: user.id,
-                departmentId: targetDeptId,
-                eventId: newEvent.id
+                departmentId: targetDeptId
             } as any
         });
 
@@ -180,6 +180,74 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
     res.status(201).json(event);
 });
 
+export const approveEvent = catchAsync(async (req: AuthRequest, res: Response) => {
+    const { id } = req.params;
+    const user = req.user!;
+
+    const event = await prisma.event.findUnique({ 
+        where: { id },
+        include: { department: true }
+    });
+    
+    if (!event) throw new AppError('Event not found', 404);
+
+    const existing = await prisma.eventApproval.findUnique({
+        where: { eventId_userId: { eventId: id, userId: user.id } }
+    });
+    
+    if (existing) throw new AppError('You have already approved this event.', 400);
+
+    const totalApprovals = await prisma.$transaction(async (tx) => {
+        await tx.eventApproval.create({
+            data: {
+                eventId: id,
+                userId: user.id,
+                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role) ? 'PASTOR' : user.role)
+            }
+        });
+
+        const allApprovals = await tx.eventApproval.findMany({ where: { eventId: id } });
+        const bishopApproved = allApprovals.some((a: any) => a.role === 'BISHOP');
+        const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR').length;
+
+        const quorumMet = bishopApproved && pastorCount >= 2;
+
+        if (quorumMet) {
+            await tx.event.update({
+                where: { id },
+                data: { approvalStatus: 'APPROVED' }
+            });
+            await logAudit(user.id, 'PUBLISH', 'EVENT', id, { title: event.title }, req.ip, req.get('user-agent'));
+        }
+        return allApprovals.length;
+    });
+
+        // Side effects handled via transaction result logic if needed, 
+        // but easier to check quorum inside and log there.
+
+    res.json({ message: 'Approval recorded.', totalApprovals });
+});
+
+export const updateEventStatus = catchAsync(async (req: AuthRequest, res: Response) => {
+    const { id } = req.params;
+    const { approvalStatus } = req.body;
+    const user = req.user!;
+
+    if (!['APPROVED', 'REJECTED'].includes(approvalStatus)) {
+        throw new AppError('Invalid approval status', 400);
+    }
+
+    const event = await prisma.event.update({
+        where: { id },
+        data: { approvalStatus }
+    });
+
+    await logAudit(user.id, 'FORCE_APPROVE', 'EVENT', id, { title: event.title, approvalStatus }, req.ip, req.get('user-agent'));
+    
+    await invalidateEventCache();
+
+    res.json({ message: `Event status forcefully updated to ${approvalStatus}`, event });
+});
 
 export const updateEvent = catchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
@@ -191,13 +259,17 @@ export const updateEvent = catchAsync(async (req: AuthRequest, res: Response) =>
     if (!event) throw new AppError('Event not found.', 404);
 
     // ─── Operational Lock ───
-    // Operational lock removed
+    if (event.approvalStatus === 'APPROVED' && user.role === 'DEPARTMENT_LEADER') {
+        throw new AppError('OPERATIONAL LOCK: Approved events cannot be modified. Contact Palace Command for changes.', 403);
+    }
 
     const { date: newDate, time: newTime, location: newLoc, budgetSource, pastorIds, ...rest } = req.body;
 
     // ─── Universal Financial Safeguard on Update ───
     const deptAccount = await prisma.account.findUnique({ where: { departmentId: event.departmentId } });
-    if (!deptAccount || deptAccount.balance < 1500) { console.warn("Bypassing financial safeguard for immediate deployment."); }
+    if (!deptAccount || deptAccount.balance < 1500) {
+        throw new AppError('INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of 1,500 KES is required for all operations.', 402);
+    }
 
     if (newDate || newTime || newLoc) {
         const conflict = await prisma.event.findFirst({
@@ -254,7 +326,9 @@ export const deleteEvent = catchAsync(async (req: AuthRequest, res: Response) =>
         throw new AppError('Access denied: Executive or Sector priority required', 403);
     }
 
-    // Deletion restrictions removed
+    if (event.approvalStatus === 'APPROVED' && user.role !== 'SUPER_ADMIN') {
+        throw new AppError('Approved events are locked and cannot be deleted.', 403);
+    }
 
     await prisma.$transaction(async (tx) => {
         await tx.event.update({
@@ -283,5 +357,4 @@ export const deleteEvent = catchAsync(async (req: AuthRequest, res: Response) =>
 async function invalidateEventCache() {
     const keys = await redis.keys('events:*');
     if (keys.length > 0) await redis.del(...keys);
-    broadcastSync('events');
 }

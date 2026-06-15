@@ -137,7 +137,7 @@ export default function Register() {
                                 placeholder="Must be unique"
                                 helperText="This is used to verify your identity and cannot be changed."
                             />
-                            <Box display="flex" gap={2} mb={2}>
+                            <Box display="flex" flexDirection={{ xs: 'column', sm: 'row' }} gap={2} mb={2}>
                                 <TextField
                                     fullWidth label="Date of Birth" name="dob" type="date" required
                                     variant="outlined"

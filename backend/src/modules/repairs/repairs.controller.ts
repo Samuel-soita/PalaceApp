@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
 import { logAudit } from '../../utils/audit.js';
-import { broadcastSync } from '../../utils/socket.js';
 
 export const createRepairRequest = async (req: Request, res: Response) => {
     try {
@@ -18,7 +17,9 @@ export const createRepairRequest = async (req: Request, res: Response) => {
         // ─── Universal Financial Safeguard (Mandatory 1,500 KES Floor) ───
         const deptAccount = await prisma.account.findUnique({ where: { departmentId: departmentId || user.departmentId } });
         const minRequired = 1500;
-        if (!deptAccount || deptAccount.balance < 1500) { console.warn("Bypassing financial safeguard for immediate deployment."); }
+        if (!deptAccount || deptAccount.balance < minRequired) {
+            return res.status(402).json({ error: `INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of ${minRequired} KES is required for all operations (Department or Church funded). Current balance: ${deptAccount?.balance || 0} KES.` });
+        }
 
         const repair = await prisma.technicalRepair.create({
             data: {
@@ -52,7 +53,6 @@ export const createRepairRequest = async (req: Request, res: Response) => {
             await prisma.notification.createMany({ data: notifications });
         }
 
-        broadcastSync('repairs');
         res.status(201).json(repair);
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Failed to create repair request' });
@@ -141,7 +141,6 @@ export const approveRepair = async (req: Request, res: Response) => {
             });
         }
 
-        broadcastSync('repairs');
         res.json(updated);
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Failed to approve' });
@@ -192,7 +191,9 @@ export const updateRepair = async (req: Request, res: Response) => {
 
         // ─── Universal Financial Safeguard on Update ───
         const deptAccount = await prisma.account.findUnique({ where: { departmentId: repair.departmentId } });
-        if (!deptAccount || deptAccount.balance < 1500) { console.warn("Bypassing financial safeguard for immediate deployment."); }
+        if (!deptAccount || deptAccount.balance < 1500) {
+            return res.status(402).json({ error: 'INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of 1,500 KES is required for all operations.' });
+        }
 
         const updated = await prisma.technicalRepair.update({
             where: { id },
@@ -202,7 +203,6 @@ export const updateRepair = async (req: Request, res: Response) => {
             }
         });
 
-        broadcastSync('repairs');
         res.json(updated);
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Update failed' });
@@ -226,7 +226,6 @@ export const deleteRepair = async (req: Request, res: Response) => {
         }
 
         await prisma.technicalRepair.delete({ where: { id } });
-        broadcastSync('repairs');
         res.json({ message: 'Repair decommissioned.' });
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Delete failed' });

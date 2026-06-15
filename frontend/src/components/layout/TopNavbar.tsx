@@ -100,6 +100,98 @@ export default function TopNavbar() {
         return () => clearTimeout(delaySearch);
     }, [searchQuery]);
 
+    const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+
+    const renderSearchResults = (inline = false) => {
+        if (!searchOpen || !searchResults) return null;
+        return (
+            <Box sx={inline ? {
+                mt: 1, maxHeight: 280, overflowY: 'auto',
+                bgcolor: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 1
+            } : {
+                position: 'absolute', top: '100%', right: 0, mt: 1,
+                width: 350, maxHeight: 400, overflowY: 'auto',
+                bgcolor: 'var(--glass-base)', backdropFilter: 'blur(30px)',
+                border: '1px solid var(--cyan)', borderRadius: 1,
+                boxShadow: '0 8px 32px rgba(0,0,0,0.5)', zIndex: 9999
+            }}>
+                {['projects', 'events', 'announcements'].map(category => {
+                    const items = searchResults[category];
+                    if (!items || items.length === 0) return null;
+                    return (
+                        <Box key={category} sx={{ p: 1 }}>
+                            <Typography variant="caption" color="var(--cyan)" sx={{ px: 1, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1 }}>
+                                {category}
+                            </Typography>
+                            <List dense disablePadding>
+                                {items.map((item: any) => (
+                                    <ListItemButton
+                                        key={item.id}
+                                        onClick={() => {
+                                            setSearchOpen(false);
+                                            setSearchQuery('');
+                                            if (inline) setMobileOpen(false);
+                                        }}
+                                        sx={{ borderRadius: 1, '&:hover': { bgcolor: 'rgba(79, 139, 255, 0.1)' } }}
+                                    >
+                                        <ListItemText
+                                            primary={item.title || item.name}
+                                            secondary={item.description?.substring(0, 30) || item.email || item.location}
+                                            primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
+                                            secondaryTypographyProps={{ fontSize: '0.75rem', noWrap: true, color: 'rgba(255,255,255,0.5)' }}
+                                        />
+                                    </ListItemButton>
+                                ))}
+                            </List>
+                        </Box>
+                    );
+                })}
+                {Object.values(searchResults).every((arr: any) => !arr || arr.length === 0) && (
+                    <Box sx={{ p: 3, textAlign: 'center' }}>
+                        <Typography color="text.secondary">No results found.</Typography>
+                    </Box>
+                )}
+            </Box>
+        );
+    };
+
+    const renderSearchField = (fullWidth = false) => (
+        <Box sx={{
+            display: 'flex', alignItems: 'center',
+            bgcolor: 'rgba(255,255,255,0.05)',
+            border: '1px solid var(--glass-border)',
+            borderRadius: 1,
+            px: 2, py: 0.5,
+            width: fullWidth ? '100%' : 250,
+            transition: 'all 0.3s',
+            ...(!fullWidth && {
+                '&:focus-within': {
+                    borderColor: 'var(--cyan)',
+                    width: 300,
+                    bgcolor: 'rgba(255,255,255,0.1)'
+                }
+            }),
+            ...(fullWidth && {
+                '&:focus-within': { borderColor: 'var(--cyan)', bgcolor: 'rgba(255,255,255,0.1)' }
+            })
+        }}>
+            <SearchIcon size={18} color="var(--text-secondary)" />
+            <input
+                type="text"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => { if (searchResults) setSearchOpen(true); }}
+                style={{
+                    background: 'transparent', border: 'none',
+                    color: 'white', padding: '8px 12px',
+                    outline: 'none', width: '100%',
+                    fontFamily: 'inherit'
+                }}
+            />
+        </Box>
+    );
+
     const { data: notifications } = useQuery(['notifications', user?.id], async () => {
         if (!user?.id) return [];
         const res = await api.get(`/notifications/user/${user.id}`);
@@ -122,14 +214,17 @@ export default function TopNavbar() {
     const isPastor = user?.role === 'PASTOR' || user?.role === 'ASSOCIATE_PASTOR';
     const isDeptLeader = user?.role === 'DEPARTMENT_LEADER';
     const isHighAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'SYSTEM_ADMIN' || user?.role === 'SECRETARY' || user?.role === 'WATUA';
+    const dashboardHome = isPastor
+        ? { name: 'PASTORAL PALACE', href: '/pastor', icon: LayoutDashboard }
+        : { name: 'EXECUTIVE PALACE', href: '/executive', icon: LayoutDashboard };
     
     const primaryNavItems = isMember 
         ? memberNavItems 
         : (user?.role === 'SUPER_ADMIN' 
-            ? [...adminNavItems, { name: 'MISSION COMMAND', href: '/bishop', icon: Shield }]
-            : (user?.role === 'SUPER_ADMIN' || user?.role === 'SYSTEM_ADMIN' || user?.role === 'DEPARTMENT_LEADER'
-                ? [{ name: 'EXECUTIVE PALACE', href: '/executive', icon: LayoutDashboard }]
-                : adminNavItems));
+            ? [{ ...dashboardHome, name: 'EXECUTIVE PALACE', href: '/executive' }, ...adminNavItems.slice(1), { name: 'MISSION COMMAND', href: '/bishop', icon: Shield }]
+            : (user?.role === 'SYSTEM_ADMIN' || user?.role === 'DEPARTMENT_LEADER'
+                ? [dashboardHome]
+                : [dashboardHome, ...adminNavItems.slice(1)]));
 
     // Everything shows in the drawer
     const allNavItems = isMember
@@ -139,7 +234,7 @@ export default function TopNavbar() {
               { name: 'My Profile', href: '/profile', icon: UserCheck },
           ]
         : [
-            { name: isPastor ? 'PASTORAL PALACE' : 'EXECUTIVE PALACE', href: '/executive', icon: LayoutDashboard },
+            dashboardHome,
               ...(user?.role === 'SUPER_ADMIN' ? [{ name: 'MISSION COMMAND', href: '/bishop', icon: Shield }] : []),
               ...(isHighAdmin ? [
                   { name: 'Departments', href: '/departments', icon: Users },
@@ -168,6 +263,13 @@ export default function TopNavbar() {
                 <IconButton onClick={handleDrawerToggle} sx={{ color: 'text.secondary' }}><X size={20} /></IconButton>
             </Box>
             
+            <Divider sx={{ mb: 2, borderColor: 'rgba(255,255,255,0.05)' }} />
+
+            <Box sx={{ px: 2, pb: 2 }}>
+                {renderSearchField(true)}
+                {renderSearchResults(true)}
+            </Box>
+
             <Divider sx={{ mb: 2, borderColor: 'rgba(255,255,255,0.05)' }} />
 
             <List sx={{ px: 2 }}>
@@ -432,87 +534,18 @@ export default function TopNavbar() {
                                 <SyncIndicator />
                             </Box>
 
-                            {/* Global Search Bar */}
+                            <IconButton
+                                aria-label="Search"
+                                onClick={() => setMobileSearchOpen((v) => !v)}
+                                sx={{ display: { xs: 'flex', md: 'none' }, color: mobileSearchOpen ? 'var(--cyan)' : 'var(--text-secondary)' }}
+                            >
+                                <SearchIcon size={20} />
+                            </IconButton>
+
+                            {/* Global Search Bar (desktop) */}
                             <Box ref={searchRef} sx={{ position: 'relative', display: { xs: 'none', md: 'block' } }}>
-                                <Box sx={{ 
-                                    display: 'flex', alignItems: 'center', 
-                                    bgcolor: 'rgba(255,255,255,0.05)', 
-                                    border: '1px solid var(--glass-border)',
-                                    borderRadius: 1, 
-                                    px: 2, py: 0.5,
-                                    width: 250,
-                                    transition: 'all 0.3s',
-                                    '&:focus-within': {
-                                        borderColor: 'var(--cyan)',
-                                        width: 300,
-                                        bgcolor: 'rgba(255,255,255,0.1)'
-                                    }
-                                }}>
-                                    <SearchIcon size={18} color="var(--text-secondary)" />
-                                    <input 
-                                        type="text" 
-                                        placeholder="Search..." 
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        onFocus={() => { if(searchResults) setSearchOpen(true); }}
-                                        style={{ 
-                                            background: 'transparent', border: 'none', 
-                                            color: 'white', padding: '8px 12px', 
-                                            outline: 'none', width: '100%',
-                                            fontFamily: 'inherit'
-                                        }}
-                                    />
-                                </Box>
-                                
-                                {/* Search Results Dropdown */}
-                                {searchOpen && searchResults && (
-                                    <Box sx={{
-                                        position: 'absolute', top: '100%', right: 0, mt: 1,
-                                        width: 350, maxHeight: 400, overflowY: 'auto',
-                                        bgcolor: 'var(--glass-base)', backdropFilter: 'blur(30px)',
-                                        border: '1px solid var(--cyan)', borderRadius: 1,
-                                        boxShadow: '0 8px 32px rgba(0,0,0,0.5)', zIndex: 9999
-                                    }}>
-                                        {['projects', 'events', 'announcements'].map(category => {
-                                            const items = searchResults[category];
-                                            if (!items || items.length === 0) return null;
-                                            
-                                            return (
-                                                <Box key={category} sx={{ p: 1 }}>
-                                                    <Typography variant="caption" color="var(--cyan)" sx={{ px: 1, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1 }}>
-                                                        {category}
-                                                    </Typography>
-                                                    <List dense disablePadding>
-                                                        {items.map((item: any) => (
-                                                            <ListItemButton 
-                                                                key={item.id} 
-                                                                onClick={() => {
-                                                                    setSearchOpen(false);
-                                                                    setSearchQuery('');
-                                                                    // We won't actually route anywhere for this mini-feature, 
-                                                                    // but visually selecting it will close the drawer.
-                                                                }}
-                                                                sx={{ borderRadius: 1, '&:hover': { bgcolor: 'rgba(79, 139, 255, 0.1)' } }}
-                                                            >
-                                                                <ListItemText 
-                                                                    primary={item.title || item.name} 
-                                                                    secondary={item.description?.substring(0, 30) || item.email || item.location}
-                                                                    primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
-                                                                    secondaryTypographyProps={{ fontSize: '0.75rem', noWrap: true, color: 'rgba(255,255,255,0.5)' }}
-                                                                />
-                                                            </ListItemButton>
-                                                        ))}
-                                                    </List>
-                                                </Box>
-                                            );
-                                        })}
-                                        {Object.values(searchResults).every((arr: any) => !arr || arr.length === 0) && (
-                                            <Box sx={{ p: 3, textAlign: 'center' }}>
-                                                <Typography color="text.secondary">No results found.</Typography>
-                                            </Box>
-                                        )}
-                                    </Box>
-                                )}
+                                {renderSearchField()}
+                                {renderSearchResults()}
                             </Box>
 
                             {user?.role === 'SUPER_ADMIN' && (
@@ -649,6 +682,26 @@ export default function TopNavbar() {
                     </Toolbar>
                 </Container>
             </AppBar>
+
+            {mobileSearchOpen && (
+                <Box
+                    ref={searchRef}
+                    sx={{
+                        display: { xs: 'block', md: 'none' },
+                        position: 'sticky',
+                        top: 70,
+                        zIndex: (theme) => theme.zIndex.drawer,
+                        px: 2,
+                        py: 1.5,
+                        bgcolor: 'var(--glass-base)',
+                        borderBottom: '1px solid var(--glass-border)',
+                        backdropFilter: 'blur(20px)'
+                    }}
+                >
+                    {renderSearchField(true)}
+                    {renderSearchResults(true)}
+                </Box>
+            )}
             
             <Drawer
                 variant="temporary"

@@ -8,14 +8,14 @@ import {
     IconButton, Tooltip, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
     FormControl, InputLabel, Select, Checkbox, ListItemText
 } from '@mui/material';
-import { Plus, Calendar, Clock, MapPin, Edit, Trash2, Users, FileText, ChevronRight, CheckCircle } from 'lucide-react';
+import { Plus, Calendar, Clock, MapPin, Edit, Trash2, Users, FileText, ChevronRight } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
+import { executeApiFirstMutation } from '../lib/api-first-mutation';
 
 export default function Meetings() {
     const { user } = useAuth();
     const [open, setOpen] = useState(false);
-    const [isSuccess, setIsSuccess] = useState(false);
     const [editMeeting, setEditMeeting] = useState<any>(null);
     const [formData, setFormData] = useState({
         title: '',
@@ -25,7 +25,8 @@ export default function Meetings() {
         meetingType: 'REVIEW',
         agenda: '',
         departmentId: '',
-        meetingStatus: 'SCHEDULED'
+        meetingStatus: 'PENDING_APPROVAL',
+        pastorIds: [] as string[]
     });
 
     const isSuperAdmin = user?.role === 'SUPER_ADMIN';
@@ -37,43 +38,37 @@ export default function Meetings() {
     const meta = { total: meetings.length, totalPages: Math.ceil((meetings.length || 1) / limit) };
 
     const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
+    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
     const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
-        const actionId = id || crypto.randomUUID();
-        const timestamp = Date.now();
+        const actionId = id || payload.id;
+        const { department, syncStatus, ...apiPayload } = payload;
 
-        if (method !== 'DELETE') {
-            await db.meetings.put({ 
-                ...payload, 
-                id: actionId, 
-                syncStatus: 'PENDING',
-                department: departments.find(d => d.id === payload.departmentId) || null,
-                createdAt: new Date().toISOString()
+        try {
+            await executeApiFirstMutation({
+                entity: 'MEETING',
+                method,
+                url: method === 'POST' ? '/meetings' : `/meetings/${actionId}`,
+                payload: apiPayload,
+                recordId: actionId,
+                table: 'meetings',
+                offlineOptimistic: async (offlineId) => {
+                    if (method === 'DELETE') {
+                        await db.meetings.delete(offlineId);
+                        return;
+                    }
+                    await db.meetings.put({
+                        ...payload,
+                        id: offlineId,
+                        syncStatus: 'PENDING',
+                        department: departments.find(d => d.id === payload.departmentId) || null,
+                        createdAt: new Date().toISOString(),
+                    });
+                },
             });
-        } else {
-            if (id) await db.meetings.delete(id);
-        }
-
-        await db.syncQueue.put({
-            id: crypto.randomUUID(),
-            timestamp,
-            entity: 'MEETING',
-            method,
-            url: method === 'POST' ? '/meetings' : `/meetings/${actionId}`,
-            payload: { ...payload, isOfflineSync: true },
-            status: 'PENDING',
-            retryCount: 0,
-            errorLog: []
-        });
-
-        if (method === 'POST' || method === 'PATCH') {
-            setIsSuccess(true);
-            setTimeout(() => {
-                setIsSuccess(false);
-                handleClose();
-            }, 2000);
-        } else {
             handleClose();
+        } catch (err: any) {
+            alert(err.response?.data?.error || err.message || 'Failed to save meeting.');
         }
     };
 
@@ -88,7 +83,8 @@ export default function Meetings() {
                 meetingType: meeting.meetingType,
                 agenda: meeting.agenda,
                 departmentId: meeting.departmentId,
-                meetingStatus: meeting.meetingStatus
+                meetingStatus: meeting.meetingStatus,
+                pastorIds: []
             });
         } else {
             setEditMeeting(null);
@@ -100,10 +96,10 @@ export default function Meetings() {
                 meetingType: 'REVIEW',
                 agenda: '',
                 departmentId: isSuperAdmin ? '' : user?.departmentId || '',
-                meetingStatus: 'SCHEDULED'
+                meetingStatus: 'PENDING_APPROVAL',
+                pastorIds: []
             });
         }
-        setIsSuccess(false);
         setOpen(true);
     };
 
@@ -117,6 +113,10 @@ export default function Meetings() {
         if (editMeeting) {
             handleAction({ ...formData, id: editMeeting.id }, 'PATCH', editMeeting.id);
         } else {
+            if (formData.pastorIds.length !== 2) {
+                alert("Exactly 2 Pastors must authorize this Strategic Briefing.");
+                return;
+            }
             handleAction(formData, 'POST');
         }
     };
@@ -285,126 +285,131 @@ export default function Meetings() {
                 onClose={handleClose} 
                 maxWidth="sm" 
                 fullWidth 
-                PaperProps={{ 
-                    className: "holographic-card",
-                    sx: { 
-                        borderRadius: 0,
-                        border: '1px solid var(--glass-border)',
-                        bgcolor: 'background.paper'
-                    } 
-                }}
+                PaperProps={{ sx: { borderRadius: 4, width: '95%', m: 1 } }}
             >
-                {isSuccess ? (
-                    <Box sx={{ textAlign: 'center', py: 8, px: 4 }}>
-                        <Box sx={{ display: 'inline-flex', p: 2, borderRadius: '50%', bgcolor: 'rgba(0, 255, 255, 0.1)', mb: 2 }}>
-                            <CheckCircle size={48} color="var(--cyan)" />
-                        </Box>
-                        <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1, mb: 1 }}>
-                            BRIEFING SYNCHRONIZED
-                        </Typography>
-                        <Typography variant="body2" sx={{ opacity: 0.8, maxWidth: 300, mx: 'auto' }}>
-                            Strategic meeting parameters have been updated across all sector nodes.
-                        </Typography>
-                    </Box>
-                ) : (
-                    <form onSubmit={handleSubmit}>
-                        <DialogTitle sx={{ fontWeight: '950', pt: 4, px: 4, letterSpacing: -1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                            <Users size={24} color="var(--cyan)" />
-                            {editMeeting ? 'UPDATE BRIEFING' : 'INITIATE BRIEFING'}
-                        </DialogTitle>
-                        <DialogContent sx={{ px: 4 }}>
-                            <Box display="flex" flexDirection="column" gap={3} sx={{ pt: 2 }}>
+                <form onSubmit={handleSubmit}>
+                    <DialogTitle sx={{ fontWeight: '900', pt: 4, px: 4 }}>
+                        {editMeeting ? 'Recalibrate Briefing' : 'Initiate Strategic Briefing'}
+                    </DialogTitle>
+                    <DialogContent sx={{ px: 4 }}>
+                        <Box display="flex" flexDirection="column" gap={3} sx={{ pt: 2 }}>
+                            <TextField
+                                label="Agenda Title"
+                                fullWidth
+                                required
+                                value={formData.title}
+                                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                            />
+                            <Box display="flex" gap={2}>
                                 <TextField
-                                    label="Agenda Title"
+                                    label="Date"
+                                    type="date"
                                     fullWidth
                                     required
-                                    value={formData.title}
-                                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                                    InputLabelProps={{ shrink: true }}
+                                    inputProps={!editMeeting ? { min: new Date().toISOString().split('T')[0] } : {}}
+                                    value={formData.date}
+                                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                                 />
-                                <Box display="flex" gap={2}>
-                                    <TextField
-                                        label="Date"
-                                        type="date"
-                                        fullWidth
-                                        required
-                                        InputLabelProps={{ shrink: true }}
-                                        inputProps={!editMeeting ? { min: new Date().toISOString().split('T')[0] } : {}}
-                                        value={formData.date}
-                                        onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                                    />
-                                    <TextField
-                                        label="Time"
-                                        type="time"
-                                        fullWidth
-                                        required
-                                        InputLabelProps={{ shrink: true }}
-                                        value={formData.time}
-                                        onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                                    />
-                                </Box>
                                 <TextField
-                                    label="Venue / Virtual Node"
+                                    label="Time"
+                                    type="time"
                                     fullWidth
                                     required
-                                    value={formData.venue}
-                                    onChange={(e) => setFormData({ ...formData, venue: e.target.value })}
+                                    InputLabelProps={{ shrink: true }}
+                                    value={formData.time}
+                                    onChange={(e) => setFormData({ ...formData, time: e.target.value })}
                                 />
+                            </Box>
+                            <TextField
+                                label="Venue / Virtual Node"
+                                fullWidth
+                                required
+                                value={formData.venue}
+                                onChange={(e) => setFormData({ ...formData, venue: e.target.value })}
+                            />
+                            <TextField
+                                label="Meeting Type"
+                                select
+                                fullWidth
+                                value={formData.meetingType}
+                                onChange={(e) => setFormData({ ...formData, meetingType: e.target.value })}
+                                SelectProps={{ inputProps: { tabIndex: -1 } }}
+                            >
+                                <MenuItem value="REVIEW">Executive Review</MenuItem>
+                                <MenuItem value="SYNC">Department Sync</MenuItem>
+                                <MenuItem value="PLANNING">Strategic Planning</MenuItem>
+                                <MenuItem value="URGENT">Crisis Management</MenuItem>
+                            </TextField>
+                            <TextField
+                                label="Agenda Objectives"
+                                multiline
+                                rows={3}
+                                fullWidth
+                                value={formData.agenda}
+                                onChange={(e) => setFormData({ ...formData, agenda: e.target.value })}
+                            />
+                            {isSuperAdmin && (
                                 <TextField
-                                    label="Meeting Type"
+                                    label="Assigned Department"
                                     select
                                     fullWidth
-                                    value={formData.meetingType}
-                                    onChange={(e) => setFormData({ ...formData, meetingType: e.target.value })}
+                                    required
+                                    value={formData.departmentId}
+                                    onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
                                     SelectProps={{ inputProps: { tabIndex: -1 } }}
                                 >
-                                    <MenuItem value="REVIEW">Executive Review</MenuItem>
-                                    <MenuItem value="SYNC">Department Sync</MenuItem>
-                                    <MenuItem value="PLANNING">Strategic Planning</MenuItem>
-                                    <MenuItem value="URGENT">Crisis Management</MenuItem>
+                                    {departments?.map((dept: any) => (
+                                        <MenuItem key={dept.id} value={dept.id}>{dept.name}</MenuItem>
+                                    ))}
                                 </TextField>
-                                <TextField
-                                    label="Agenda Objectives"
-                                    multiline
-                                    rows={3}
-                                    fullWidth
-                                    value={formData.agenda}
-                                    onChange={(e) => setFormData({ ...formData, agenda: e.target.value })}
-                                />
-                                {isSuperAdmin && (
-                                    <TextField
-                                        label="Assigned Department"
-                                        select
-                                        fullWidth
-                                        required
-                                        value={formData.departmentId}
-                                        onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
-                                        SelectProps={{ inputProps: { tabIndex: -1 } }}
+                            )}
+
+                            {!editMeeting && (
+                                <FormControl fullWidth required>
+                                    <InputLabel id="pastors-label" sx={{ fontWeight: 700 }}>Choose 2 Authorizing Pastors</InputLabel>
+                                    <Select
+                                        labelId="pastors-label"
+                                        id="pastors-select"
+                                        multiple
+                                        label="Choose 2 Authorizing Pastors"
+                                        value={formData.pastorIds}
+                                        onChange={(e) => {
+                                            const values = e.target.value as string[];
+                                            if (values.length <= 2) setFormData({ ...formData, pastorIds: values });
+                                        }}
+                                        renderValue={(sel: any) => (
+                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                                {pastors?.filter((p: any) => (sel as string[]).includes(p.id)).map((p: any) => (
+                                                    <Chip key={p.id} label={p.name} size="small" />
+                                                ))}
+                                            </Box>
+                                        )}
                                     >
-                                        {departments?.map((dept: any) => (
-                                            <MenuItem key={dept.id} value={dept.id}>{dept.name}</MenuItem>
+                                        {pastors?.length === 0 && <MenuItem disabled>No Pastors found</MenuItem>}
+                                        {pastors?.map((p: any) => (
+                                            <MenuItem key={p.id} value={p.id}>
+                                                <Checkbox checked={formData.pastorIds.includes(p.id)} />
+                                                <ListItemText primary={p.name} secondary={p.role.replace('_', ' ')} />
+                                            </MenuItem>
                                         ))}
-                                    </TextField>
-                                )}
-                            </Box>
-                        </DialogContent>
-                        <DialogActions sx={{ p: 4, gap: 2 }}>
-                            <Button onClick={handleClose} sx={{ fontWeight: 900, color: 'text.secondary' }}>ABORT</Button>
-                            <Button
-                                type="submit"
-                                variant="contained"
-                                sx={{ 
-                                    borderRadius: 0, 
-                                    fontWeight: 900, 
-                                    px: 4, 
-                                    py: 1.5,
-                                    boxShadow: '0 0 20px var(--primary-glow)' 
-                                }}
-                            >
-                                {editMeeting ? 'CONFIRM CHANGES' : 'SCHEDULE BRIEFING'}
-                            </Button>
-                        </DialogActions>
-                    </form>
-                )}
+                                    </Select>
+                                </FormControl>
+                            )}
+                        </Box>
+                    </DialogContent>
+                    <DialogActions sx={{ p: 4 }}>
+                        <Button onClick={handleClose} sx={{ fontWeight: 'bold' }}>Abort</Button>
+                        <Button
+                            type="submit"
+                            variant="contained"
+                            disabled={false}
+                            sx={{ borderRadius: 2, px: 4, fontWeight: 'bold' }}
+                        >
+                            {editMeeting ? 'Confirm Adjustments' : 'Initialize Briefing'}
+                        </Button>
+                    </DialogActions>
+                </form>
             </Dialog>
         </DashboardLayout>
     );

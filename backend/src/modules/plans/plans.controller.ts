@@ -5,7 +5,8 @@ import { AuthRequest } from '../../middleware/auth.middleware.js';
 import { getOrSetCache } from '../../utils/redis.js';
 import redis from '../../utils/redis.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
-import { broadcastSync } from '../../utils/socket.js';
+import { isGlobalOperator, resolveTargetDepartmentId } from '../../utils/department-accounts.js';
+import { canAutoPublishContent, bishopRoleApproved } from '../../utils/approval-utils.js';
 
 export const getPlans = catchAsync(async (req: AuthRequest, res: Response) => {
     const { departmentId, isMajor, page = '1', limit = '10' } = req.query;
@@ -110,49 +111,72 @@ export const createPlan = catchAsync(async (req: AuthRequest, res: Response) => 
     const { type, title, description, departmentId, pastorIds } = req.body;
     
     const isExecutive = ['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'SECRETARY'].includes(req.user!.role);
-    const targetDeptId = departmentId || req.user?.departmentId;
+    const targetDeptId = resolveTargetDepartmentId(req.user!.role, req.user?.departmentId, departmentId);
     const isManaging = req.user!.managedDepartments?.some((d: any) => d.id === targetDeptId) || req.user!.departmentId === targetDeptId;
     
+    if (!targetDeptId) {
+        throw new AppError('Department is required to create a plan.', 400);
+    }
+
     if (!isExecutive && req.user!.role === 'DEPARTMENT_LEADER' && !isManaging) {
         throw new AppError('Leaders can only create plans for their own mission sector', 403);
     }
 
     // ─── Universal Financial Safeguard (Mandatory 1,500 KES Floor) ───
-    const deptAccount = await prisma.account.findUnique({ where: { departmentId: targetDeptId } });
-    const minRequired = 1500;
-    if (!deptAccount || deptAccount.balance < 1500) { console.warn("Bypassing financial safeguard for immediate deployment."); }
+    if (!isGlobalOperator(req.user!.role)) {
+        const deptAccount = await prisma.account.findUnique({ where: { departmentId: targetDeptId } });
+        const minRequired = 1500;
+        if (!deptAccount || deptAccount.balance < minRequired) {
+            throw new AppError(`INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of ${minRequired} KES is required for all operations (Department or Church funded). Current balance: ${deptAccount?.balance || 0} KES.`, 402);
+        }
+    }
+
+    const autoApprove = canAutoPublishContent(req.user!.role);
 
     const plan = await prisma.$transaction(async (tx) => {
         const newPlan = await tx.plan.create({
             data: {
                 type, title, content: description || req.body.content || "",
                 departmentId: targetDeptId,
-                budgetSource: (req.body.budgetSource || 'DEPARTMENT') as any, // Cast for type sync
+                budgetSource: (req.body.budgetSource || 'DEPARTMENT') as any,
                 isMajor: req.body.isMajor === true,
-                approvalStatus: 'APPROVED',
+                approvalStatus: autoApprove ? 'APPROVED' : 'PENDING_APPROVAL',
                 status: 'PLANNED',
-                createdById: req.user!.id,
-                targetPastorId: (pastorIds && pastorIds.length > 0) ? pastorIds[0] : null
             } as any,
         });
 
-        // Approval chain removed as per user request
-        
-        // ─── Automated Tactical Broadcast ───
-        await tx.announcement.create({
-            data: {
-                title: `NEW STRATEGIC PLAN: ${title.toUpperCase()}`,
-                content: `New ministry plan initiated: ${description || title}. Strategic alignment in progress.`,
-                priority: 'NORMAL',
-                isGlobal: req.body.isMajor === true,
-                isMajor: req.body.isMajor === true,
-                status: 'PUBLISHED',
-                authorId: req.user!.id,
-                departmentId: targetDeptId,
-                planId: newPlan.id
-            } as any
-        });
+        if (autoApprove) {
+            return newPlan;
+        }
 
+        // 👨‍⚖️ Initializing Approval Chain for Plans
+        const approvalData: any[] = (pastorIds || []).map((pid: string) => ({
+            planId: newPlan.id,
+            userId: pid,
+            role: 'PASTOR'
+        }));
+
+        const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
+        if (bishop) {
+            approvalData.push({
+                planId: newPlan.id,
+                userId: bishop.id,
+                role: 'BISHOP'
+            });
+        }
+
+        if (approvalData.length > 0) {
+            await tx.planApproval.createMany({ data: approvalData });
+            
+            // 🔔 Notify Authorizers
+            const notifications = approvalData.map((app: any) => ({
+                userId: app.userId,
+                title: '📜 Plan Authorization Required',
+                message: `New strategic plan "${title}" requires your executive approval.`
+            }));
+            await tx.notification.createMany({ data: notifications });
+        }
+        
         return newPlan;
     });
 
@@ -165,6 +189,74 @@ export const createPlan = catchAsync(async (req: AuthRequest, res: Response) => 
     res.status(201).json(plan);
 });
 
+export const approvePlan = catchAsync(async (req: AuthRequest, res: Response) => {
+    const { id } = req.params;
+    const user = req.user!;
+
+    const existing = await prisma.planApproval.findUnique({
+        where: { planId_userId: { planId: id, userId: user.id } }
+    });
+    if (existing) throw new AppError('Already approved', 400);
+
+    const planData = await prisma.plan.findUnique({ where: { id } });
+    if (!planData) throw new AppError('Plan not found', 404);
+
+    const totalApprovals = await prisma.$transaction(async (tx) => {
+        await tx.planApproval.create({
+            data: {
+                planId: id,
+                userId: user.id,
+                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role) ? 'PASTOR' : user.role)
+            }
+        });
+
+        const allApprovals = await tx.planApproval.findMany({ where: { planId: id } });
+        const bishopApproved = bishopRoleApproved(allApprovals);
+        const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR').length;
+
+        const quorumMet = bishopApproved && pastorCount >= 2;
+
+        if (quorumMet) {
+            await tx.plan.update({
+                where: { id },
+                data: { approvalStatus: 'APPROVED' }
+            });
+        }
+        return allApprovals.length;
+    });
+
+    const refreshedPlan = await prisma.plan.findUnique({ where: { id } });
+    if (refreshedPlan?.approvalStatus === 'APPROVED') {
+        await logAudit(user.id, 'PUBLISH', 'PLAN', id, { title: planData.title }, req.ip, req.get('user-agent'));
+        
+        // Invalidate Cache
+        await invalidatePlanCache();
+    }
+
+    res.json({ message: 'Approval recorded', totalApprovals });
+});
+
+export const updatePlanStatus = catchAsync(async (req: AuthRequest, res: Response) => {
+    const { id } = req.params;
+    const { approvalStatus } = req.body;
+
+    if (!['APPROVED', 'REJECTED'].includes(approvalStatus)) {
+        throw new AppError('Invalid approval status', 400);
+    }
+
+    const plan = await prisma.plan.update({
+        where: { id },
+        data: { approvalStatus }
+    });
+
+    const user = req.user!;
+    await logAudit(user.id, 'FORCE_APPROVE', 'PLAN', id, { title: plan.title, approvalStatus }, req.ip, req.get('user-agent'));
+    
+    // Invalidate plan cache
+    await invalidatePlanCache();
+
+    res.json({ message: `Plan status forcefully updated to ${approvalStatus}`, plan });
+});
 
 export const updatePlan = catchAsync(async (req: AuthRequest, res: Response) => {
     const plan = await prisma.plan.findUnique({ where: { id: req.params.id } });
@@ -177,11 +269,15 @@ export const updatePlan = catchAsync(async (req: AuthRequest, res: Response) => 
 
     if (!canUpdate) throw new AppError('Access denied: Executive or Sector permission required', 403);
 
-    // Operational lock removed as per user request
+    if (plan.approvalStatus === 'APPROVED' && user.role === 'DEPARTMENT_LEADER') {
+        throw new AppError('OPERATIONAL LOCK: Approved plans are frozen. Contact Palace Command for modifications.', 403);
+    }
 
     // ─── Universal Financial Safeguard on Update ───
     const deptAccount = await prisma.account.findUnique({ where: { departmentId: plan.departmentId } });
-    if (!deptAccount || deptAccount.balance < 1500) { console.warn("Bypassing financial safeguard for immediate deployment."); }
+    if (!deptAccount || deptAccount.balance < 1500) {
+        throw new AppError('INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of 1,500 KES is required for all operations.', 402);
+    }
 
     const { description, ...rest } = req.body;
     
@@ -222,7 +318,13 @@ export const deletePlan = catchAsync(async (req: AuthRequest, res: Response) => 
 
     if (!canDelete) throw new AppError('Access denied: Executive or Sector priority required', 403);
 
-    // Deletion restrictions removed as per user request
+    if (user.role === 'DEPARTMENT_LEADER') {
+        if (plan.status !== 'COMPLETED' && plan.status !== 'TACKLED' && plan.status !== 'REJECTED') {
+            throw new AppError('DELETION RESTRICTED: Plans can only be decommissioned after achievement (COMPLETED/TACKLED).', 403);
+        }
+    } else if (plan.approvalStatus === 'APPROVED' && user.role !== 'SUPER_ADMIN') {
+        throw new AppError('Approved plans require High Authorization to decommission.', 403);
+    }
 
     await prisma.$transaction(async (tx) => {
         await tx.plan.update({
@@ -250,5 +352,4 @@ export const deletePlan = catchAsync(async (req: AuthRequest, res: Response) => 
 async function invalidatePlanCache() {
     const keys = await redis.keys('plans:*');
     if (keys.length > 0) await redis.del(...keys);
-    broadcastSync('plans');
 }

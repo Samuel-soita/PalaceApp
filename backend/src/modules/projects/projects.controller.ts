@@ -5,7 +5,8 @@ import { getOrSetCache } from '../../utils/redis.js';
 import redis from '../../utils/redis.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
-import { broadcastSync } from '../../utils/socket.js';
+import { canAutoPublishContent, bishopRoleApproved } from '../../utils/approval-utils.js';
+import { isGlobalOperator } from '../../utils/department-accounts.js';
 
 /**
  * 🔍 Fetch Projects with multi-role visibility scoping
@@ -119,10 +120,15 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
 
     const targetDeptId = departmentId || user.departmentId;
 
-    // ─── Universal Financial Safeguard (Mandatory 1,500 KES Floor) ───
-    const deptAccount = await prisma.account.findUnique({ where: { departmentId: targetDeptId } });
-    const minRequired = 1500;
-    if (!deptAccount || deptAccount.balance < 1500) { console.warn("Bypassing financial safeguard for immediate deployment."); }
+    if (!isGlobalOperator(user.role)) {
+        const deptAccount = await prisma.account.findUnique({ where: { departmentId: targetDeptId } });
+        const minRequired = 1500;
+        if (!deptAccount || deptAccount.balance < minRequired) {
+            throw new AppError(`INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of ${minRequired} KES is required for all operations (Department or Church funded). Current balance: ${deptAccount?.balance || 0} KES.`, 402);
+        }
+    }
+
+    const autoApprove = canAutoPublishContent(user.role);
 
     const project = await prisma.$transaction(async (tx) => {
         const newProject = await tx.project.create({
@@ -136,10 +142,8 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
                 isMajor: isMajor === true,
                 deadline: deadline ? new Date(deadline) : null,
                 progress: 0,
-                approvalStatus: 'APPROVED',
+                approvalStatus: autoApprove ? 'APPROVED' : 'PENDING_APPROVAL',
                 category: category || 'NEW_PROJECT',
-                createdById: user.id,
-                targetPastorId: (pastorIds && pastorIds.length > 0) ? pastorIds[0] : null
             } as any,
         });
 
@@ -151,14 +155,44 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
                 priority: 'NORMAL',
                 isGlobal: !!isMajor,
                 isMajor: !!isMajor,
-                status: 'PUBLISHED',
+                status: autoApprove ? 'PUBLISHED' : 'PENDING',
                 eventDate: deadline ? new Date(deadline) : new Date(),
                 location: 'CHURCH GROUNDS',
                 authorId: user.id,
-                departmentId: targetDeptId,
-                projectId: newProject.id
+                departmentId: targetDeptId
             } as any
         });
+
+        if (autoApprove) {
+            return newProject;
+        }
+
+        // 👨‍⚖️ Initializing Approval Chain
+        const approvalData: any[] = (pastorIds || []).map((pid: string) => ({
+            projectId: newProject.id,
+            userId: pid,
+            role: 'PASTOR'
+        }));
+
+        const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
+        if (bishop) {
+            approvalData.push({
+                projectId: newProject.id,
+                userId: bishop.id,
+                role: 'BISHOP'
+            });
+        }
+
+        if (approvalData.length > 0) {
+            await tx.projectApproval.createMany({ data: approvalData });
+            
+            const notifications = approvalData.map((app: any) => ({
+                userId: app.userId,
+                title: '📋 Project Clearance Required',
+                message: `Project "${title}" requires your strategic authorization.`
+            }));
+            await tx.notification.createMany({ data: notifications });
+        }
 
         return newProject;
     });
@@ -172,6 +206,69 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
 /**
  * ✅ Approve Project (Multi-signature logic)
  */
+export const approveProject = catchAsync(async (req: AuthRequest, res: Response) => {
+    const { id } = req.params;
+    const user = req.user!;
+
+    const project = await prisma.project.findFirst({ 
+        where: { id, deletedAt: null } 
+    });
+    if (!project) throw new AppError('Project not found', 404);
+
+    const existing = await prisma.projectApproval.findUnique({
+        where: { projectId_userId: { projectId: id, userId: user.id } }
+    });
+    if (existing) throw new AppError('You have already signed off on this project.', 400);
+
+    // Recording approval in a transaction to ensure integrity
+    await prisma.$transaction(async (tx) => {
+        await tx.projectApproval.create({
+            data: {
+                projectId: id,
+                userId: user.id,
+                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role) ? 'PASTOR' : user.role)
+            }
+        });
+
+        const allApprovals = await tx.projectApproval.findMany({ where: { projectId: id } });
+        const bishopApproved = bishopRoleApproved(allApprovals);
+        const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR').length;
+
+        if (bishopApproved && pastorCount >= 2) {
+            await tx.project.update({
+                where: { id },
+                data: { approvalStatus: 'APPROVED' }
+            });
+            await logAudit(user.id, 'PUBLISH', 'PROJECT', id, { title: project.title }, req.ip, req.get('user-agent'));
+        }
+    });
+
+    await invalidateProjectCache();
+    res.json({ message: 'Approval recorded successfully.' });
+});
+
+/**
+ * ✅ Force Approve Project Status (Intervention)
+ */
+export const updateProjectStatus = catchAsync(async (req: AuthRequest, res: Response) => {
+    const { id } = req.params;
+    const { approvalStatus } = req.body;
+    const user = req.user!;
+
+    if (!['APPROVED', 'REJECTED'].includes(approvalStatus)) {
+        throw new AppError('Invalid approval status', 400);
+    }
+
+    const project = await prisma.project.update({
+        where: { id },
+        data: { approvalStatus }
+    });
+
+    await logAudit(user.id, 'FORCE_APPROVE', 'PROJECT', id, { title: project.title, approvalStatus }, req.ip, req.get('user-agent'));
+    await invalidateProjectCache();
+
+    res.json({ message: `Project status forcefully updated to ${approvalStatus}`, project });
+});
 
 /**
  * 📝 Update Project
@@ -191,11 +288,16 @@ export const updateProject = catchAsync(async (req: AuthRequest, res: Response) 
         }
     }
 
-    // Operational lock removed as per user request
+    if (existingProject.approvalStatus === 'APPROVED' && user.role === 'DEPARTMENT_LEADER') {
+        throw new AppError('OPERATIONAL LOCK: Approved projects are frozen. De-authorization from Bishop is required for modifications.', 403);
+    }
 
-    // ─── Universal Financial Safeguard on Update ───
-    const deptAccount = await prisma.account.findUnique({ where: { departmentId: existingProject.departmentId } });
-    if (!deptAccount || deptAccount.balance < 1500) { console.warn("Bypassing financial safeguard for immediate deployment."); }
+    if (!isGlobalOperator(user.role)) {
+        const deptAccount = await prisma.account.findUnique({ where: { departmentId: existingProject.departmentId } });
+        if (!deptAccount || deptAccount.balance < 1500) {
+            throw new AppError('INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of 1,500 KES is required for all operations.', 402);
+        }
+    }
 
     // Sanitizing payload and handling numeric/date fields
     const { pastorIds, ...cleanRest } = req.body;
@@ -226,7 +328,13 @@ export const deleteProject = catchAsync(async (req: AuthRequest, res: Response) 
     const existingProject = await prisma.project.findFirst({ where: { id, deletedAt: null } });
     if (!existingProject) throw new AppError('Project not found', 404);
 
-    // Deletion restrictions removed as per user request
+    if (user.role === 'DEPARTMENT_LEADER') {
+        if (existingProject.status !== 'COMPLETED' && existingProject.status !== 'TACKLED' && existingProject.status !== 'REJECTED') {
+            throw new AppError('DELETION RESTRICTED: Projects can only be decommissioned after achievement (COMPLETED/TACKLED).', 403);
+        }
+    } else if (existingProject.approvalStatus === 'APPROVED' && user.role !== 'SUPER_ADMIN') {
+        throw new AppError('Approved projects require High Authorization (Bishop) to decommission.', 403);
+    }
 
     // Standardized Soft Delete
     await prisma.project.update({
@@ -286,5 +394,4 @@ export const addProjectUpdate = catchAsync(async (req: AuthRequest, res: Respons
 async function invalidateProjectCache() {
     const keys = await redis.keys('projects:*');
     if (keys.length > 0) await redis.del(...keys);
-    broadcastSync('projects');
 }
