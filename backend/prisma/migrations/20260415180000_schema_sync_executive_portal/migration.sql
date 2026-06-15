@@ -1,9 +1,7 @@
 -- Sync schema with Prisma models (events, plans, announcements, messages, repairs, etc.)
 
--- DropForeignKey
-ALTER TABLE "Volunteer" DROP CONSTRAINT IF EXISTS "Volunteer_departmentId_fkey";
-
--- AlterTable
+-- Drop legacy Volunteer table if it still exists (skip FK drop when table is already gone)
+DROP TABLE IF EXISTS "Volunteer";
 ALTER TABLE "Affirmation" ADD COLUMN IF NOT EXISTS "devotionId" TEXT;
 
 -- AlterTable
@@ -62,9 +60,6 @@ ADD COLUMN IF NOT EXISTS "targetPastorId" TEXT;
 -- AlterTable
 ALTER TABLE "SystemMetric" ADD COLUMN IF NOT EXISTS "failureRate" DOUBLE PRECISION NOT NULL DEFAULT 0,
 ADD COLUMN IF NOT EXISTS "syncSuccessRate" DOUBLE PRECISION NOT NULL DEFAULT 0;
-
--- DropTable
-DROP TABLE IF EXISTS "Volunteer";
 
 -- CreateTable
 CREATE TABLE IF NOT EXISTS "PastorModuleAccess" (
