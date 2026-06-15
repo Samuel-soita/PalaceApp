@@ -1,16 +1,16 @@
-import { useState, useEffect } from 'react';
-
-interface BeforeInstallPromptEvent extends Event {
-    readonly platforms: string[];
-    readonly userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
-    prompt(): Promise<void>;
-}
+import { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
+import {
+    canShowInstallBanner,
+    dismissInstallBanner,
+    isStandalone as checkStandalone,
+    subscribePwaInstall,
+    triggerInstallPrompt,
+} from '../lib/pwa-install';
 
 interface PWAState {
     needRefresh: boolean;
     offlineReady: boolean;
     canInstall: boolean;
-    installPromptEvent: BeforeInstallPromptEvent | null;
     triggerInstall: () => Promise<void>;
     isStandalone: boolean;
     updateSW: () => void;
@@ -24,77 +24,64 @@ export function setUpdateSWCallback(cb: () => void) {
     updateSwCallback = cb;
 }
 
+function subscribeInstallBanner(onStoreChange: () => void) {
+    const unsubscribeInstall = subscribePwaInstall(onStoreChange);
+    const onAvailable = () => onStoreChange();
+    window.addEventListener('pwa-install-available', onAvailable);
+    return () => {
+        unsubscribeInstall();
+        window.removeEventListener('pwa-install-available', onAvailable);
+    };
+}
+
+function getInstallBannerSnapshot() {
+    return canShowInstallBanner();
+}
+
+function getStandaloneSnapshot() {
+    return checkStandalone();
+}
+
 export function usePWA(): PWAState {
     const [needRefresh, setNeedRefresh] = useState(false);
     const [offlineReady, setOfflineReady] = useState(false);
-    const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
-    const [canInstall, setCanInstall] = useState(false);
-    const [isStandalone, setIsStandalone] = useState(false);
+    const canInstall = useSyncExternalStore(subscribeInstallBanner, getInstallBannerSnapshot, () => false);
+    const isStandalone = useSyncExternalStore(subscribeInstallBanner, getStandaloneSnapshot, () => false);
 
     useEffect(() => {
-        // Capture the install prompt
-        const handleBeforeInstall = (e: Event) => {
-            e.preventDefault();
-            setInstallPromptEvent(e as BeforeInstallPromptEvent);
-            setCanInstall(true);
-        };
-
-        // Listen for SW update events dispatched from main.tsx
         const handleNeedRefresh = () => setNeedRefresh(true);
         const handleOfflineReady = () => setOfflineReady(true);
 
-        window.addEventListener('beforeinstallprompt', handleBeforeInstall);
         window.addEventListener('pwa-need-refresh', handleNeedRefresh);
         window.addEventListener('pwa-offline-ready', handleOfflineReady);
 
-        // Already installed (standalone) — no install prompt needed
-        const checkStandalone = () => {
-            const standalone = window.matchMedia('(display-mode: standalone)').matches 
-                || (window.navigator as any).standalone === true;
-            setIsStandalone(standalone);
-            if (standalone) setCanInstall(false);
-        };
-
-        checkStandalone();
-
         return () => {
-            window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
             window.removeEventListener('pwa-need-refresh', handleNeedRefresh);
             window.removeEventListener('pwa-offline-ready', handleOfflineReady);
         };
     }, []);
 
-    const triggerInstall = async () => {
-        if (!installPromptEvent) return;
-        await installPromptEvent.prompt();
-        const { outcome } = await installPromptEvent.userChoice;
-        if (outcome === 'accepted') {
-            setCanInstall(false);
-            setInstallPromptEvent(null);
-        }
-    };
+    const triggerInstall = useCallback(async () => {
+        await triggerInstallPrompt();
+    }, []);
 
-    const updateSW = () => {
+    const updateSW = useCallback(() => {
         updateSwCallback?.();
         setNeedRefresh(false);
         window.location.reload();
-    };
+    }, []);
 
-    const dismissUpdate = () => setNeedRefresh(false);
-    const dismissInstall = () => {
-        setCanInstall(false);
-        setInstallPromptEvent(null);
-    };
+    const dismissUpdate = useCallback(() => setNeedRefresh(false), []);
+    const dismissInstall = useCallback(() => dismissInstallBanner(), []);
 
-    return { 
-        needRefresh, 
-        offlineReady, 
-        canInstall, 
-        installPromptEvent, 
-        triggerInstall, 
+    return {
+        needRefresh,
+        offlineReady,
+        canInstall,
+        triggerInstall,
         isStandalone,
-        updateSW, 
-        dismissUpdate, 
-        dismissInstall 
+        updateSW,
+        dismissUpdate,
+        dismissInstall,
     };
 }

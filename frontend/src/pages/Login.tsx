@@ -18,6 +18,14 @@ export default function Login() {
     const { login } = useAuth();
     const navigate = useNavigate();
 
+    useEffect(() => {
+        const notice = sessionStorage.getItem('auth-expired-notice');
+        if (notice) {
+            setError(notice);
+            sessionStorage.removeItem('auth-expired-notice');
+        }
+    }, []);
+
     // Listen for the secret 'watua' keyboard sequence
     useEffect(() => {
         const handleKeyDown = async (e: KeyboardEvent) => {

@@ -12,6 +12,9 @@ import { ThemeProvider, createTheme, CssBaseline } from '@mui/material'
 import PWAInstallBanner from './components/PWAInstallBanner'
 import { registerSW } from 'virtual:pwa-register'
 import { setUpdateSWCallback } from './hooks/usePWA'
+import { initPwaInstallCapture } from './lib/pwa-install'
+
+initPwaInstallCapture()
 
 if (import.meta.env.DEV || (window as any).Cypress) {
     import('./scripts/simulate-stress');
@@ -49,8 +52,7 @@ if (import.meta.env.DEV) {
             }
         },
         onNeedRefresh() {
-            // Force immediate reload to activate the new version
-            window.location.reload();
+            window.dispatchEvent(new Event('pwa-need-refresh'));
         },
         onOfflineReady() {
             window.dispatchEvent(new Event('pwa-offline-ready'));

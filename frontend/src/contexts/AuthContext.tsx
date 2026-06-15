@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { LocalAuthService } from '../lib/LocalAuthService';
 import { db } from '../lib/db';
+import { expireSessionIfNeeded, isTokenExpired, resetSessionState } from '../lib/auth-session';
 
 interface AuthUser {
     id: string;
@@ -34,18 +35,58 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<AuthUser | null>(() => {
+        const token = localStorage.getItem('token');
+        if (isTokenExpired(token)) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            return null;
+        }
         const saved = localStorage.getItem('user');
         return saved ? JSON.parse(saved) : null;
     });
-    const [token, setToken] = useState(localStorage.getItem('token'));
+    const [token, setToken] = useState<string | null>(() => {
+        const stored = localStorage.getItem('token');
+        if (isTokenExpired(stored)) return null;
+        return stored;
+    });
     const [loading, setLoading] = useState(true);
 
+    const logout = useCallback(() => {
+        setUser(null);
+        setToken(null);
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        sessionStorage.removeItem('welcome-splash-shown');
+    }, []);
+
     useEffect(() => {
-        // Local-First: Initial load is complete once state is restored from localStorage.
         setLoading(false);
     }, [token]);
 
+    useEffect(() => {
+        const onSessionExpired = () => logout();
+        window.addEventListener('auth:session-expired', onSessionExpired);
+        return () => window.removeEventListener('auth:session-expired', onSessionExpired);
+    }, [logout]);
+
+    useEffect(() => {
+        const checkExpiry = () => {
+            if (expireSessionIfNeeded()) return;
+        };
+        checkExpiry();
+        const intervalId = window.setInterval(checkExpiry, 60_000);
+        const onVisible = () => {
+            if (document.visibilityState === 'visible') checkExpiry();
+        };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            clearInterval(intervalId);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
+    }, []);
+
     const login = async (data: any) => {
+        resetSessionState();
         setUser(data.user);
         setToken(data.token);
         localStorage.setItem('token', data.token);
@@ -78,14 +119,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
         }
         return false;
-    };
-
-    const logout = () => {
-        setUser(null);
-        setToken(null);
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        sessionStorage.removeItem('welcome-splash-shown');
     };
 
     const updateUser = (data: any) => {

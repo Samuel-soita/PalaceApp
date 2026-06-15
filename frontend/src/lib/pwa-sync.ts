@@ -1,6 +1,7 @@
 import { db, SyncJob } from './db';
 import api from './api-client';
 import { DeviceService } from './DeviceService';
+import { handleSessionExpired, isSessionActive, expireSessionIfNeeded } from './auth-session';
 
 /**
  * Local-first sync daemon — pull server state into Dexie, push syncQueue upstream.
@@ -13,13 +14,15 @@ const ERROR_THROTTLE_MS = 60_000;
 
 let isSyncing = false;
 let lastRunAt = 0;
+let pullAborted = false;
 let lastSyncTimestamp = Number(localStorage.getItem('palace-last-sync') || 0);
 const recentSyncErrors = new Map<string, number>();
 
 function shouldSkipSync(): boolean {
     if (isSyncing || !navigator.onLine) return true;
     if (typeof document !== 'undefined' && document.hidden) return true;
-    if (!localStorage.getItem('token')) return true;
+    if (expireSessionIfNeeded()) return true;
+    if (!isSessionActive()) return true;
     if (Date.now() - lastRunAt < MIN_SYNC_GAP_MS) return true;
     return false;
 }
@@ -44,6 +47,7 @@ async function syncModule(
     isFullSync = false,
     sinceQuery: { params: { since: string } }
 ): Promise<boolean> {
+    if (pullAborted || !isSessionActive()) return false;
     try {
         const res = await api.get(path, isFullSync ? {} : sinceQuery);
         const data = isFullSync ? (res.data.data || res.data) : res.data.data;
@@ -52,13 +56,23 @@ async function syncModule(
         }
         return true;
     } catch (err: any) {
+        const status = err.response?.status;
+        const isAuthError = status === 401 || err.code === 'SESSION_EXPIRED';
+        if (isAuthError) {
+            pullAborted = true;
+            if (status === 401) {
+                handleSessionExpired(err.response?.data?.error || 'Session expired');
+            }
+            return false;
+        }
         console.warn(`[Palace-Daemon] Module sync failed: ${path}`, err.message);
-        notifySyncError(path, err.response?.status);
+        notifySyncError(path, status);
         return false;
     }
 }
 
 async function runPullSync() {
+    pullAborted = false;
     const sinceQuery = { params: { since: new Date(lastSyncTimestamp).toISOString() } };
     const userStr = localStorage.getItem('user');
     const user = userStr ? JSON.parse(userStr) : null;
@@ -80,6 +94,7 @@ async function runPullSync() {
 
     let coreSuccess = 0;
     for (let i = 0; i < coreModules.length; i += 4) {
+        if (pullAborted) break;
         const batch = coreModules.slice(i, i + 4);
         const batchResults = await Promise.all(
             batch.map(([path, table]) => syncModule(path, table, false, sinceQuery))
@@ -87,8 +102,12 @@ async function runPullSync() {
         coreSuccess += batchResults.filter(Boolean).length;
     }
 
+    if (pullAborted) return;
+
     // Covenant partnerships — every signed-in user pulls their own record (admins get all)
     const partnershipOk = await syncModule('/sync/partnerships', db.partnerships, false, sinceQuery);
+
+    if (pullAborted) return;
 
     // Phase 3: secondary modules (only for privileged roles — reduces member load)
     let secondarySuccess = 0;
@@ -108,6 +127,7 @@ async function runPullSync() {
 
         const active = secondary.filter(Boolean) as Array<[string, any]>;
         for (let i = 0; i < active.length; i += 4) {
+            if (pullAborted) break;
             const batch = active.slice(i, i + 4);
             const batchResults = await Promise.all(
                 batch.map(([path, table]) => syncModule(path, table, false, sinceQuery))
@@ -249,6 +269,14 @@ async function runPushSync() {
         } catch (pushErr: any) {
             const status = pushErr?.response?.status;
             const errorMessage = pushErr?.response?.data?.message || pushErr.message;
+
+            if (status === 401 || pushErr?.code === 'SESSION_EXPIRED') {
+                pullAborted = true;
+                if (status === 401) {
+                    handleSessionExpired(pushErr?.response?.data?.error || 'Session expired');
+                }
+                break;
+            }
 
             if (status === 409) {
                 const tableMap: Record<string, any> = { EVENT: db.events, PROJECT: db.projects, USER: db.users };

@@ -4,6 +4,9 @@ import prisma from '../utils/prisma.js';
 import { getOrSetCache } from '../utils/redis.js';
 import { AppError } from '../utils/errors.js';
 import { pastorHasModule } from '../utils/pastor-module-keys.js';
+
+const EXPIRED_LOG_COOLDOWN_MS = 60_000;
+let lastExpiredTokenLogAt = 0;
 export type Role = 'SUPER_ADMIN' | 'SYSTEM_ADMIN' | 'SECRETARY' | 'DEPARTMENT_LEADER' | 'MEMBER' | 'PASTOR' | 'ASSOCIATE_PASTOR' | 'WATUA';
 
 export interface AuthRequest extends Request {
@@ -76,6 +79,11 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
         };
         next();
     } catch (error: any) {
+        const isExpired = error.name === 'TokenExpiredError' || error.message === 'jwt expired';
+        if (isExpired && Date.now() - lastExpiredTokenLogAt < EXPIRED_LOG_COOLDOWN_MS) {
+            return res.status(401).json({ error: 'Invalid or expired token' });
+        }
+        if (isExpired) lastExpiredTokenLogAt = Date.now();
         console.warn(`[AUTH_FAILURE] Invalid or expired token for path ${req.path}. Error: ${error.message}`);
         res.status(401).json({ error: 'Invalid or expired token' });
     }
