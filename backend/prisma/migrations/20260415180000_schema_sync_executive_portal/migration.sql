@@ -38,14 +38,21 @@ ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "taggedDepartmentIds" TEXT[] DEFA
 -- AlterTable
 ALTER TABLE "MinistrySettings" DROP COLUMN IF EXISTS "churchBudget";
 
--- AlterTable: Plan.description -> content
-ALTER TABLE "Plan" ADD COLUMN IF NOT EXISTS "budgetSource" TEXT NOT NULL DEFAULT 'DEPARTMENT',
-ADD COLUMN IF NOT EXISTS "content" TEXT NOT NULL DEFAULT '',
-ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'PLANNED',
-ADD COLUMN IF NOT EXISTS "targetPastorId" TEXT;
+-- AlterTable: Plan.description -> content (idempotent)
+ALTER TABLE "Plan" ADD COLUMN IF NOT EXISTS "budgetSource" TEXT NOT NULL DEFAULT 'DEPARTMENT';
+ALTER TABLE "Plan" ADD COLUMN IF NOT EXISTS "content" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "Plan" ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'PLANNED';
+ALTER TABLE "Plan" ADD COLUMN IF NOT EXISTS "targetPastorId" TEXT;
 
-UPDATE "Plan" SET "content" = "description" WHERE "description" IS NOT NULL AND ("content" IS NULL OR "content" = '');
-ALTER TABLE "Plan" DROP COLUMN IF EXISTS "description";
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'Plan' AND column_name = 'description'
+  ) THEN
+    UPDATE "Plan" SET "content" = COALESCE("description", '') WHERE "content" IS NULL OR "content" = '';
+    ALTER TABLE "Plan" DROP COLUMN "description";
+  END IF;
+END $$;
 
 -- AlterTable
 ALTER TABLE "Project" ADD COLUMN IF NOT EXISTS "budgetSource" TEXT NOT NULL DEFAULT 'DEPARTMENT',
@@ -66,7 +73,7 @@ CREATE TABLE IF NOT EXISTS "PastorModuleAccess" (
     "moduleKey" TEXT NOT NULL,
     "permissions" JSONB NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "PastorModuleAccess_pkey" PRIMARY KEY ("id")
 );
 
@@ -79,7 +86,7 @@ CREATE TABLE IF NOT EXISTS "DepartmentReport" (
     "fileName" TEXT,
     "submittedById" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "downloadedAt" TIMESTAMP(3),
     CONSTRAINT "DepartmentReport_pkey" PRIMARY KEY ("id")
 );
@@ -94,7 +101,7 @@ CREATE TABLE IF NOT EXISTS "TechnicalRepair" (
     "status" TEXT NOT NULL DEFAULT 'PENDING_PASTOR_1',
     "requesterId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "deletedAt" TIMESTAMP(3),
     "deletedBy" TEXT,
     "deletedReason" TEXT,
