@@ -73,9 +73,11 @@ export default function AdminDashboard() {
     // ─── Direct Redirects for Unauthorized Users ─────────────────────────────
     useEffect(() => {
         if (!canViewStats && !isRestrictedRole) {
-            navigate('/', { replace: true });
+            if (role === 'PASTOR' || role === 'ASSOCIATE_PASTOR') navigate('/pastor', { replace: true });
+            else if (role === 'DEPARTMENT_LEADER' && authUser?.departmentId) navigate(`/department/${authUser.departmentId}`, { replace: true });
+            else navigate('/', { replace: true });
         }
-    }, [canViewStats, isRestrictedRole, navigate]);
+    }, [canViewStats, isRestrictedRole, navigate, role, authUser?.departmentId]);
     const [toast, setToast] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
         open: false, message: '', severity: 'success'
     });

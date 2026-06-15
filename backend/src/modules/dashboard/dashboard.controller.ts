@@ -154,7 +154,11 @@ export const getDashboardSync = async (req: any, res: Response) => {
                     })),
                 wrap('ministrySettings', prisma.ministrySettings ? prisma.ministrySettings.findUnique({ where: { id: 'GLOBAL' } }) : Promise.resolve(null)),
                 wrap('affirmation', prisma.affirmation ? prisma.affirmation.findFirst({ where: { date: new Date(new Date().setHours(0,0,0,0)) } }) : Promise.resolve(null)),
-                wrap('partnership', prisma.partnership.findFirst({ where: { userId, status: 'ACTIVE' } })),
+                wrap('partnership', prisma.partnership.findFirst({
+                    where: { userId, deletedAt: null },
+                    orderBy: { updatedAt: 'desc' },
+                    include: { ledgers: { orderBy: { date: 'desc' }, take: 5 } },
+                })),
                 wrap('account', (isAdmin || isLeader) 
                     ? (effectiveDeptId 
                         ? prisma.account.findUnique({ where: { departmentId: effectiveDeptId } })
@@ -176,8 +180,9 @@ export const getDashboardSync = async (req: any, res: Response) => {
                     include: { approvals: true, requester: { select: { name: true } } }
                 }) : Promise.resolve([])),
                 wrap('allPartnerships', isAdmin ? prisma.partnership.findMany({
-                    take: 50,
-                    orderBy: { createdAt: 'desc' },
+                    where: { deletedAt: null },
+                    take: 200,
+                    orderBy: { updatedAt: 'desc' },
                     include: { user: { select: { name: true, membershipNumber: true } } }
                 }) : Promise.resolve([])),
                 wrap('globalMetrics', isAdmin ? Promise.all([

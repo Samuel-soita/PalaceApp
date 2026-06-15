@@ -1,19 +1,17 @@
 import React, { useState } from 'react';
 import { 
     Dialog, DialogTitle, DialogContent, Box, Typography, Card, 
-    CardContent, Avatar, Chip, Button, IconButton, Tooltip,
-    Divider, TextField, Grid, Alert
+    CardContent, Avatar, Chip, Button, IconButton,
+    Divider, TextField, Grid
 } from '@mui/material';
 import { 
-    Calendar, X, CheckCircle, Clock, Shield, 
-    ChevronRight, Info, MessageSquare, UserCheck
+    Calendar, X, Clock, Shield, MessageSquare
 } from 'lucide-react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import api from '../../lib/api-client';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../lib/db';
-import { useOfflineMutation } from '../../hooks/useOfflineMutation';
+import { executeApiFirstMutation } from '../../lib/api-first-mutation';
 
 export default function AppointmentManager({ open, onClose }: { open: boolean, onClose: () => void }) {
     const { user: authUser } = useAuth();
@@ -23,36 +21,46 @@ export default function AppointmentManager({ open, onClose }: { open: boolean, o
     const [approvedTime, setApprovedTime] = useState('');
     const [adminNotes, setAdminNotes] = useState('');
 
-    // 🏛️ LOCAL-FIRST REACTIVE KERNEL
-    const appointments = useLiveQuery(() => db.appointments.toArray()) || [];
-    const isLoading = false; // Dexie is near-instant
+    const appointments = useLiveQuery(() => db.appointments.toArray(), []) || [];
 
-    const updateStatusMutation = useOfflineMutation({
-        entity: 'APPOINTMENT',
-        table: 'appointments',
-        url: '/appointments/status', // This might need to match the specific status patch endpoint
-        onSuccess: () => {
-            setSelectedAppointment(null);
-            setApprovedDate('');
-            setApprovedTime('');
-            setAdminNotes('');
+    const updateStatusMutation = useMutation(
+        async (payload: { id: string; status: string; approvedDate?: string; approvedTime?: string; adminNotes?: string }) => {
+            const { id, ...body } = payload;
+
+            return executeApiFirstMutation({
+                entity: 'APPOINTMENT',
+                method: 'PATCH',
+                url: `/appointments/${id}/status`,
+                payload: body,
+                recordId: id,
+                table: 'appointments',
+                offlineOptimistic: async () => {
+                    await db.appointments.update(id, {
+                        ...body,
+                        syncStatus: 'PENDING',
+                        updatedAt: new Date().toISOString(),
+                    });
+                },
+            });
+        },
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries(['dashboard-sync']);
+                queryClient.invalidateQueries(['appointments-badge']);
+                setSelectedAppointment(null);
+                setApprovedDate('');
+                setApprovedTime('');
+                setAdminNotes('');
+            },
         }
-    });
-    
-    // For status specific PATCH, we might need a custom wrapper or update useOfflineMutation
-    // However, the PWA Sync daemon handles PATCH if we pass the ID.
+    );
 
     const canApprove = (appointment: any) => {
         if (!authUser) return false;
         const role = authUser.role;
         
-        // WATUA and SYSTEM_ADMIN can approve anything
         if (role === 'WATUA' || role === 'SYSTEM_ADMIN' || role === 'SECRETARY' || role === 'SUPER_ADMIN') return true;
-        
-        // Target pastor can approve their own
         if (appointment.targetId === authUser.id) return true;
-        
-        // Sector pastors can approve appointments for their role
         if (role === 'PASTOR' && appointment.targetRole === 'PASTOR') return true;
         if (role === 'ASSOCIATE_PASTOR' && appointment.targetRole === 'ASSOCIATE_PASTOR') return true;
 
@@ -86,9 +94,20 @@ export default function AppointmentManager({ open, onClose }: { open: boolean, o
             </DialogTitle>
 
             <DialogContent sx={{ p: 0 }}>
-                <Box sx={{ display: 'flex', height: '65vh' }}>
-                    {/* List Area */}
-                    <Box sx={{ width: '35%', borderRight: '1px solid rgba(255,255,255,0.05)', overflowY: 'auto', p: 2 }}>
+                <Box sx={{
+                    display: 'flex',
+                    flexDirection: { xs: 'column', md: 'row' },
+                    height: { xs: 'auto', md: '65vh' },
+                    maxHeight: { xs: '75vh', md: '65vh' },
+                }}>
+                    <Box sx={{
+                        width: { xs: '100%', md: '35%' },
+                        maxHeight: { xs: 220, md: '100%' },
+                        borderRight: { md: '1px solid rgba(255,255,255,0.05)' },
+                        borderBottom: { xs: '1px solid rgba(255,255,255,0.05)', md: 'none' },
+                        overflowY: 'auto',
+                        p: 2,
+                    }}>
                         {appointments.length === 0 ? (
                             <Box sx={{ textAlign: 'center', py: 8, opacity: 0.5 }}>
                                 <Typography variant="body2">No pending appointments.</Typography>
@@ -137,8 +156,13 @@ export default function AppointmentManager({ open, onClose }: { open: boolean, o
                         )}
                     </Box>
 
-                    {/* Detail Area */}
-                    <Box sx={{ width: '65%', p: 4, bgcolor: 'rgba(0,0,0,0.2)', overflowY: 'auto' }}>
+                    <Box sx={{
+                        width: { xs: '100%', md: '65%' },
+                        flex: 1,
+                        p: { xs: 2, md: 4 },
+                        bgcolor: 'rgba(0,0,0,0.2)',
+                        overflowY: 'auto',
+                    }}>
                         {selectedAppointment ? (
                             <Box>
                                 <Box display="flex" alignItems="center" gap={2} mb={4}>

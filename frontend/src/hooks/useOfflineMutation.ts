@@ -1,69 +1,55 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { executeApiFirstMutation } from '../lib/api-first-mutation';
 import { db } from '../lib/db';
-import { queueAction } from '../lib/pwa-sync';
-import api from '../lib/api-client';
 
 /**
- * 🛠️ MISSION-CRITICAL MUTATION HOOK
- * Handles zero-network data persistence by dual-writing to 
- * the local Tactical Cache (Dexie) and the Sync Queue.
+ * API-first mutation hook — calls the server immediately when online.
+ * Local queue + Dexie optimistic writes are used only when offline.
  */
 export function useOfflineMutation(options: {
     entity: string;
     table: keyof typeof db;
     url: string;
+    updateMethod?: 'PUT' | 'PATCH';
     onSuccess?: () => void;
 }) {
     const queryClient = useQueryClient();
+    const updateMethod = options.updateMethod || 'PATCH';
 
     return useMutation(async (payload: any) => {
         const isUpdate = !!payload.id;
         const id = payload.id || crypto.randomUUID();
-        const finalPayload = { 
-            ...payload, 
-            id, 
-            syncStatus: 'PENDING',
-            updatedAt: new Date().toISOString() 
-        };
+        const method = isUpdate ? updateMethod : 'POST';
+        const endpoint = options.url + (isUpdate ? `/${id}` : '');
 
-        // 1. OPTIMISTIC TACTICAL PERSISTENCE
-        // Update the local database immediately so the UI reflects the change.
-        if (typeof (db as any)[options.table]?.put === 'function') {
-            await (db as any)[options.table].put(finalPayload);
-        }
+        const {
+            syncStatus: _syncStatus,
+            deviceId: _deviceId,
+            lastModifiedBy: _lastModifiedBy,
+            version: _version,
+            ...cleanPayload
+        } = payload;
 
-        // 2. QUEUE FOR GLOBAL SYNC
-        // Add to the backend dispatch queue. The PWA Daemon will handle the rest.
-        await queueAction({
-            id,
+        return executeApiFirstMutation({
             entity: options.entity,
-            method: isUpdate ? 'PATCH' : 'POST',
-            url: options.url + (isUpdate ? `/${id}` : ''),
-            payload: finalPayload
+            method,
+            url: endpoint,
+            payload: cleanPayload,
+            recordId: id,
+            table: options.table,
+            offlineOptimistic: async (offlineId) => {
+                await (db as any)[options.table].put({
+                    ...payload,
+                    id: offlineId,
+                    syncStatus: 'PENDING',
+                    updatedAt: new Date().toISOString(),
+                });
+            },
         });
-
-        // 3. ATTEMPT REAL-TIME SYNC IF ONLINE (Optional/Graceful)
-        if (navigator.onLine) {
-            try {
-                const method = isUpdate ? 'patch' : 'post';
-                const endpoint = options.url + (isUpdate ? `/${id}` : '');
-                await (api as any)[method](endpoint, finalPayload);
-                
-                // If successful, mark as synced locally
-                if (typeof (db as any)[options.table]?.update === 'function') {
-                    await (db as any)[options.table].update(id, { syncStatus: 'SYNCED' });
-                }
-            } catch (err) {
-                console.warn('[Palace-Sync] Direct sync failed, job remains in tactical queue.', err);
-            }
-        }
-
-        return finalPayload;
     }, {
         onSuccess: () => {
-            // Invalidate relevant queries to refresh UI from local cache
             queryClient.invalidateQueries(['dashboard-sync']);
-            if (options.onSuccess) options.onSuccess();
-        }
+            options.onSuccess?.();
+        },
     });
 }

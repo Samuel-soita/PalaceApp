@@ -7,6 +7,7 @@ import { BackupService } from '../lib/BackupService';
 import { AuditLogService } from '../lib/AuditLogService';
 import { DeviceService } from '../lib/DeviceService';
 import api from '../lib/api-client';
+import { requestSyncSoon } from '../lib/pwa-sync';
 import {
     Box,
     Typography,
@@ -193,7 +194,22 @@ export default function WatuaDashboard() {
     const trash = useLiveQuery(() => db.syncQueue.where('status').equals('FAILED').toArray()) || [];
     const auditLogs = useLiveQuery(() => db.auditLogs.orderBy('timestamp').reverse().toArray()) || [];
     const deviceSettings = useLiveQuery(() => db.deviceSettings.get('current_device'));
-    const flags = [] as any[];
+    const flags = useMemo(() => {
+        const defaults = [
+            { id: 'offline_sync', name: 'OFFLINE_SYNC', scope: 'GLOBAL' },
+            { id: 'pastor_module_guard', name: 'PASTOR_MODULE_GUARD', scope: 'SECURITY' },
+            { id: 'auto_affirmations', name: 'AUTO_AFFIRMATIONS', scope: 'SPIRITUAL' },
+        ];
+        return defaults.map((flag) => {
+            try {
+                const stored = localStorage.getItem(`flag_${flag.name}`);
+                const parsed = stored ? JSON.parse(stored) : { enabled: true };
+                return { ...flag, enabled: parsed.enabled !== false };
+            } catch {
+                return { ...flag, enabled: true };
+            }
+        });
+    }, [tab]);
 
     // 📡 Network state — drives the offline mission banner
     const [isOffline, setIsOffline] = useState(!navigator.onLine);
@@ -231,6 +247,31 @@ export default function WatuaDashboard() {
     const [resourceType, setResourceType] = useState<'PROJECT' | 'EVENT' | 'PLAN' | 'ANNOUNCEMENT' | 'MEETING' | 'ASSET' | 'REPAIR' | 'C_DEDICATION' | 'BAPTISM'>('PROJECT');
     const [governanceData, setGovernanceData] = useState<any>(null);
     const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        if (tab !== 7 || !navigator.onLine) return;
+        let cancelled = false;
+        setLoading(true);
+        api.get('/dashboard/governance')
+            .then((res) => {
+                if (!cancelled) setGovernanceData(res.data);
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setGovernanceData({
+                        finance: { totalInflow: 0 },
+                        demographics: { activePartners: 0 },
+                        operations: { pendingApprovals: 0 },
+                        trends: [],
+                        health: 'OFFLINE',
+                    });
+                }
+            })
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            });
+        return () => { cancelled = true; };
+    }, [tab]);
     const [message, setMessage] = useState({ type: 'info', text: '' });
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -397,7 +438,23 @@ export default function WatuaDashboard() {
     const handleMarkPaid = async (userId: string, isPaid: boolean) => {
         try {
             await db.users.update(userId, { isCardPaid: isPaid, syncStatus: 'PENDING' });
-            setMessage({ type: 'success', text: 'Payment status updated locally.' });
+            if (navigator.onLine) {
+                await api.patch(`/users/${userId}/mark-paid`, { isCardPaid: isPaid });
+                await db.users.update(userId, { isCardPaid: isPaid, syncStatus: 'SYNCED' });
+            } else {
+                await db.syncQueue.put({
+                    id: crypto.randomUUID(),
+                    timestamp: Date.now(),
+                    entity: 'USER',
+                    method: 'PATCH',
+                    url: `/users/${userId}/mark-paid`,
+                    payload: { isCardPaid: isPaid },
+                    status: 'PENDING',
+                    retryCount: 0,
+                    errorLog: [],
+                });
+            }
+            setMessage({ type: 'success', text: 'Payment status updated.' });
         } catch (error) {
             setMessage({ type: 'error', text: 'Failed to update payment status.' });
         }
@@ -428,10 +485,27 @@ export default function WatuaDashboard() {
     };
 
     const handleBroadcast = async () => {
-        if (!broadcastText) return;
-        setMessage({ type: 'success', text: 'System-wide broadcast dispatched to all active nodes.' });
-        setBroadcastDialog(false);
-        setBroadcastText('');
+        if (!broadcastText.trim()) return;
+        try {
+            await api.post('/announcements', {
+                title: 'WATUA SYSTEM ALERT',
+                content: broadcastText.trim(),
+                priority: 'URGENT',
+                isGlobal: true,
+                isMajor: true,
+            });
+            setMessage({ type: 'success', text: 'System-wide alert published to all nodes.' });
+            setBroadcastDialog(false);
+            setBroadcastText('');
+            requestSyncSoon();
+        } catch (err: any) {
+            setMessage({ type: 'error', text: err.response?.data?.message || 'Broadcast dispatch failed.' });
+        }
+    };
+
+    const refreshMissionData = () => {
+        requestSyncSoon();
+        setMessage({ type: 'success', text: 'Mission data sync queued.' });
     };
 
     const handleBackupExport = async () => {
@@ -514,7 +588,7 @@ export default function WatuaDashboard() {
                         </Typography>
                     </Box>
                 </Box>
-                <Box display="flex" gap={2}>
+                <Box display="flex" gap={2} flexWrap="wrap" justifyContent={{ xs: 'stretch', sm: 'flex-end' }} sx={{ width: { xs: '100%', sm: 'auto' } }}>
                     <Button
                         variant="contained"
                         startIcon={<Activity size={18} />}
@@ -715,7 +789,7 @@ export default function WatuaDashboard() {
             )}
 
             <Box sx={{ borderBottom: 1, borderColor: 'rgba(255,255,255,0.1)', mb: 3 }}>
-                <Tabs value={tab} onChange={(_, v) => setTab(v)} textColor="secondary" indicatorColor="secondary">
+                <Tabs value={tab} onChange={(_, v) => setTab(v)} textColor="secondary" indicatorColor="secondary" variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile sx={{ maxWidth: '100%' }}>
                     <Tab label="Entity Registry" icon={<Users size={18} />} iconPosition="start" />
                     <Tab label="Omni-Inspector" icon={<Search size={18} />} iconPosition="start" />
                     <Tab label="Support Hub" icon={<Activity size={18} />} iconPosition="start" />
@@ -1176,6 +1250,12 @@ export default function WatuaDashboard() {
 
             {tab === 4 && (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <PermissionEnginePanel />
+                </Box>
+            )}
+
+            {tab === 5 && (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                     <Card sx={{ bgcolor: '#161925', border: '1px solid #00d4ff33', borderRadius: 0 }}>
                         <CardContent>
                             <Box display="flex" alignItems="center" gap={2} mb={3}>
@@ -1183,24 +1263,20 @@ export default function WatuaDashboard() {
                                 <Box>
                                     <Typography variant="h6" color="#f8fafc">Production System Resilience</Typography>
                                     <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-                                        Execute local kernel backups and restoration sequences for disaster recovery.
+                                        Export or restore the local kernel backup archive.
                                     </Typography>
                                 </Box>
                             </Box>
-
                             <Grid container spacing={4}>
                                 <Grid item xs={12} md={6}>
                                     <Paper sx={{ p: 3, bgcolor: 'rgba(0, 212, 255, 0.02)', border: '1px solid rgba(0, 212, 255, 0.1)', borderRadius: 0 }}>
                                         <Typography variant="subtitle2" color="#f8fafc" gutterBottom>KERNEL EXPORT (BACKUP)</Typography>
-                                        <Typography variant="caption" sx={{ display: 'block', mb: 3, color: '#94a3b8' }}>
-                                            Creates a master JSON archive of all local database tables including audit logs, user records, and operational tasks.
-                                        </Typography>
                                         <Button
                                             variant="contained"
                                             fullWidth
                                             startIcon={<DownloadCloud size={18} />}
                                             onClick={handleBackupExport}
-                                            sx={{ bgcolor: '#00d4ff', color: '#0c0e14', fontWeight: 900 }}
+                                            sx={{ bgcolor: '#00d4ff', color: '#0c0e14', fontWeight: 900, mt: 2 }}
                                         >
                                             EXPORT MASTER JSON
                                         </Button>
@@ -1209,24 +1285,9 @@ export default function WatuaDashboard() {
                                 <Grid item xs={12} md={6}>
                                     <Paper sx={{ p: 3, bgcolor: 'rgba(255, 77, 77, 0.02)', border: '1px solid rgba(255, 77, 77, 0.1)', borderRadius: 0 }}>
                                         <Typography variant="subtitle2" color="#f8fafc" gutterBottom>KERNEL IMPORT (RESTORE)</Typography>
-                                        <Typography variant="caption" sx={{ display: 'block', mb: 3, color: '#94a3b8' }}>
-                                            RESTORES the system from a master JSON archive. WARNING: This operation is destructive and replaces existing local data.
-                                        </Typography>
                                         <label htmlFor="restore-upload">
-                                            <input
-                                                style={{ display: 'none' }}
-                                                id="restore-upload"
-                                                type="file"
-                                                accept=".json"
-                                                onChange={handleBackupImport}
-                                            />
-                                            <Button
-                                                component="span"
-                                                variant="outlined"
-                                                fullWidth
-                                                startIcon={<UploadCloud size={18} />}
-                                                sx={{ borderColor: '#ff4d4d', color: '#ff4d4d', fontWeight: 900 }}
-                                            >
+                                            <input style={{ display: 'none' }} id="restore-upload" type="file" accept=".json" onChange={handleBackupImport} />
+                                            <Button component="span" variant="outlined" fullWidth startIcon={<UploadCloud size={18} />} sx={{ borderColor: '#ff4d4d', color: '#ff4d4d', fontWeight: 900, mt: 2 }}>
                                                 IMPORT & RESTORE
                                             </Button>
                                         </label>
@@ -1235,14 +1296,11 @@ export default function WatuaDashboard() {
                             </Grid>
                         </CardContent>
                     </Card>
-                </Box>
-            )}
 
-            {tab === 5 && (
-                <Card sx={{ bgcolor: '#161925', border: '1px solid rgba(255,,255,255,0.05)', borderRadius: 0 }}>
+                <Card sx={{ bgcolor: '#161925', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 0 }}>
                     <CardContent>
                         <Typography variant="h6" color="#f8fafc" sx={{ mb: 3 }}>Recovery Center (Trash Bin)</Typography>
-                        <TableContainer component={Paper} sx={{ bgcolor: 'transparent', boxShadow: 'none' }}>
+                        <TableContainer component={Paper} sx={{ display: { xs: 'none', md: 'block' }, bgcolor: 'transparent', boxShadow: 'none' }}>
                             <Table size="small">
                                 <TableHead>
                                     <TableRow sx={{ '& th': { borderBottom: '1px solid rgba(255,255,255,0.1)', py: 2, fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', color: '#94a3b8' } }}>
@@ -1282,8 +1340,38 @@ export default function WatuaDashboard() {
                                 </TableBody>
                             </Table>
                         </TableContainer>
+
+                        <Box sx={{ display: { xs: 'flex', md: 'none' }, flexDirection: 'column', gap: 2 }}>
+                            {trash.length === 0 && (
+                                <Typography align="center" sx={{ py: 4, color: '#94a3b8' }}>
+                                    Trash bin is empty. No recoverable items found.
+                                </Typography>
+                            )}
+                            {trash.map((item) => (
+                                <Card key={item.id} sx={{ bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                    <CardContent sx={{ p: 2 }}>
+                                        <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                                            <Chip label={item.entity} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.6rem' }} />
+                                            <Typography variant="caption" sx={{ opacity: 0.6 }}>{new Date(item.timestamp).toLocaleString()}</Typography>
+                                        </Box>
+                                        <Typography variant="subtitle2" fontWeight="900" sx={{ mb: 0.5, wordBreak: 'break-all' }}>{item.url}</Typography>
+                                        <Typography variant="caption" sx={{ opacity: 0.7, display: 'block', mb: 2 }}>{item.lastError || 'No error details'}</Typography>
+                                        <Button
+                                            size="small"
+                                            fullWidth
+                                            startIcon={<RefreshCw size={14} />}
+                                            onClick={() => handleRestore(item.id, item.entity.toLowerCase())}
+                                            sx={{ color: '#00d4ff', minHeight: 44 }}
+                                        >
+                                            Restore
+                                        </Button>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                        </Box>
                     </CardContent>
                 </Card>
+                </Box>
             )}
 
             {tab === 6 && (
@@ -1652,11 +1740,11 @@ export default function WatuaDashboard() {
                 </Card>
             )}
 
-            <EventFormModal open={eventModalOpen} onClose={() => { setEventModalOpen(false); setEditingEvent(null); }} event={editingEvent} onSuccess={() => { }} />
-            <ProjectFormModal open={projectModalOpen} onClose={() => { setProjectModalOpen(false); setEditingProject(null); }} project={editingProject} onSuccess={() => { }} />
-            <PlanFormModal open={planModalOpen} onClose={() => { setPlanModalOpen(false); setEditingPlan(null); }} plan={editingPlan} onSuccess={() => { }} />
-            <AnnouncementFormModal open={announcementModalOpen} onClose={() => { setAnnouncementModalOpen(false); setEditingAnnouncement(null); }} announcement={editingAnnouncement} onSuccess={() => { }} />
-            <DepartmentReportModal open={reportModalOpen} onClose={() => setReportModalOpen(false)} onSuccess={() => { }} />
+            <EventFormModal open={eventModalOpen} onClose={() => { setEventModalOpen(false); setEditingEvent(null); }} event={editingEvent} onSuccess={refreshMissionData} />
+            <ProjectFormModal open={projectModalOpen} onClose={() => { setProjectModalOpen(false); setEditingProject(null); }} project={editingProject} onSuccess={refreshMissionData} />
+            <PlanFormModal open={planModalOpen} onClose={() => { setPlanModalOpen(false); setEditingPlan(null); }} plan={editingPlan} onSuccess={refreshMissionData} />
+            <AnnouncementFormModal open={announcementModalOpen} onClose={() => { setAnnouncementModalOpen(false); setEditingAnnouncement(null); }} announcement={editingAnnouncement} onSuccess={refreshMissionData} />
+            <DepartmentReportModal open={reportModalOpen} onClose={() => setReportModalOpen(false)} onSuccess={refreshMissionData} />
         </Box>
     );
 }

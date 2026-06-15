@@ -18,6 +18,7 @@ import RequestBaptismModal from '../components/modals/RequestBaptismModal';
 import { useLocalFirstDashboard } from '../hooks/useLocalFirstDashboard';
 import { useOfflineMutation } from '../hooks/useOfflineMutation';
 import SyncIndicator from '../components/SyncIndicator';
+import IntelDetailModal from '../components/modals/IntelDetailModal';
 import { db } from '../lib/db';
 
 export default function MemberPortal() {
@@ -27,6 +28,7 @@ export default function MemberPortal() {
     const [calendarModalOpen, setCalendarModalOpen] = useState(false);
     const [enrollModalOpen, setEnrollModalOpen] = useState(false);
     const [appointmentModalOpen, setAppointmentModalOpen] = useState(false);
+    const [intelDetail, setIntelDetail] = useState<any>(null);
     const [enrollAmount, setEnrollAmount] = useState<number>(700);
     const [toast, setToast] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({
         open: false,
@@ -51,18 +53,21 @@ export default function MemberPortal() {
         url: '/appointments',
         onSuccess: () => {
             setAppointmentModalOpen(false);
-            setToast({ open: true, message: 'Appointment request queued for dispatch.', severity: 'success' });
+            setToast({ open: true, message: 'Appointment request submitted.', severity: 'success' });
         }
     });
 
     const enrollPartnershipMutation = useMutation(
         async (amount: number) => api.post('/users/partnership/enroll', { amount }),
         {
-            onSuccess: (data: any) => {
+            onSuccess: async (res: any) => {
+                if (res.data?.partnership) {
+                    await db.partnerships.put({ ...res.data.partnership, syncStatus: 'SYNCED' });
+                }
                 updateUser({ isPartner: true });
                 queryClient.invalidateQueries(['dashboard-sync']);
                 setEnrollModalOpen(false);
-                setToast({ open: true, message: data.data.message, severity: 'success' });
+                setToast({ open: true, message: res.data?.message || 'Enrollment successful.', severity: 'success' });
             },
             onError: (err: any) => {
                 setToast({ open: true, message: err.response?.data?.error || 'Enrollment failed.', severity: 'error' });
@@ -719,7 +724,7 @@ export default function MemberPortal() {
                                                             <Typography variant="caption" sx={{ opacity: 0.4, fontSize: '0.6rem', fontWeight: 700 }}>
                                                                 {new Date(intel.createdAt || intel.date).toLocaleDateString()}
                                                             </Typography>
-                                                            <Button size="small" sx={{ p: 0, minWidth: 0, color: 'var(--cyan)', fontWeight: 900, fontSize: '0.65rem' }}>DETAILS</Button>
+                                                            <Button size="small" onClick={() => setIntelDetail(intel)} sx={{ p: 1, minWidth: 44, minHeight: 44, color: 'var(--cyan)', fontWeight: 900, fontSize: '0.65rem' }}>DETAILS</Button>
                                                         </Box>
                                                     </CardContent>
                                                 </Card>
@@ -873,6 +878,8 @@ export default function MemberPortal() {
                 onClose={() => setBaptismModalOpen(false)}
                 onSuccess={() => queryClient.invalidateQueries(['dashboard-sync'])}
             />
+
+            <IntelDetailModal open={!!intelDetail} onClose={() => setIntelDetail(null)} item={intelDetail} />
 
             <Modal
                 open={appointmentModalOpen}

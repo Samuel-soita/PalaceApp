@@ -5,6 +5,7 @@ import { logAudit } from '../../utils/audit.js';
 import { getOrSetCache, invalidateCache } from '../../utils/redis.js';
 import { hasPermission } from '../../utils/permissions.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
+import { canAutoPublishContent, bishopRoleApproved } from '../../utils/approval-utils.js';
 
 export const getAnnouncements = catchAsync(async (req: Request, res: Response) => {
     const { departmentId, isGlobal, isMajor, page = '1', limit = '10' } = req.query;
@@ -135,6 +136,8 @@ export const createAnnouncement = catchAsync(async (req: AuthRequest, res: Respo
          }
     }
 
+    const autoPublish = canAutoPublishContent(user.role);
+
     const announcement = await prisma.$transaction(async (tx) => {
         const newAnnouncement = await tx.announcement.create({
             data: {
@@ -143,7 +146,7 @@ export const createAnnouncement = catchAsync(async (req: AuthRequest, res: Respo
                 priority: priority || 'NORMAL',
                 isGlobal: !!isGlobal,
                 isMajor: isMajor || false,
-                status: 'PENDING',
+                status: autoPublish ? 'PUBLISHED' : 'PENDING',
                 expiry: expiry ? new Date(expiry) : null,
                 eventDate: eventDate ? new Date(eventDate) : null,
                 eventTime: eventTime || null,
@@ -153,6 +156,10 @@ export const createAnnouncement = catchAsync(async (req: AuthRequest, res: Respo
             } as any,
         });
 
+        if (autoPublish) {
+            return newAnnouncement;
+        }
+
         // 👨‍⚖️ Initializing Approval Chain for Announcements
         const approvalData: any[] = (pastorIds || []).map((pid: string) => ({
             announcementId: newAnnouncement.id,
@@ -160,13 +167,12 @@ export const createAnnouncement = catchAsync(async (req: AuthRequest, res: Respo
             role: 'PASTOR'
         }));
 
-        // Add Bishop (SUPER_ADMIN)
         const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
         if (bishop) {
             approvalData.push({
                 announcementId: newAnnouncement.id,
                 userId: bishop.id,
-                role: 'SUPER_ADMIN'
+                role: 'BISHOP'
             });
         }
 
@@ -219,7 +225,7 @@ export const approveAnnouncement = catchAsync(async (req: AuthRequest, res: Resp
             where: { announcementId: id }
         });
 
-        const bishopApproved = allApprovals.some((a: any) => a.role === 'BISHOP');
+        const bishopApproved = bishopRoleApproved(allApprovals);
         const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR').length;
 
         // Strictly: 1 Bishop + 2 Pastors

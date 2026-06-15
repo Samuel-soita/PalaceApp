@@ -5,6 +5,8 @@ import { getOrSetCache } from '../../utils/redis.js';
 import redis from '../../utils/redis.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
+import { canAutoPublishContent, bishopRoleApproved } from '../../utils/approval-utils.js';
+import { isGlobalOperator } from '../../utils/department-accounts.js';
 
 /**
  * 🔍 Fetch Projects with multi-role visibility scoping
@@ -118,12 +120,15 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
 
     const targetDeptId = departmentId || user.departmentId;
 
-    // ─── Universal Financial Safeguard (Mandatory 1,500 KES Floor) ───
-    const deptAccount = await prisma.account.findUnique({ where: { departmentId: targetDeptId } });
-    const minRequired = 1500;
-    if (!deptAccount || deptAccount.balance < minRequired) {
-        throw new AppError(`INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of ${minRequired} KES is required for all operations (Department or Church funded). Current balance: ${deptAccount?.balance || 0} KES.`, 402);
+    if (!isGlobalOperator(user.role)) {
+        const deptAccount = await prisma.account.findUnique({ where: { departmentId: targetDeptId } });
+        const minRequired = 1500;
+        if (!deptAccount || deptAccount.balance < minRequired) {
+            throw new AppError(`INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of ${minRequired} KES is required for all operations (Department or Church funded). Current balance: ${deptAccount?.balance || 0} KES.`, 402);
+        }
     }
+
+    const autoApprove = canAutoPublishContent(user.role);
 
     const project = await prisma.$transaction(async (tx) => {
         const newProject = await tx.project.create({
@@ -137,7 +142,7 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
                 isMajor: isMajor === true,
                 deadline: deadline ? new Date(deadline) : null,
                 progress: 0,
-                approvalStatus: 'PENDING_APPROVAL',
+                approvalStatus: autoApprove ? 'APPROVED' : 'PENDING_APPROVAL',
                 category: category || 'NEW_PROJECT',
             } as any,
         });
@@ -150,13 +155,17 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
                 priority: 'NORMAL',
                 isGlobal: !!isMajor,
                 isMajor: !!isMajor,
-                status: 'PENDING',
+                status: autoApprove ? 'PUBLISHED' : 'PENDING',
                 eventDate: deadline ? new Date(deadline) : new Date(),
                 location: 'CHURCH GROUNDS',
                 authorId: user.id,
                 departmentId: targetDeptId
             } as any
         });
+
+        if (autoApprove) {
+            return newProject;
+        }
 
         // 👨‍⚖️ Initializing Approval Chain
         const approvalData: any[] = (pastorIds || []).map((pid: string) => ({
@@ -170,7 +179,7 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
             approvalData.push({
                 projectId: newProject.id,
                 userId: bishop.id,
-                role: 'SUPER_ADMIN'
+                role: 'BISHOP'
             });
         }
 
@@ -222,7 +231,7 @@ export const approveProject = catchAsync(async (req: AuthRequest, res: Response)
         });
 
         const allApprovals = await tx.projectApproval.findMany({ where: { projectId: id } });
-        const bishopApproved = allApprovals.some((a: any) => a.role === 'BISHOP');
+        const bishopApproved = bishopRoleApproved(allApprovals);
         const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR').length;
 
         if (bishopApproved && pastorCount >= 2) {
@@ -283,10 +292,11 @@ export const updateProject = catchAsync(async (req: AuthRequest, res: Response) 
         throw new AppError('OPERATIONAL LOCK: Approved projects are frozen. De-authorization from Bishop is required for modifications.', 403);
     }
 
-    // ─── Universal Financial Safeguard on Update ───
-    const deptAccount = await prisma.account.findUnique({ where: { departmentId: existingProject.departmentId } });
-    if (!deptAccount || deptAccount.balance < 1500) {
-        throw new AppError('INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of 1,500 KES is required for all operations.', 402);
+    if (!isGlobalOperator(user.role)) {
+        const deptAccount = await prisma.account.findUnique({ where: { departmentId: existingProject.departmentId } });
+        if (!deptAccount || deptAccount.balance < 1500) {
+            throw new AppError('INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of 1,500 KES is required for all operations.', 402);
+        }
     }
 
     // Sanitizing payload and handling numeric/date fields

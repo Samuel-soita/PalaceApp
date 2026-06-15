@@ -105,9 +105,20 @@ export default function DedicationManager({ open, onClose }: { open: boolean, on
             </DialogTitle>
 
             <DialogContent sx={{ p: 0 }}>
-                <Box sx={{ display: 'flex', height: '65vh' }}>
-                    {/* List Area */}
-                    <Box sx={{ width: '35%', borderRight: '1px solid rgba(255,255,255,0.05)', overflowY: 'auto', p: 2 }}>
+                <Box sx={{
+                    display: 'flex',
+                    flexDirection: { xs: 'column', md: 'row' },
+                    height: { xs: 'auto', md: '65vh' },
+                    maxHeight: { xs: '75vh', md: '65vh' },
+                }}>
+                    <Box sx={{
+                        width: { xs: '100%', md: '35%' },
+                        maxHeight: { xs: 220, md: '100%' },
+                        borderRight: { md: '1px solid rgba(255,255,255,0.05)' },
+                        borderBottom: { xs: '1px solid rgba(255,255,255,0.05)', md: 'none' },
+                        overflowY: 'auto',
+                        p: 2,
+                    }}>
                         {pendingDedication.length === 0 ? (
                             <Box sx={{ textAlign: 'center', py: 8, opacity: 0.5 }}>
                                 <Typography variant="body2">No pending child dedications.</Typography>
@@ -149,8 +160,13 @@ export default function DedicationManager({ open, onClose }: { open: boolean, on
                         )}
                     </Box>
 
-                    {/* Detail Area */}
-                    <Box sx={{ width: '65%', p: 4, bgcolor: 'rgba(0,0,0,0.2)', overflowY: 'auto' }}>
+                    <Box sx={{
+                        width: { xs: '100%', md: '65%' },
+                        flex: 1,
+                        p: { xs: 2, md: 4 },
+                        bgcolor: 'rgba(0,0,0,0.2)',
+                        overflowY: 'auto',
+                    }}>
                         {selectedChild ? (
                             <Box>
                                 <Box display="flex" alignItems="center" gap={2} mb={4}>

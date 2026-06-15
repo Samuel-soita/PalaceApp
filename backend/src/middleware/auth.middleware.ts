@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import prisma from '../utils/prisma.js';
 import { getOrSetCache } from '../utils/redis.js';
 import { AppError } from '../utils/errors.js';
+import { pastorHasModule } from '../utils/pastor-module-keys.js';
 export type Role = 'SUPER_ADMIN' | 'SYSTEM_ADMIN' | 'SECRETARY' | 'DEPARTMENT_LEADER' | 'MEMBER' | 'PASTOR' | 'ASSOCIATE_PASTOR' | 'WATUA';
 
 export interface AuthRequest extends Request {
@@ -130,7 +131,7 @@ export const moduleGuard = (moduleKey: string) => {
 
         // Pastor Scoping Logic
         if (req.user.role === 'PASTOR' || req.user.role === 'ASSOCIATE_PASTOR') {
-            if (req.user.pastorModules?.includes(moduleKey)) {
+            if (pastorHasModule(req.user.pastorModules, moduleKey)) {
                 return next();
             }
             throw new AppError(`SECURITY ALERT: You do not have the '${moduleKey}' module assigned. Contact Bishop.`, 403);

@@ -7,8 +7,8 @@ import { CreateEventSchema, UpdateEventSchema } from '../../schemas/EventSchema.
 const router = Router();
 
 router.get('/', authenticate, getEvents);
-router.get('/:id', authenticate, getEventById);
 router.get('/department/:departmentId', authenticate, getEventsByDepartment);
+router.get('/:id', authenticate, getEventById);
 router.post('/', authenticate, moduleGuard('EventOversight'), authorize(['SUPER_ADMIN', 'DEPARTMENT_LEADER', 'PASTOR']), validate(CreateEventSchema), createEvent);
 router.post('/:id/approve', authenticate, moduleGuard('EventOversight'), authorize(['SUPER_ADMIN', 'WATUA', 'PASTOR']), approveEvent);
 router.patch('/:id/status', authenticate, authorize(['SUPER_ADMIN', 'WATUA', 'PASTOR', 'ASSOCIATE_PASTOR']), updateEventStatus);

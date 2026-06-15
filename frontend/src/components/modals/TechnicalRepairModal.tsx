@@ -7,6 +7,7 @@ import { Settings, Wrench, DollarSign } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api-client';
 import { db } from '../../lib/db';
+import { executeApiFirstMutation } from '../../lib/api-first-mutation';
 
 interface TechnicalRepairModalProps {
     open: boolean;
@@ -23,42 +24,33 @@ export default function TechnicalRepairModal({ open, onClose, departmentId, onSu
     const queryClient = useQueryClient();
 
     const mutation = useMutation(async (data: any) => {
-        const localId = crypto.randomUUID();
-        const timestamp = Date.now();
-
-        // 🚀 Tactical System Repair Entry
-        await db.repairs.put({
-            id: localId,
-            instrumentName: data.instrumentName,
-            problemDescription: data.problemDescription,
-            estimatedCost: data.estimatedCost,
-            requesterId: 'ME',
-            departmentId: data.departmentId || 'GLOBAL',
-            status: 'PENDING_APPROVAL',
-            syncStatus: 'PENDING',
-            deviceId: localStorage.getItem('device_id') || 'UNKNOWN',
-            lastModifiedBy: 'ME',
-            version: 0,
-            createdAt: new Date().toISOString()
-        });
-
-        // 📡 Queue for Global Maintenance
-        await db.syncQueue.put({
-            id: crypto.randomUUID(),
-            timestamp,
+        return executeApiFirstMutation({
             entity: 'REPAIR',
             method: 'POST',
             url: '/repairs',
-            payload: { ...data, localId },
-            status: 'PENDING',
-            retryCount: 0,
-            errorLog: []
+            payload: data,
+            table: 'repairs',
+            offlineOptimistic: async (localId) => {
+                await db.repairs.put({
+                    id: localId,
+                    instrumentName: data.instrumentName,
+                    problemDescription: data.problemDescription,
+                    estimatedCost: data.estimatedCost,
+                    requesterId: 'ME',
+                    departmentId: data.departmentId || 'GLOBAL',
+                    status: 'PENDING_APPROVAL',
+                    syncStatus: 'PENDING',
+                    deviceId: localStorage.getItem('device_id') || 'UNKNOWN',
+                    lastModifiedBy: 'ME',
+                    version: 0,
+                    createdAt: new Date().toISOString(),
+                });
+            },
         });
-
-        return { data: { _queued: true } };
     }, {
         onSuccess: () => {
             queryClient.invalidateQueries(['repairs']);
+            queryClient.invalidateQueries(['dashboard-sync']);
             if (onSuccess) onSuccess();
             onClose();
             setInstrumentName('');

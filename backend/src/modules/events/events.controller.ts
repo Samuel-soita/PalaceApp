@@ -5,6 +5,8 @@ import { logAudit } from '../../utils/audit.js';
 import { getOrSetCache } from '../../utils/redis.js';
 import redis from '../../utils/redis.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
+import { isGlobalOperator, resolveTargetDepartmentId } from '../../utils/department-accounts.js';
+import { canAutoPublishContent } from '../../utils/approval-utils.js';
 
 export const getEvents = catchAsync(async (req: AuthRequest, res: Response) => {
     const { departmentId, isMajor, page = '1', limit = '10' } = req.query;
@@ -99,15 +101,17 @@ export const getEventById = catchAsync(async (req: AuthRequest, res: Response) =
 export const createEvent = catchAsync(async (req: AuthRequest, res: Response) => {
     const { title, description, location, date, time, eventType, budgetNeeded, budgetSource = 'DEPARTMENT', isMajor, departmentId } = req.body;
     const user = req.user!;
-    const targetDeptId = user.role === 'SUPER_ADMIN' ? (departmentId || user.departmentId) : user.departmentId;
+    const targetDeptId = resolveTargetDepartmentId(user.role, user.departmentId, departmentId);
 
     if (!targetDeptId) throw new AppError('Department alignment required for operations.', 400);
 
     // ─── Universal Financial Safeguard (Mandatory 1,500 KES Floor) ───
-    const deptAccount = await prisma.account.findUnique({ where: { departmentId: targetDeptId } });
-    const minRequired = 1500;
-    if (!deptAccount || deptAccount.balance < minRequired) {
-        throw new AppError(`INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of ${minRequired} KES is required for all operations (Department or Church funded). Current balance: ${deptAccount?.balance || 0} KES.`, 402);
+    if (!isGlobalOperator(user.role)) {
+        const deptAccount = await prisma.account.findUnique({ where: { departmentId: targetDeptId } });
+        const minRequired = 1500;
+        if (!deptAccount || deptAccount.balance < minRequired) {
+            throw new AppError(`INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of ${minRequired} KES is required for all operations (Department or Church funded). Current balance: ${deptAccount?.balance || 0} KES.`, 402);
+        }
     }
 
     const eventDate = new Date(date);
@@ -131,6 +135,8 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
         throw new AppError(`TACTICAL CONFLICT: The venue "${location}" is already reserved for ${time} on ${new Date(date).toLocaleDateString()}. Cross-departmental overlap detected.`, 409);
     }
 
+    const autoApprove = canAutoPublishContent(user.role);
+
     const event = await prisma.$transaction(async (tx) => {
         const newEvent = await tx.event.create({
             data: {
@@ -142,12 +148,11 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
                 isMajor: isMajor === true || isMajor === 'true',
                 departmentId: targetDeptId,
                 status: 'PLANNED',
-                approvalStatus: 'PENDING_APPROVAL',
+                approvalStatus: autoApprove ? 'APPROVED' : 'PENDING_APPROVAL',
                 volunteersNeeded: Number(req.body.volunteersNeeded || 0)
             } as any
         });
 
-        // ─── Automated Tactical Broadcast ───
         await tx.announcement.create({
             data: {
                 title: `NEW EVENT: ${title.toUpperCase()}`,
@@ -155,7 +160,7 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
                 priority: 'NORMAL',
                 isGlobal: isMajor === true || isMajor === 'true',
                 isMajor: isMajor === true || isMajor === 'true',
-                status: 'PENDING',
+                status: autoApprove ? 'PUBLISHED' : 'PENDING',
                 eventDate: new Date(date),
                 eventTime: time,
                 location: location,

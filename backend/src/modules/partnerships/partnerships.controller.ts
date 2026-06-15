@@ -36,6 +36,13 @@ export const addLedgerTransaction = async (req: any, res: Response) => {
     const { id: partnershipId } = req.params;
     const { amount, paymentMethod, referenceCode, transactionType = 'CREDIT' } = req.body;
     const actorId = req.user.id;
+    const { role, canManagePartnerships } = req.user;
+
+    const isGlobalReconciler = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(role);
+    const isAssignedPastor = (role === 'PASTOR' || role === 'ASSOCIATE_PASTOR') && canManagePartnerships;
+    if (!isGlobalReconciler && !isAssignedPastor) {
+        return res.status(403).json({ error: 'You are not authorized to reconcile partnership ledgers.' });
+    }
 
     if (!amount || amount <= 0) {
         return res.status(400).json({ error: 'Transaction amount must be strictly positive.' });
@@ -114,7 +121,15 @@ export const addLedgerTransaction = async (req: any, res: Response) => {
                 }
             });
 
-            return [newLedger, p];
+            const hydrated = await tx.partnership.findUnique({
+                where: { id: partnershipId },
+                include: {
+                    user: { include: { department: true } },
+                    ledgers: { orderBy: { date: 'desc' } },
+                },
+            });
+
+            return [newLedger, hydrated ?? p];
         });
 
         // Fire Audit
@@ -199,13 +214,21 @@ export const updatePartnership = async (req: any, res: Response) => {
             const newBalance = Math.max(0, Number(amount) - totalPaid);
 
             // 2. Update record
-            return tx.partnership.update({
+            await tx.partnership.update({
                 where: { id },
                 data: {
                     amount: Number(amount),
                     balance: newBalance,
                     status: newBalance === 0 ? 'COMPLETED' : 'ACTIVE'
                 }
+            });
+
+            return tx.partnership.findUnique({
+                where: { id },
+                include: {
+                    user: { include: { department: true } },
+                    ledgers: { orderBy: { date: 'desc' } },
+                },
             });
         });
 

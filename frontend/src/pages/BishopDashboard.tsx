@@ -190,17 +190,17 @@ export default function BishopDashboard() {
 
             <Container maxWidth="xl" sx={{ mt: 2 }}>
                 {/* MISSION COMMAND HEADER */}
-                <Box sx={{ mb: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '1px solid rgba(255,255,255,0.05)', pb: 4 }}>
+                <Box sx={{ mb: 6, display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'flex-end' }, gap: 3, borderBottom: '1px solid rgba(255,255,255,0.05)', pb: 4 }}>
                     <Box>
                         <Box display="flex" alignItems="center" gap={2} mb={1}>
                             <Shield size={32} color="var(--cyan)" />
-                            <Typography variant="caption" fontWeight="1000" sx={{ letterSpacing: 4, color: 'var(--cyan)' }}>MISSION COMMAND INTELLIGENCE</Typography>
+                            <Typography variant="caption" fontWeight="1000" sx={{ letterSpacing: { xs: 2, md: 4 }, color: 'var(--cyan)', fontSize: { xs: '0.65rem', md: '0.75rem' } }}>MISSION COMMAND INTELLIGENCE</Typography>
                         </Box>
-                        <Typography variant="h2" fontWeight="1000" sx={{ letterSpacing: -3, color: 'white', lineHeight: 1 }}>
+                        <Typography variant="h2" fontWeight="1000" sx={{ letterSpacing: { xs: -1, md: -3 }, fontSize: { xs: '1.75rem', sm: '2.25rem', md: '3.75rem' }, color: 'white', lineHeight: 1 }}>
                             PALACE <span style={{ color: 'rgba(255,255,255,0.3)' }}>CONTROL PORTAL</span>
                         </Typography>
                     </Box>
-                    <Box sx={{ textAlign: 'right' }}>
+                    <Box sx={{ textAlign: { xs: 'left', md: 'right' } }}>
                         <Typography variant="subtitle2" fontWeight="900" sx={{ opacity: 0.5 }}>OPERATIONAL STATUS</Typography>
                         <Box display="flex" alignItems="center" gap={1} justifyContent="flex-end">
                             <span className={syncData?.isOffline ? "status-glow-warn" : "status-glow"} />
@@ -315,6 +315,9 @@ export default function BishopDashboard() {
                             { label: 'STRATEGIC PLAN', icon: Target, color: 'pink', onClick: () => setPlanModalOpen(true) },
                             { label: 'SUBMIT REPORT', icon: FileText, color: 'var(--cyan)', onClick: () => setReportModalOpen(true) },
                             { label: 'GLOBAL ALERT', icon: Bell, color: 'orange', onClick: () => setAnnouncementModalOpen(true) },
+                            { label: 'BAPTISMS', icon: Shield, color: 'var(--cyan)', onClick: () => setBaptismsOpen(true) },
+                            { label: 'DEDICATIONS', icon: Users, color: 'pink', onClick: () => setDedicationManagerOpen(true) },
+                            { label: 'PARTNERSHIPS', icon: Coins, color: 'orange', onClick: () => setPartnershipManagerOpen(true) },
                             { label: 'GLOBAL THEMES', icon: Globe, color: '#ffcc00', onClick: () => setThemeModalOpen(true) },
                             { label: 'PASTORS HUB', icon: Shield, color: '#22c55e', onClick: () => setPastorManagementOpen(true) },
                         ].map((action, i) => (
@@ -357,7 +360,7 @@ export default function BishopDashboard() {
                                 <CardContent sx={{ p: 4 }}>
                                     <Box display="flex" alignItems="center" gap={2} mb={3}>
                                         <Wrench size={24} color="#ff4d4d" />
-                                        <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>REPAIR AUTHORIZATIONS</Typography>
+                                        <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1, fontSize: { xs: '1.1rem', md: '1.5rem' } }}>REPAIR AUTHORIZATIONS</Typography>
                                     </Box>
                                     <RepairApprovalManager />
                                 </CardContent>
@@ -369,7 +372,7 @@ export default function BishopDashboard() {
                                     <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
                                         <Box display="flex" alignItems="center" gap={2}>
                                             <Globe size={24} color="var(--primary)" />
-                                            <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>SECTORAL OVERWATCH</Typography>
+                                            <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1, fontSize: { xs: '1.1rem', md: '1.5rem' } }}>SECTORAL OVERWATCH</Typography>
                                         </Box>
                                         <Button size="small" sx={{ color: 'var(--cyan)', fontWeight: 900 }}>DASHBOARD MAP</Button>
                                     </Box>
@@ -433,7 +436,7 @@ export default function BishopDashboard() {
                                 <CardContent sx={{ p: 4 }}>
                                     <Box display="flex" alignItems="center" gap={2} mb={3}>
                                         <Landmark size={24} color="var(--cyan)" />
-                                        <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>PARTNERSHIP INTELLIGENCE</Typography>
+                                        <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1, fontSize: { xs: '1.1rem', md: '1.5rem' } }}>PARTNERSHIP INTELLIGENCE</Typography>
                                     </Box>
                                     <Stack spacing={2}>
                                         {syncData?.allPartnerships?.slice(0, 5).map((p: any) => (
@@ -443,8 +446,11 @@ export default function BishopDashboard() {
                                                     <Typography variant="caption" sx={{ opacity: 0.5 }}>{p.user?.membershipNumber || 'N/A'}</Typography>
                                                 </Box>
                                                 <Box sx={{ textAlign: 'right' }}>
-                                                    <Typography variant="subtitle2" fontWeight="1000" color="var(--cyan)">KES {p.amount.toLocaleString()}</Typography>
-                                                    <Chip label={p.status} size="small" color={p.status === 'ACTIVE' ? 'success' : 'warning'} sx={{ fontSize: '0.6rem', height: 16 }} />
+                                                    <Typography variant="subtitle2" fontWeight="1000" color="var(--cyan)">KES {(p.amount || 0).toLocaleString()}</Typography>
+                                                    <Typography variant="caption" sx={{ opacity: 0.6, display: 'block' }}>
+                                                        Paid {(p.paidAmount || 0).toLocaleString()} · Bal {(p.balance || 0).toLocaleString()}
+                                                    </Typography>
+                                                    <Chip label={p.status} size="small" color={p.status === 'ACTIVE' ? 'success' : p.status === 'COMPLETED' ? 'info' : 'warning'} sx={{ fontSize: '0.6rem', height: 16, mt: 0.5 }} />
                                                 </Box>
                                             </Box>
                                         ))}
@@ -463,16 +469,16 @@ export default function BishopDashboard() {
                                     <Typography variant="caption" fontWeight="1000" sx={{ color: 'orange', letterSpacing: 2, display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
                                         <Bell size={16} /> BROADCAST CENTER
                                     </Typography>
-                                    <Typography variant="subtitle2" fontWeight="900" sx={{ mb: 2, opacity: 0.8 }}>EXECUTIVE GLOBAL ALERT</Typography>
-                                    <textarea 
-                                        placeholder="Enter strategic command for all departments..."
-                                        style={{ 
-                                            width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,165,0,0.3)',
-                                            borderRadius: 0, padding: '12px', color: '#fff', fontSize: '0.9rem', minHeight: 100, outline: 'none', resize: 'none'
-                                        }}
-                                    />
-                                    <Button fullWidth variant="contained" sx={{ mt: 2, bgcolor: 'orange', color: '#000', fontWeight: 950, borderRadius: 0 }}>
-                                        BROADCAST COMMAND
+                                    <Typography variant="body2" sx={{ mb: 2, opacity: 0.75 }}>
+                                        Publish a church-wide executive alert through the standard approval workflow.
+                                    </Typography>
+                                    <Button
+                                        fullWidth
+                                        variant="contained"
+                                        onClick={() => setAnnouncementModalOpen(true)}
+                                        sx={{ bgcolor: 'orange', color: '#000', fontWeight: 950, borderRadius: 0 }}
+                                    >
+                                        OPEN GLOBAL ALERT FORM
                                     </Button>
                                 </CardContent>
                             </Card>

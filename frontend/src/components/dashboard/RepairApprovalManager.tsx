@@ -16,7 +16,8 @@ export default function RepairApprovalManager() {
         const res = await api.get('/repairs');
         return res.data;
     }, { 
-        refetchInterval: 10000 
+        refetchInterval: 30000,
+        staleTime: 20000,
     });
 
     const approveMutation = useMutation(async (id: string) => {

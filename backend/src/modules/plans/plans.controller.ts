@@ -5,6 +5,8 @@ import { AuthRequest } from '../../middleware/auth.middleware.js';
 import { getOrSetCache } from '../../utils/redis.js';
 import redis from '../../utils/redis.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
+import { isGlobalOperator, resolveTargetDepartmentId } from '../../utils/department-accounts.js';
+import { canAutoPublishContent, bishopRoleApproved } from '../../utils/approval-utils.js';
 
 export const getPlans = catchAsync(async (req: AuthRequest, res: Response) => {
     const { departmentId, isMajor, page = '1', limit = '10' } = req.query;
@@ -109,31 +111,43 @@ export const createPlan = catchAsync(async (req: AuthRequest, res: Response) => 
     const { type, title, description, departmentId, pastorIds } = req.body;
     
     const isExecutive = ['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'SECRETARY'].includes(req.user!.role);
-    const targetDeptId = departmentId || req.user?.departmentId;
+    const targetDeptId = resolveTargetDepartmentId(req.user!.role, req.user?.departmentId, departmentId);
     const isManaging = req.user!.managedDepartments?.some((d: any) => d.id === targetDeptId) || req.user!.departmentId === targetDeptId;
     
+    if (!targetDeptId) {
+        throw new AppError('Department is required to create a plan.', 400);
+    }
+
     if (!isExecutive && req.user!.role === 'DEPARTMENT_LEADER' && !isManaging) {
         throw new AppError('Leaders can only create plans for their own mission sector', 403);
     }
 
     // ─── Universal Financial Safeguard (Mandatory 1,500 KES Floor) ───
-    const deptAccount = await prisma.account.findUnique({ where: { departmentId: targetDeptId } });
-    const minRequired = 1500;
-    if (!deptAccount || deptAccount.balance < minRequired) {
-        throw new AppError(`INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of ${minRequired} KES is required for all operations (Department or Church funded). Current balance: ${deptAccount?.balance || 0} KES.`, 402);
+    if (!isGlobalOperator(req.user!.role)) {
+        const deptAccount = await prisma.account.findUnique({ where: { departmentId: targetDeptId } });
+        const minRequired = 1500;
+        if (!deptAccount || deptAccount.balance < minRequired) {
+            throw new AppError(`INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of ${minRequired} KES is required for all operations (Department or Church funded). Current balance: ${deptAccount?.balance || 0} KES.`, 402);
+        }
     }
+
+    const autoApprove = canAutoPublishContent(req.user!.role);
 
     const plan = await prisma.$transaction(async (tx) => {
         const newPlan = await tx.plan.create({
             data: {
                 type, title, content: description || req.body.content || "",
                 departmentId: targetDeptId,
-                budgetSource: (req.body.budgetSource || 'DEPARTMENT') as any, // Cast for type sync
+                budgetSource: (req.body.budgetSource || 'DEPARTMENT') as any,
                 isMajor: req.body.isMajor === true,
-                approvalStatus: 'PENDING_APPROVAL',
+                approvalStatus: autoApprove ? 'APPROVED' : 'PENDING_APPROVAL',
                 status: 'PLANNED',
             } as any,
         });
+
+        if (autoApprove) {
+            return newPlan;
+        }
 
         // 👨‍⚖️ Initializing Approval Chain for Plans
         const approvalData: any[] = (pastorIds || []).map((pid: string) => ({
@@ -142,13 +156,12 @@ export const createPlan = catchAsync(async (req: AuthRequest, res: Response) => 
             role: 'PASTOR'
         }));
 
-        // Add Bishop (SUPER_ADMIN)
         const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
         if (bishop) {
             approvalData.push({
                 planId: newPlan.id,
                 userId: bishop.id,
-                role: 'SUPER_ADMIN'
+                role: 'BISHOP'
             });
         }
 
@@ -198,7 +211,7 @@ export const approvePlan = catchAsync(async (req: AuthRequest, res: Response) =>
         });
 
         const allApprovals = await tx.planApproval.findMany({ where: { planId: id } });
-        const bishopApproved = allApprovals.some((a: any) => a.role === 'BISHOP');
+        const bishopApproved = bishopRoleApproved(allApprovals);
         const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR').length;
 
         const quorumMet = bishopApproved && pastorCount >= 2;

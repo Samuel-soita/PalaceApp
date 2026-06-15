@@ -12,6 +12,8 @@ import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../lib/api-client';
 import { encryptMessage, decryptMessage } from '../lib/encryption';
+import { canSendChurchWideComms } from '../utils/approval-rules';
+import { executeApiFirstMutation } from '../lib/api-first-mutation';
 
 interface Message {
     id: string;
@@ -59,41 +61,49 @@ export default function Messages() {
     const allDepartments = useLiveQuery(() => db.departments.toArray(), []) || [];
 
     const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
-        const actionId = id || crypto.randomUUID();
-        const timestamp = Date.now();
+        const actionId = id || payload.id;
 
-        if (method !== 'DELETE') {
-            await db.messages.put({ 
-                ...payload, 
-                id: actionId, 
-                syncStatus: 'PENDING',
-                createdAt: new Date().toISOString(),
-                sender: { name: user?.name, role: user?.role }
+        try {
+            const result = await executeApiFirstMutation({
+                entity: 'MESSAGE',
+                method,
+                url: method === 'POST' ? '/messages' : `/messages/${actionId}`,
+                payload,
+                recordId: actionId,
+                table: 'messages',
+                offlineOptimistic: async (offlineId) => {
+                    if (method === 'DELETE') {
+                        if (id) await db.messages.update(id, { isDeleted: true, content: 'This message was deleted' });
+                        return;
+                    }
+                    await db.messages.put({
+                        ...payload,
+                        id: offlineId,
+                        syncStatus: 'PENDING',
+                        createdAt: new Date().toISOString(),
+                        sender: { name: user?.name, role: user?.role },
+                    });
+                },
             });
-        } else {
-            if (id) await db.messages.update(id, { isDeleted: true, content: 'This message was deleted' });
+
+            if (method === 'POST') {
+                const saved = result?.data?.data ?? result?.data ?? payload;
+                socket?.emit('send_message', { ...saved, id: saved.id || actionId });
+            }
+
+            setEditingMsgId(null);
+            setNewMessage('');
+        } catch (err: any) {
+            alert(err.response?.data?.error || err.message || 'Failed to send message.');
         }
-
-        await db.syncQueue.put({
-            id: crypto.randomUUID(),
-            timestamp,
-            entity: 'MESSAGE',
-            method,
-            url: method === 'POST' ? '/messages' : `/messages/${actionId}`,
-            payload: { ...payload, isOfflineSync: true },
-            status: 'PENDING',
-            retryCount: 0,
-            errorLog: []
-        });
-
-        if (method === 'POST') socket?.emit('send_message', { ...payload, id: actionId });
-        setEditingMsgId(null);
-        setNewMessage('');
     };
 
     useEffect(() => {
         if (!user) return;
-        const newSocket = io(import.meta.env.VITE_API_URL || '');
+        const newSocket = io(import.meta.env.VITE_API_URL || window.location.origin, {
+            transports: ['websocket', 'polling'],
+            reconnectionAttempts: 5,
+        });
         setSocket(newSocket);
 
         newSocket.on('receive_message', (message: Message) => {
@@ -118,7 +128,7 @@ export default function Messages() {
     const handleSend = (e: React.FormEvent) => {
         e.preventDefault();
         if (!newMessage.trim() || !user) return;
-        if (!effectiveDeptId && user?.role !== 'SUPER_ADMIN') return;
+        if (!effectiveDeptId && !canSendChurchWideComms(user.role)) return;
         
         const roomId = effectiveDeptId ? `dept-${effectiveDeptId}` : 'church-wide';
         if (editingMsgId) {
@@ -203,7 +213,7 @@ export default function Messages() {
                     <MessageSquare size={28} />
                 </div>
                 <div>
-                    <Typography variant="h3" fontWeight="950" sx={{ letterSpacing: -2 }}>
+                    <Typography variant="h3" fontWeight="950" sx={{ letterSpacing: -2, fontSize: { xs: '1.75rem', sm: '2.5rem', md: '3rem' } }}>
                         {effectiveDeptId ? 'SECTOR' : 'CHURCH'} <span className="text-primary">COMMS</span>
                     </Typography>
                     <Typography color="textSecondary" sx={{ opacity: 0.7, fontWeight: 500 }}>
@@ -213,8 +223,14 @@ export default function Messages() {
                 </div>
             </Box>
 
-            <Card className="holographic-card" sx={{ height: 'calc(100vh - 220px)', display: 'flex', flexDirection: 'column' }}>
-                <Box sx={{ flexGrow: 1, overflowY: 'auto', p: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <Card className="holographic-card" sx={{
+                minHeight: { xs: '55vh', md: 'auto' },
+                height: { xs: 'auto', md: 'calc(100vh - 220px)' },
+                maxHeight: { xs: '75vh', md: 'none' },
+                display: 'flex',
+                flexDirection: 'column',
+            }}>
+                <Box sx={{ flexGrow: 1, overflowY: 'auto', p: { xs: 2, md: 4 }, display: 'flex', flexDirection: 'column', gap: 3 }}>
                     {(Array.isArray(messages) ? messages : []).length === 0 ? (
                         <Box m="auto" textAlign="center" sx={{ opacity: 0.5 }}>
                             <MessageSquare size={48} className="mx-auto mb-4" />
@@ -226,7 +242,7 @@ export default function Messages() {
                             const showHeader = i === 0 || messages[i - 1].senderId !== msg.senderId;
                             
                             return (
-                                <Box key={msg.id} sx={{ display: 'flex', gap: 2, alignSelf: isMe ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
+                                <Box key={msg.id} sx={{ display: 'flex', gap: 2, alignSelf: isMe ? 'flex-end' : 'flex-start', maxWidth: { xs: '95%', sm: '80%' } }}>
                                     {!isMe && showHeader && (
                                         <Avatar 
                                             src={msg.sender?.avatarUrl || undefined}
@@ -286,12 +302,17 @@ export default function Messages() {
                                                     onClick={(e) => handleOpenMenu(e, msg)}
                                                     sx={{ 
                                                         position: 'absolute', 
-                                                        right: -30, 
+                                                        right: { xs: 4, md: -30 }, 
                                                         top: '50%', 
                                                         transform: 'translateY(-50%)',
-                                                        opacity: 0,
+                                                        opacity: { xs: 1, md: 0 },
+                                                        '@media (hover: hover)': {
+                                                            '.MuiPaper-root:hover &': { opacity: 1 },
+                                                        },
                                                         transition: 'opacity 0.2s',
-                                                        color: 'text.secondary'
+                                                        color: 'text.secondary',
+                                                        minWidth: 44,
+                                                        minHeight: 44,
                                                     }}
                                                 >
                                                     <MoreVertical size={16} />

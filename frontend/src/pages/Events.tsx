@@ -14,6 +14,9 @@ import {
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
 import { isUserManagingDepartment } from '../utils/auth-options';
+import { pastorAuthorizationBlocked } from '../utils/approval-rules';
+import { paginate, paginationMeta } from '../utils/pagination';
+import { executeApiFirstMutation } from '../lib/api-first-mutation';
 
 interface ChurchEvent {
     id: string;
@@ -55,12 +58,14 @@ export default function Events() {
     const limit = 12;
 
     const events = useLiveQuery(() => db.events.orderBy('date').toArray(), []) || [];
-    const meta = { total: events.length, totalPages: Math.ceil((events.length || 1) / limit) };
 
     const filteredEvents = events.filter((e: any) => {
         if (isGlobalAdmin) return true;
         return e.approvalStatus === 'APPROVED' || isUserManagingDepartment(user, e.departmentId);
     });
+
+    const meta = paginationMeta(filteredEvents.length, page, limit);
+    const pagedEvents = paginate(filteredEvents, page, limit);
 
     const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
     const userDepartments = departments?.filter((d: any) => isUserManagingDepartment(user, d.id)) || [];
@@ -69,34 +74,38 @@ export default function Events() {
     const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
     const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
-        const actionId = id || crypto.randomUUID();
-        const timestamp = Date.now();
-
-        if (method !== 'DELETE') {
-            await db.events.put({ 
-                ...payload, 
-                id: actionId, 
-                syncStatus: 'PENDING',
-                version: (payload.version || 0) + 1,
-                department: departments.find(d => d.id === payload.departmentId) || { name: 'Unknown' } // local join
-            });
-        } else {
-            if (id) await db.events.delete(id);
+        const actionId = id || payload.id;
+        const { department, syncStatus, version, ...apiPayload } = payload;
+        if (method === 'PATCH' && (apiPayload as any).pastorIds) {
+            delete (apiPayload as any).pastorIds;
         }
 
-        await db.syncQueue.put({
-            id: crypto.randomUUID(),
-            timestamp,
-            entity: 'EVENT',
-            method,
-            url: method === 'POST' ? '/events' : `/events/${actionId}`,
-            payload: { ...payload, isOfflineSync: true, localVersion: payload.version },
-            status: 'PENDING',
-            retryCount: 0,
-            errorLog: []
-        });
-
-        handleClose();
+        try {
+            await executeApiFirstMutation({
+                entity: 'EVENT',
+                method,
+                url: method === 'POST' ? '/events' : `/events/${actionId}`,
+                payload: apiPayload,
+                recordId: actionId,
+                table: 'events',
+                offlineOptimistic: async (offlineId) => {
+                    if (method === 'DELETE') {
+                        await db.events.delete(offlineId);
+                        return;
+                    }
+                    await db.events.put({
+                        ...payload,
+                        id: offlineId,
+                        syncStatus: 'PENDING',
+                        version: (payload.version || 0) + 1,
+                        department: departments.find(d => d.id === payload.departmentId) || { name: 'Unknown' },
+                    });
+                },
+            });
+            handleClose();
+        } catch (err: any) {
+            alert(err.response?.data?.error || err.message || 'Failed to save event.');
+        }
     };
 
     const handleOpen = (event: any = null) => {
@@ -145,15 +154,20 @@ export default function Events() {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!editEvent && formData.pastorIds.length !== 2) {
-            alert("You must select exactly 2 Pastors to authorize this Event before it is deployed.");
+        if (!editEvent && pastorAuthorizationBlocked(user?.role, formData.pastorIds)) {
+            alert('You must select exactly 2 Pastors to authorize this Event before it is deployed.');
             return;
         }
 
+        const payload = { ...formData };
+        if (!payload.departmentId && departments.length > 0) {
+            payload.departmentId = departments[0].id;
+        }
+
         if (editEvent) {
-            handleAction({ ...formData, id: editEvent.id, version: (editEvent as any).version || 0 }, 'PATCH', editEvent.id);
+            handleAction({ ...payload, id: editEvent.id, version: (editEvent as any).version || 0 }, 'PATCH', editEvent.id);
         } else {
-            handleAction(formData, 'POST');
+            handleAction(payload, 'POST');
         }
     };
 
@@ -205,7 +219,7 @@ export default function Events() {
             </Box>
 
             <Grid container spacing={3}>
-                {filteredEvents?.map((event: ChurchEvent) => (
+                {pagedEvents?.map((event: ChurchEvent) => (
                     <Grid item xs={12} md={6} lg={4} key={event.id}>
                         <Card className="holographic-card" sx={{ borderRadius: 4, height: '100%' }}>
                             <CardContent sx={{ p: 4 }}>
@@ -268,19 +282,19 @@ export default function Events() {
             {meta.totalPages > 1 && (
                 <Box display="flex" justifyContent="center" mt={6} gap={2}>
                     <Button 
-                        disabled={page === 1} 
-                        onClick={() => setPage(p => p - 1)}
+                        disabled={meta.page === 1} 
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
                         variant="outlined"
                         sx={{ borderRadius: 3, fontWeight: 900 }}
                     >
                         PREV
                     </Button>
                     <Box display="flex" alignItems="center" px={4} sx={{ bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 3, border: '1px solid var(--glass-border)' }}>
-                        <Typography variant="body2" fontWeight="900" sx={{ opacity: 0.7 }}>CHRONO INDEX: {page} / {meta.totalPages}</Typography>
+                        <Typography variant="body2" fontWeight="900" sx={{ opacity: 0.7 }}>CHRONO INDEX: {meta.page} / {meta.totalPages}</Typography>
                     </Box>
                     <Button 
-                        disabled={page >= meta.totalPages}
-                        onClick={() => setPage(p => p + 1)}
+                        disabled={meta.page >= meta.totalPages}
+                        onClick={() => setPage(p => Math.min(meta.totalPages, p + 1))}
                         variant="contained"
                         sx={{ borderRadius: 3, fontWeight: 900, px: 4 }}
                     >
@@ -397,6 +411,7 @@ export default function Events() {
                                 </TextField>
                             </Box>
                             
+                            {!editEvent && (
                             <FormControl fullWidth required error={formData.pastorIds.length > 0 && formData.pastorIds.length !== 2}>
                                 <InputLabel id="pastors-label">Select 2 Authorizing Pastors</InputLabel>
                                     <Select
@@ -422,6 +437,7 @@ export default function Events() {
                                         ))}
                                     </Select>
                                 </FormControl>
+                            )}
                         </Box>
                     </DialogContent>
                     <DialogActions sx={{ p: 4 }}>

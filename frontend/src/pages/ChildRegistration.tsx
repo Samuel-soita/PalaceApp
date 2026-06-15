@@ -8,6 +8,7 @@ import { UserPlus, Baby, ArrowLeft, Plus, ShieldCheck, Heart } from 'lucide-reac
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api-client';
 import { db } from '../lib/db';
+import { executeApiFirstMutation } from '../lib/api-first-mutation';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { Stack } from '@mui/material';
 
@@ -43,47 +44,43 @@ export default function ChildRegistration() {
         setError('');
         setLoading(true);
 
-        const localId = crypto.randomUUID();
-        const trackingId = `TEMP-${localId.slice(0, 8).toUpperCase()}`;
-        setDedicationNumber(trackingId);
-
         try {
-            // 🚀 Tactical Offline Save
-            await db.children.put({
-                id: localId,
-                name,
-                dob: new Date(dob).toISOString(),
-                gender,
-                isDedicated,
-                isDedicationPaid: false,
-                dedicationCardNumber,
-                dedicationNumber: trackingId,
-                workflowStatus: 'PENDING_DEDICATION',
-                parentId: 'ME', // Sync engine will replace with actual currentUser.id on server
-                syncStatus: 'PENDING',
-                deviceId: localStorage.getItem('device_id') || 'UNKNOWN',
-                lastModifiedBy: 'ME',
-                version: 0,
-                createdAt: new Date().toISOString()
-            });
+            const payload = {
+                name, dob, gender, branch,
+                isDedicated, dedicationCardNumber,
+            };
 
-            // 📡 Queue for Global Sync
-            await db.syncQueue.put({
-                id: crypto.randomUUID(),
-                timestamp: Date.now(),
+            const result = await executeApiFirstMutation({
                 entity: 'CHILD',
                 method: 'POST',
                 url: '/children',
-                payload: { 
-                    name, dob, gender, branch, 
-                    isDedicated, dedicationCardNumber,
-                    localId 
+                payload,
+                table: 'children',
+                offlineOptimistic: async (offlineLocalId) => {
+                    const offlineTracking = `TEMP-${offlineLocalId.slice(0, 8).toUpperCase()}`;
+                    setDedicationNumber(offlineTracking);
+                    await db.children.put({
+                        id: offlineLocalId,
+                        name,
+                        dob: new Date(dob).toISOString(),
+                        gender,
+                        isDedicated,
+                        isDedicationPaid: false,
+                        dedicationCardNumber,
+                        dedicationNumber: offlineTracking,
+                        workflowStatus: 'PENDING_DEDICATION',
+                        parentId: 'ME',
+                        syncStatus: 'PENDING',
+                        deviceId: localStorage.getItem('device_id') || 'UNKNOWN',
+                        lastModifiedBy: 'ME',
+                        version: 0,
+                        createdAt: new Date().toISOString(),
+                    });
                 },
-                status: 'PENDING',
-                retryCount: 0,
-                errorLog: []
             });
 
+            const saved = result?.data?.data ?? result?.data;
+            setDedicationNumber(saved?.dedicationNumber || saved?.dedicationNumber || 'SUBMITTED');
             setSuccess(true);
             // Reset form
             setName('');

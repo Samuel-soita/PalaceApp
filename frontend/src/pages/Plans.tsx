@@ -12,6 +12,9 @@ import DashboardLayout from '../components/layout/DashboardLayout';
 import api from '../lib/api-client';
 import { useAuth } from '../contexts/AuthContext';
 import { isUserManagingDepartment } from '../utils/auth-options';
+import { pastorAuthorizationBlocked } from '../utils/approval-rules';
+import { paginate, paginationMeta } from '../utils/pagination';
+import { executeApiFirstMutation } from '../lib/api-first-mutation';
 
 interface ChurchPlan {
     id: string;
@@ -43,12 +46,14 @@ export default function Plans() {
     const limit = 12;
 
     const plans = useLiveQuery(() => db.plans.orderBy('createdAt').reverse().toArray(), []) || [];
-    const meta = { total: plans.length, totalPages: Math.ceil((plans.length || 1) / limit) };
 
     const filteredPlans = plans.filter((p: any) => {
         if (isGlobalAdmin) return true;
         return p.approvalStatus === 'APPROVED' || isUserManagingDepartment(user, p.departmentId);
     });
+
+    const meta = paginationMeta(filteredPlans.length, page, limit);
+    const pagedPlans = paginate(filteredPlans, page, limit);
 
     const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
     const userDepartments = departments?.filter((d: any) => isUserManagingDepartment(user, d.id)) || [];
@@ -57,44 +62,40 @@ export default function Plans() {
     const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
     const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
-        const actionId = id || crypto.randomUUID();
-        const timestamp = Date.now();
+        const actionId = id || payload.id;
+        const { id: _id, department, syncStatus, version, ...restPayload } = payload;
+        const apiPayload = { ...restPayload };
+        if (method === 'PATCH' && (apiPayload as any).pastorIds) {
+            delete (apiPayload as any).pastorIds;
+        }
 
-        if (method !== 'DELETE') {
-            await db.plans.put({ 
-                ...payload, 
-                id: actionId, 
-                syncStatus: 'PENDING',
-                version: (payload.version || 0) + 1,
-                department: departments.find(d => d.id === payload.departmentId) || { name: 'Unknown' },
-                createdAt: new Date().toISOString()
+        try {
+            await executeApiFirstMutation({
+                entity: 'PLAN',
+                method,
+                url: method === 'POST' ? '/plans' : `/plans/${actionId}`,
+                payload: apiPayload,
+                recordId: actionId,
+                table: 'plans',
+                offlineOptimistic: async (offlineId) => {
+                    if (method === 'DELETE') {
+                        await db.plans.delete(offlineId);
+                        return;
+                    }
+                    await db.plans.put({
+                        ...payload,
+                        id: offlineId,
+                        syncStatus: 'PENDING',
+                        version: (payload.version || 0) + 1,
+                        department: departments.find(d => d.id === payload.departmentId) || { name: 'Unknown' },
+                        createdAt: new Date().toISOString(),
+                    });
+                },
             });
-        } else {
-            if (id) await db.plans.delete(id);
+            handleClose();
+        } catch (err: any) {
+            alert(err.response?.data?.error || err.message || 'Failed to save plan.');
         }
-
-        // Clean payload for backend strictness
-        const { id: _, department, ...restPayload } = payload;
-        const finalPayload = method === 'PATCH' ? { ...restPayload } : { ...restPayload };
-        
-        // Remove pastorIds from PATCH since it's only for initial creation
-        if (method === 'PATCH' && (finalPayload as any).pastorIds) {
-            delete (finalPayload as any).pastorIds;
-        }
-
-        await db.syncQueue.put({
-            id: crypto.randomUUID(),
-            timestamp,
-            entity: 'PLAN',
-            method,
-            url: method === 'POST' ? '/plans' : `/plans/${actionId}`,
-            payload: { ...finalPayload, isOfflineSync: true, localVersion: payload.version },
-            status: 'PENDING',
-            retryCount: 0,
-            errorLog: []
-        });
-
-        handleClose();
     };
 
     const handleOpen = (plan?: ChurchPlan) => {
@@ -103,7 +104,7 @@ export default function Plans() {
             setFormData({
                 title: plan.title,
                 type: plan.type,
-                description: plan.description,
+                description: (plan as any).content || (plan as any).description || '',
                 departmentId: plan.departmentId,
                 pastorIds: (plan as any).pastorIds || [] 
             });
@@ -130,15 +131,20 @@ export default function Plans() {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!editingPlan && formData.pastorIds.length !== 2) {
-            alert("You must select exactly 2 Pastors to authorize this ChurchPlan before it takes effect.");
+        if (!editingPlan && pastorAuthorizationBlocked(user?.role, formData.pastorIds)) {
+            alert('You must select exactly 2 Pastors to authorize this ChurchPlan before it takes effect.');
             return;
         }
 
+        const payload = { ...formData };
+        if (!payload.departmentId && departments.length > 0) {
+            payload.departmentId = departments[0].id;
+        }
+
         if (editingPlan) {
-            handleAction({ ...formData, id: editingPlan.id, version: (editingPlan as any).version || 0 }, 'PATCH', editingPlan.id);
+            handleAction({ ...payload, id: editingPlan.id, version: (editingPlan as any).version || 0 }, 'PATCH', editingPlan.id);
         } else {
-            handleAction(formData, 'POST');
+            handleAction(payload, 'POST');
         }
     };
 
@@ -170,7 +176,7 @@ export default function Plans() {
             </Box>
 
             <Grid container spacing={3}>
-                {filteredPlans?.map((plan: any) => (
+                {pagedPlans?.map((plan: any) => (
                     <Grid item xs={12} md={6} key={plan.id}>
                         <Card className="holographic-card" sx={{ height: '100%' }}>
                             <CardContent sx={{ p: 4 }}>
@@ -200,7 +206,7 @@ export default function Plans() {
                                     )}
                                 </Box>
                                 <Typography variant="body2" sx={{ opacity: 0.7, mb: 3, lineBreak: 'anywhere' }}>
-                                    {plan.description}
+                                    {plan.content || plan.description}
                                 </Typography>
                                 <Box display="flex" justifyContent="space-between" alignItems="center" mt="auto">
                                     <Box display="flex" alignItems="center" gap={1}>
@@ -222,19 +228,19 @@ export default function Plans() {
             {meta.totalPages > 1 && (
                 <Box display="flex" justifyContent="center" mt={6} gap={2}>
                     <Button 
-                        disabled={page === 1} 
-                        onClick={() => setPage(p => p - 1)}
+                        disabled={meta.page === 1} 
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
                         variant="outlined"
                         sx={{ borderRadius: 3, fontWeight: 900 }}
                     >
                         PREV
                     </Button>
                     <Box display="flex" alignItems="center" px={4} sx={{ bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 3, border: '1px solid var(--glass-border)' }}>
-                        <Typography variant="body2" fontWeight="900" sx={{ opacity: 0.7 }}>PHASE: {page} / {meta.totalPages}</Typography>
+                        <Typography variant="body2" fontWeight="900" sx={{ opacity: 0.7 }}>PHASE: {meta.page} / {meta.totalPages}</Typography>
                     </Box>
                     <Button 
-                        disabled={page >= meta.totalPages}
-                        onClick={() => setPage(p => p + 1)}
+                        disabled={meta.page >= meta.totalPages}
+                        onClick={() => setPage(p => Math.min(meta.totalPages, p + 1))}
                         variant="contained"
                         sx={{ borderRadius: 3, fontWeight: 900, px: 4 }}
                     >

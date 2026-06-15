@@ -20,8 +20,8 @@ router.use(authenticate);
 
 // 🔍 READ ACCESS
 router.get('/', getProjects);
-router.get('/:id', getProjectById);
 router.get('/department/:departmentId', departmentGuard, getProjectsByDepartment);
+router.get('/:id', getProjectById);
 
 // 🛠️ MANAGEMENT ACCESS
 router.post('/', 

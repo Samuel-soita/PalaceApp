@@ -11,6 +11,7 @@ import {
 import { Plus, Calendar, Clock, MapPin, Edit, Trash2, Users, FileText, ChevronRight } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
+import { executeApiFirstMutation } from '../lib/api-first-mutation';
 
 export default function Meetings() {
     const { user } = useAuth();
@@ -40,34 +41,35 @@ export default function Meetings() {
     const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
     const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
-        const actionId = id || crypto.randomUUID();
-        const timestamp = Date.now();
+        const actionId = id || payload.id;
+        const { department, syncStatus, ...apiPayload } = payload;
 
-        if (method !== 'DELETE') {
-            await db.meetings.put({ 
-                ...payload, 
-                id: actionId, 
-                syncStatus: 'PENDING',
-                department: departments.find(d => d.id === payload.departmentId) || null,
-                createdAt: new Date().toISOString()
+        try {
+            await executeApiFirstMutation({
+                entity: 'MEETING',
+                method,
+                url: method === 'POST' ? '/meetings' : `/meetings/${actionId}`,
+                payload: apiPayload,
+                recordId: actionId,
+                table: 'meetings',
+                offlineOptimistic: async (offlineId) => {
+                    if (method === 'DELETE') {
+                        await db.meetings.delete(offlineId);
+                        return;
+                    }
+                    await db.meetings.put({
+                        ...payload,
+                        id: offlineId,
+                        syncStatus: 'PENDING',
+                        department: departments.find(d => d.id === payload.departmentId) || null,
+                        createdAt: new Date().toISOString(),
+                    });
+                },
             });
-        } else {
-            if (id) await db.meetings.delete(id);
+            handleClose();
+        } catch (err: any) {
+            alert(err.response?.data?.error || err.message || 'Failed to save meeting.');
         }
-
-        await db.syncQueue.put({
-            id: crypto.randomUUID(),
-            timestamp,
-            entity: 'MEETING',
-            method,
-            url: method === 'POST' ? '/meetings' : `/meetings/${actionId}`,
-            payload: { ...payload, isOfflineSync: true },
-            status: 'PENDING',
-            retryCount: 0,
-            errorLog: []
-        });
-
-        handleClose();
     };
 
     const handleOpen = (meeting: any = null) => {

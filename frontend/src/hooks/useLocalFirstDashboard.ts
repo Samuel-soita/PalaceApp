@@ -5,89 +5,128 @@ import { db } from '../lib/db';
 import { useAuth } from '../contexts/AuthContext';
 
 /**
- * 🛰️ LOCAL-FIRST DASHBOARD ENGINE
- * Priority 1: Dexie DB (Tactical Local Cache)
- * Priority 2: API Sync (Strategic Global State)
- * 
- * Ensures the Bishop and Admins have 100% data availability even when offline.
+ * Local-first dashboard engine — instant Dexie load, background API hydration.
  */
 export function useLocalFirstDashboard(departmentId?: string) {
     const { user } = useAuth();
 
-    // 1. TACTICAL LOCAL MIRROR (Priority 1: Instant Load)
     const localData = useLiveQuery(async () => {
         const [
             projects, events, plans, meetings, children, 
             announcements, baptisms, departments, transactions,
-            repairs, appointments, settings, affirmation, account, auditLogs, members, devotions
+            repairs, appointments, settings, affirmation, account, auditLogs, members, devotions, partnerships
         ] = await Promise.all([
             db.projects.limit(50).reverse().toArray(),
             db.events.limit(50).toArray(),
             db.plans.limit(50).toArray(),
-            db.meetings.limit(50).toArray(),
+            db.meetings.limit(30).toArray(),
             db.children.limit(50).toArray(),
             db.announcements.limit(50).toArray(),
-            db.baptisms.toArray(),
+            db.baptisms.limit(50).toArray(),
             db.departments.toArray(),
             db.transactions.limit(75).reverse().toArray(),
-            db.repairs.toArray(),
-            db.appointments.toArray(),
+            db.repairs.limit(30).toArray(),
+            db.appointments.limit(50).toArray(),
             db.settings.get('GLOBAL'),
             db.affirmations.get('DAILY'),
             db.account.get('MAIN'),
             db.auditLogs.limit(20).toArray(),
-            db.users.filter(u => !departmentId || u.departmentId === departmentId).toArray(),
-            db.devotions.get('DAILY')
+            db.users.filter(u => !departmentId || u.departmentId === departmentId).limit(200).toArray(),
+            db.devotions.get('DAILY'),
+            db.partnerships.limit(100).toArray(),
         ]);
+
+        const pendingWithdrawals = transactions.filter((t) => t.status !== 'APPROVED' && t.type === 'WITHDRAWAL').length;
+
+        const myPartnership = user?.id
+            ? partnerships
+                .filter((p: any) => p.userId === user.id)
+                .sort((a: any, b: any) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime())[0]
+            : undefined;
 
         return {
             projects, events, plans, meetings, children, 
             announcements, baptisms, departments, transactions,
             repairs, appointments, auditLogs, departmentMembers: members,
+            allPartnerships: partnerships,
+            partnership: myPartnership,
+            isPartner: user?.isPartner || !!myPartnership,
             devotion: devotions,
             ministrySettings: settings || { themeOfYear: 'OFFLINE MODE', themeOfMonth: 'LOCAL DATA ONLY' },
             affirmation: affirmation || { content: 'Faith works even without a connection.' },
             account: account || { balance: 0 },
             globalMetrics: {
                 totalUsers: members.length,
-                pendingApprovals: transactions.filter(t => t.syncStatus === 'PENDING').length,
-                totalPartners: 0,
-                pendingDedications: 0
-            }
+                pendingApprovals: pendingWithdrawals,
+                totalPartners: partnerships.length,
+                pendingDedications: children.filter((c: any) => c.workflowStatus !== 'DEDICATED').length,
+            },
+            isOffline: !navigator.onLine,
         };
-    }, [departmentId]);
+    }, [departmentId, user?.id, user?.isPartner]);
 
-    // 2. STRATEGIC GLOBAL RECONCILIATION
-    return useQuery(['dashboard-sync', departmentId], async () => {
-        try {
-            const res = await api.get('/dashboard/sync', { params: { departmentId } });
-            const data = res.data;
+    const query = useQuery(['dashboard-sync', departmentId], async () => {
+        const res = await api.get('/dashboard/sync', { params: { departmentId } });
+        const data = res.data;
 
-            if (data) {
-                // Background hydration: Sync incoming data into Dexie
-                await Promise.all([
-                    data.ministrySettings && db.settings.put({ id: 'GLOBAL', ...data.ministrySettings }),
-                    data.affirmation && db.affirmations.put({ id: 'DAILY', ...data.affirmation }),
-                    data.devotion && db.devotions.put({ id: 'DAILY', ...data.devotion }),
-                    data.account && db.account.put({ ...data.account, id: 'MAIN' }),
-                    data.projects && db.projects.bulkPut(data.projects),
-                    data.events && db.events.bulkPut(data.events),
-                    data.transactions && db.transactions.bulkPut(data.transactions),
-                    data.departmentMembers && db.users.bulkPut(data.departmentMembers)
-                    // ... other modules are handled by pwa-sync.ts daemon
-                ]);
-            }
+        if (data) {
+            const partnershipRows = [
+                ...(data.allPartnerships || []),
+                ...(data.partnership ? [data.partnership] : []),
+            ];
+            const dedupedPartnerships = Array.from(
+                new Map(partnershipRows.filter((p: any) => p?.id).map((p: any) => [p.id, { ...p, syncStatus: 'SYNCED' as const }])).values()
+            );
 
-            return { ...data, source: 'NETWORK' };
-        } catch (error) {
-            console.warn('[Palace-Sync] Local Recon in progress...');
-            throw error; // Let react-query handle retry/error state
+            await Promise.all([
+                data.ministrySettings && db.settings.put({ id: 'GLOBAL', ...data.ministrySettings }),
+                data.affirmation && db.affirmations.put({ id: 'DAILY', ...data.affirmation }),
+                data.devotion && db.devotions.put({ id: 'DAILY', ...data.devotion }),
+                data.account && db.account.put({ ...data.account, id: 'MAIN' }),
+                data.projects && db.projects.bulkPut(data.projects),
+                data.events && db.events.bulkPut(data.events),
+                data.transactions && db.transactions.bulkPut(data.transactions),
+                data.departmentMembers && db.users.bulkPut(data.departmentMembers),
+                dedupedPartnerships.length > 0 && db.partnerships.bulkPut(dedupedPartnerships),
+            ]);
         }
+
+        return {
+            ...data,
+            source: 'NETWORK',
+            isOffline: false,
+            globalMetrics: {
+                totalUsers: data?.departmentMembers?.length ?? data?.globalMetrics?.totalUsers ?? 0,
+                pendingApprovals: data?.transactions?.filter((tx: any) => tx.status !== 'APPROVED' && tx.type === 'WITHDRAWAL').length ?? 0,
+                totalPartners: data?.globalMetrics?.totalPartners ?? 0,
+                pendingDedications: data?.globalMetrics?.pendingDedications ?? 0,
+            },
+        };
     }, {
         enabled: !!user,
-        refetchInterval: navigator.onLine ? 30000 : false,
-        staleTime: 10000,
-        placeholderData: localData, // Use local mirrored data while loading
-        retry: 2
+        refetchInterval: navigator.onLine ? 60000 : false,
+        staleTime: 30000,
+        placeholderData: localData,
+        retry: 1,
     });
+
+    const mergedData = query.data ?? localData;
+    const isOffline = !navigator.onLine || query.isError;
+
+    const data = mergedData ? {
+        ...mergedData,
+        ...(localData && {
+            partnership: localData.partnership ?? mergedData.partnership,
+            allPartnerships: (localData.allPartnerships?.length ?? 0) > 0
+                ? localData.allPartnerships
+                : mergedData.allPartnerships,
+            isPartner: localData.isPartner ?? mergedData.isPartner,
+        }),
+        isOffline,
+    } : mergedData;
+
+    return {
+        ...query,
+        data,
+    };
 }
