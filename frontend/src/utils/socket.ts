@@ -1,4 +1,5 @@
 import { io } from 'socket.io-client';
+import { isDemoSession } from '../demo/demo-session';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || ''; // Relative in dev to hit Vite proxy
 
@@ -14,6 +15,7 @@ socket.on('connect', () => {
 });
 
 export const connectSocket = (userId: string) => {
+    if (isDemoSession()) return;
     currentUserId = userId;
     if (socket.connected) {
         socket.emit('join-room', `user-${userId}`);

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { handleSessionExpired, isOnlineSessionActive, isTokenExpired } from './auth-session';
+import { isDemoSession } from '../demo/demo-session';
 
 const api = axios.create({
     baseURL: (import.meta.env.VITE_API_URL as string) || '/api',
@@ -32,6 +33,11 @@ api.interceptors.request.use((config) => {
     if (['post', 'put', 'delete'].includes(config.method?.toLowerCase() || '')) {
         const idempotencyKey = crypto.randomUUID();
         config.headers['X-Idempotency-Key'] = idempotencyKey;
+    }
+
+    // Demo sessions never reach the server: the sample-data backend answers in the browser.
+    if (isDemoSession()) {
+        config.adapter = (demoConfig) => import('../demo/demo-backend').then((m) => m.demoAdapter(demoConfig));
     }
 
     return config;

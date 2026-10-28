@@ -1,9 +1,11 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../lib/api-client';
-import { Button, TextField, Card, CardContent, Typography, Box, Alert, Divider, CircularProgress } from '@mui/material';
-import { CreditCard, Church, User } from 'lucide-react';
+import { Button, TextField, Card, CardContent, Typography, Box, Alert, Divider, CircularProgress, Dialog, DialogTitle, DialogContent, List, ListItemButton, ListItemText } from '@mui/material';
+import { CreditCard, Church, User, PlayCircle } from 'lucide-react';
+import { DEMO_PERSONAS, isDemoSession, type DemoPersona } from '../demo/demo-session';
+import { endDemo, hasUnsyncedRealChanges, startDemo } from '../demo/demo-controls';
 
 export default function Login() {
     const [membershipNumber, setMembershipNumber] = useState('');
@@ -15,8 +17,42 @@ export default function Login() {
     const watuaBufferRef = useRef('');
     const [watuaActivating, setWatuaActivating] = useState(false);
 
-    const { login } = useAuth();
+    const location = useLocation();
+    const [demoOpen, setDemoOpen] = useState(() => new URLSearchParams(location.search).has('demo'));
+    const [demoStarting, setDemoStarting] = useState<string | null>(null);
+    const [demoError, setDemoError] = useState('');
+
+    const { login, logout } = useAuth();
     const navigate = useNavigate();
+
+    // Only the demo banner ends a demo; a login page open in another tab must not.
+    const leavingDemo = !!(location.state as { leaveDemo?: boolean } | null)?.leaveDemo;
+    useEffect(() => {
+        if (!leavingDemo) return;
+        if (isDemoSession()) endDemo(logout);
+        navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+    }, [leavingDemo, logout, navigate, location.pathname, location.search]);
+
+    useEffect(() => {
+        if (new URLSearchParams(location.search).has('demo')) setDemoOpen(true);
+    }, [location.search]);
+
+    const openDemo = async (persona: DemoPersona) => {
+        if (demoStarting) return;
+        setDemoError('');
+        setDemoStarting(persona.role);
+        try {
+            if (await hasUnsyncedRealChanges()) {
+                setDemoError('This device has changes waiting to sync. Sign in and let them sync before opening the demo.');
+                return;
+            }
+            navigate(await startDemo(persona, login));
+        } catch {
+            setDemoError('The demo could not start. Please try again.');
+        } finally {
+            setDemoStarting(null);
+        }
+    };
 
     useEffect(() => {
         const notice = sessionStorage.getItem('auth-expired-notice');
@@ -197,8 +233,44 @@ export default function Login() {
                             </Link>
                         </Typography>
                     </Box>
+
+                    <Button
+                        fullWidth variant="outlined"
+                        onClick={() => setDemoOpen(true)}
+                        startIcon={<PlayCircle size={18} />}
+                        sx={{ mt: 2, py: 1.25, textTransform: 'none', fontWeight: 'bold' }}
+                    >
+                        Explore the demo
+                    </Button>
                 </CardContent>
             </Card>
+
+            <Dialog open={demoOpen} onClose={() => !demoStarting && setDemoOpen(false)} fullWidth maxWidth="xs">
+                <DialogTitle sx={{ pb: 0.5 }}>Explore the demo</DialogTitle>
+                <DialogContent sx={{ px: { xs: 1.5, sm: 3 } }}>
+                    <Typography variant="body2" color="textSecondary" sx={{ mb: 1.5 }}>
+                        Pick a role. The demo uses sample data only, so nothing you do reaches the church system.
+                    </Typography>
+                    {demoError && <Alert severity="warning" sx={{ mb: 1.5 }}>{demoError}</Alert>}
+                    <List disablePadding>
+                        {DEMO_PERSONAS.map((persona) => (
+                            <ListItemButton
+                                key={persona.role}
+                                onClick={() => openDemo(persona)}
+                                disabled={!!demoStarting}
+                                sx={{ borderRadius: 1, mb: 0.5, minHeight: 56, border: '1px solid rgba(255,255,255,0.08)' }}
+                            >
+                                <ListItemText
+                                    primary={persona.label}
+                                    secondary={persona.description}
+                                    primaryTypographyProps={{ fontWeight: 'bold' }}
+                                />
+                                {demoStarting === persona.role && <CircularProgress size={18} sx={{ ml: 1 }} />}
+                            </ListItemButton>
+                        ))}
+                    </List>
+                </DialogContent>
+            </Dialog>
         </Box>
     );
 }

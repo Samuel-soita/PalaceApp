@@ -96,6 +96,7 @@ function LeaderGuard({ children }: { children: React.ReactNode }) {
 import { PermissionService } from './lib/PermissionService';
 import { DeviceService } from './lib/DeviceService';
 import PublicUpdateToast from './components/PublicUpdateToast';
+import DemoBanner from './demo/DemoBanner';
 
 function App() {
     const { user } = useAuth();
@@ -120,10 +121,12 @@ function App() {
 
     return (
         <Suspense fallback={<LoadingFallback />}>
+            <DemoBanner />
             <PublicUpdateToast />
             <ConflictResolutionModal />
             <Routes>
                 <Route path="/login" element={<Login />} />
+                <Route path="/demo" element={<Navigate to="/login?demo=1" replace />} />
                 <Route path="/register" element={<Register />} />
                 
                 {/* BISHOP ONLY */}
