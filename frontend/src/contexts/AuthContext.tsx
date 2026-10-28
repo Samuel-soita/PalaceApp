@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { LocalAuthService } from '../lib/LocalAuthService';
 import { db, prepareLocalDataForUser } from '../lib/db';
-import { expireSessionIfNeeded, isTokenExpired, resetSessionState } from '../lib/auth-session';
+import { expireSessionIfNeeded, isTokenDueForRenewal, isTokenExpired, resetSessionState } from '../lib/auth-session';
 import { startSyncDaemon, stopSyncDaemon } from '../lib/pwa-sync';
 import api from '../lib/api-client';
 
@@ -34,6 +34,26 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const RENEW_RETRY_MS = 10 * 60 * 1000;
+let lastRenewAttempt = 0;
+
+/**
+ * Slides the session forward so users stay signed in until they log out.
+ * Only localStorage changes: the context token just distinguishes online from offline sessions.
+ */
+async function renewSessionIfDue() {
+    const current = localStorage.getItem('token');
+    if (!navigator.onLine || Date.now() - lastRenewAttempt < RENEW_RETRY_MS || !isTokenDueForRenewal(current)) return;
+    lastRenewAttempt = Date.now();
+    try {
+        const { data } = await api.post('/auth/refresh');
+        // Skip if the user signed out or switched accounts while the request was in flight.
+        if (data?.token && localStorage.getItem('token') === current) localStorage.setItem('token', data.token);
+    } catch {
+        // The current token stays valid; a later check retries.
+    }
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<AuthUser | null>(() => {
@@ -75,6 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 return;
             }
 
+            void renewSessionIfDue();
             try {
                 await api.get('/departments');
                 if (active) startSyncDaemon();
@@ -103,6 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         const checkExpiry = () => {
             if (expireSessionIfNeeded()) return;
+            void renewSessionIfDue();
         };
         checkExpiry();
         const intervalId = window.setInterval(checkExpiry, 60_000);

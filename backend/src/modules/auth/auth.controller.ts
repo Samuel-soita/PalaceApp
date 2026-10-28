@@ -8,6 +8,23 @@ import { getOrSetCache } from '../../utils/redis.js';
 import { findTargetDepartmentId } from '../../utils/department-mapper.js';
 import { bootstrapSystem } from '../../utils/bootstrap.js';
 
+// Sliding window: the app renews the token while it is used, so only this much inactivity signs a user out.
+const SESSION_TTL_DAYS = 90;
+
+const signSessionToken = (user: { id: string; role: string; departmentId?: string | null }) => jwt.sign(
+    {
+        id: user.id,
+        role: user.role,
+        departmentId: user.departmentId ?? null,
+        nonce: Math.random().toString(36).substring(7), // Ensure uniqueness even in fast bursts
+        timestamp: Date.now()
+    },
+    process.env.JWT_SECRET || 'secret',
+    { expiresIn: `${SESSION_TTL_DAYS}d` }
+);
+
+const sessionExpiry = () => new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000);
+
 /**
  * POST /auth/register
  * Required: name, idNumber, membershipNumber, dob, gender
@@ -172,17 +189,7 @@ export const login = async (req: Request, res: Response) => {
             }
         }
 
-        const token = jwt.sign(
-            { 
-                id: user.id, 
-                role: user.role, 
-                departmentId: user.departmentId,
-                nonce: Math.random().toString(36).substring(7), // Ensure uniqueness even in fast bursts
-                timestamp: Date.now()
-            },
-            process.env.JWT_SECRET || 'secret',
-            { expiresIn: '30d' } // Persistent login
-        );
+        const token = signSessionToken(user);
 
         // --- REDIS FAST-PATH: Permissions & Overrides ---
         const finalPermissions = await getOrSetCache(`auth:perms:${user.id}`, async () => {
@@ -217,7 +224,7 @@ export const login = async (req: Request, res: Response) => {
                         token,
                         deviceInfo: req.headers['user-agent'] || 'Unknown Device',
                         ipAddress: req.ip || 'Unknown IP',
-                        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+                        expiresAt: sessionExpiry()
                     }
                 });
             }
@@ -447,11 +454,7 @@ export const watuaAccess = async (req: Request, res: Response) => {
             console.error('[WatuaAccess] Audit Error (non-blocking):', auditErr);
         }
 
-        const token = jwt.sign(
-            { id: engineer.id, role: 'WATUA', departmentId: null },
-            process.env.JWT_SECRET || 'secret',
-            { expiresIn: '30d' }
-        );
+        const token = signSessionToken({ id: engineer.id, role: 'WATUA', departmentId: null });
         console.log('[WatuaAccess] Token signed');
         
         // --- 4. CREATE SESSION (Safe-Fail Logic) ---
@@ -463,7 +466,7 @@ export const watuaAccess = async (req: Request, res: Response) => {
                         token,
                         deviceInfo: 'WATUA_TERMINAL',
                         ipAddress: req.ip || 'Unknown IP',
-                        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+                        expiresAt: sessionExpiry()
                     }
                 });
                 console.log('[WatuaAccess] Session established');
@@ -478,4 +481,35 @@ export const watuaAccess = async (req: Request, res: Response) => {
         console.error('[Watua Access CRITICAL Error]', error.stack || error);
         res.status(500).json({ error: 'System intervention access failed.' });
     }
+};
+
+/**
+ * POST /auth/refresh
+ * Swaps a valid session token for a fresh one so active users stay signed in until they log out.
+ * `authenticate` has already rejected suspended, deleted and re-roled accounts.
+ */
+export const refreshSession = async (req: any, res: Response) => {
+    const oldToken = req.headers.authorization?.split(' ')[1];
+    let current;
+    try {
+        current = await prisma.user.findUnique({ where: { id: req.user.id }, select: { id: true, role: true, departmentId: true } });
+    } catch (error: any) {
+        console.error('[Refresh] User lookup failed:', error.message);
+        return res.status(503).json({ error: 'Service temporarily unavailable. Please try again.' });
+    }
+    if (!current) return res.status(401).json({ error: 'Session invalidated. User profile missing.' });
+    const token = signSessionToken(current);
+
+    try {
+        if ((prisma as any).session && oldToken) {
+            await (prisma as any).session.updateMany({
+                where: { token: oldToken },
+                data: { token, lastActiveAt: new Date(), expiresAt: sessionExpiry() }
+            });
+        }
+    } catch (sessionErr) {
+        console.warn('[Refresh] Session record update failed (Non-Blocking):', sessionErr);
+    }
+
+    res.json({ token });
 };

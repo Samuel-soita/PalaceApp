@@ -367,7 +367,14 @@ route('POST', '/upload', ({ body }) => {
 });
 
 // Departments
-route('GET', '/departments', () => db().departments.map((d) => ({ ...d, _count: { leaders: d.leaders.length } })));
+route('GET', '/departments', () => db().departments.map((d) => ({
+    ...d,
+    _count: {
+        leaders: d.leaders.length,
+        users: live(db().users).filter((u) => u.departmentId === d.id).length,
+        projects: live(db().projects).filter((p) => p.departmentId === d.id && p.status !== 'COMPLETED').length,
+    },
+})));
 route('GET', '/departments/:id', ({ params }) => {
     const d = db().departments.find((x) => x.id === params.id);
     if (!d) throw new DemoError(404, 'Department not found.');

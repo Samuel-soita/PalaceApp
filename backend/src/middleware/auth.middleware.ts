@@ -30,9 +30,21 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
         return res.status(401).json({ error: 'Authentication required' });
     }
 
+    let decoded: any;
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as any;
-        
+        decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+    } catch (error: any) {
+        const isExpired = error.name === 'TokenExpiredError';
+        if (isExpired && Date.now() - lastExpiredTokenLogAt < EXPIRED_LOG_COOLDOWN_MS) {
+            return res.status(401).json({ error: 'Invalid or expired token' });
+        }
+        if (isExpired) lastExpiredTokenLogAt = Date.now();
+        console.warn(`[AUTH_FAILURE] Invalid or expired token for path ${req.path}. Error: ${error.message}`);
+        return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+
+    // The client signs the user out on 401, so a database or cache outage must not answer 401.
+    try {
         // --- SECURITY UPGRADE: STRICT ROUTE LOCKDOWN ---
         // 1. Session Binding & Validation via Redis 
         const sessionKey = `auth:session:${decoded.id}`;
@@ -79,16 +91,11 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
             canManagePartnerships: (user as any).canManagePartnerships || false,
             pastorModules
         };
-        next();
     } catch (error: any) {
-        const isExpired = error.name === 'TokenExpiredError' || error.message === 'jwt expired';
-        if (isExpired && Date.now() - lastExpiredTokenLogAt < EXPIRED_LOG_COOLDOWN_MS) {
-            return res.status(401).json({ error: 'Invalid or expired token' });
-        }
-        if (isExpired) lastExpiredTokenLogAt = Date.now();
-        console.warn(`[AUTH_FAILURE] Invalid or expired token for path ${req.path}. Error: ${error.message}`);
-        res.status(401).json({ error: 'Invalid or expired token' });
+        console.error(`[AUTH_LOOKUP_FAILURE] Could not verify session for path ${req.path}. Error: ${error.message}`);
+        return res.status(503).json({ error: 'Service temporarily unavailable. Please try again.' });
     }
+    next();
 };
 
 export const authorize = (roles: Role[]) => {

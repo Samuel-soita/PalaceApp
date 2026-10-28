@@ -496,35 +496,40 @@ export default function TopNavbar() {
                             to="/"
                             className="glow-text"
                             sx={{
-                                mr: 4,
+                                mr: 3,
                                 display: { xs: 'none', md: 'flex' },
                                 alignItems: 'center',
                                 gap: 1.5,
+                                minWidth: 0,
+                                flexShrink: 0.5,
                                 fontWeight: 800,
                                 letterSpacing: '-0.02em',
                                 color: 'white',
                                 textDecoration: 'none',
                             }}
                         >
-                            <Church size={28} color="var(--cyan)" />
-                            {user?.role === 'MEMBER' 
-                                ? "PRAYER PALACE PORTAL" 
-                                : (user?.role === 'SUPER_ADMIN' ? "PALACE CONTROL PORTAL" : "EXECUTIVE PALACE PORTAL")}
+                            <Church size={28} color="var(--cyan)" style={{ flexShrink: 0 }} />
+                            {/* The nav links need the room below xl; each dashboard repeats this title. */}
+                            <Box component="span" sx={{ display: { xs: 'none', xl: 'block' }, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {user?.role === 'MEMBER' 
+                                    ? "PRAYER PALACE PORTAL" 
+                                    : (user?.role === 'SUPER_ADMIN' ? "PALACE CONTROL PORTAL" : "EXECUTIVE PALACE PORTAL")}
+                            </Box>
                         </Typography>
 
                         {/* Global Ministry Themes display */}
                         {settings && (settings.themeOfYear || settings.themeOfMonth) && (
-                            <Box sx={{ display: { xs: 'none', lg: 'flex' }, mr: 4, gap: 1, alignItems: 'center' }}>
+                            <Box sx={{ display: { xs: 'none', xl: 'flex' }, mr: 3, gap: 1, alignItems: 'center', minWidth: 0, flexShrink: 1 }}>
                                 {settings.themeOfYear && (
-                                    <Box sx={{ border: '1px solid rgba(255,255,255,0.1)', bgcolor: 'rgba(255,255,255,0.02)', px: 1.5, py: 0.5 }}>
-                                        <Typography variant="caption" sx={{ color: 'var(--cyan)', fontWeight: 900, letterSpacing: 1, textTransform: 'uppercase' }}>
+                                    <Box sx={{ border: '1px solid rgba(255,255,255,0.1)', bgcolor: 'rgba(255,255,255,0.02)', px: 1.5, py: 0.5, minWidth: 0 }}>
+                                        <Typography variant="caption" noWrap component="div" sx={{ color: 'var(--cyan)', fontWeight: 900, letterSpacing: 1, textTransform: 'uppercase' }}>
                                             {settings.themeOfYear}
                                         </Typography>
                                     </Box>
                                 )}
                                 {settings.themeOfMonth && (
-                                    <Box sx={{ border: '1px solid rgba(255,255,255,0.1)', bgcolor: 'rgba(255,255,255,0.02)', px: 1.5, py: 0.5 }}>
-                                        <Typography variant="caption" sx={{ color: '#ffcc00', fontWeight: 900, letterSpacing: 1, textTransform: 'uppercase' }}>
+                                    <Box sx={{ border: '1px solid rgba(255,255,255,0.1)', bgcolor: 'rgba(255,255,255,0.02)', px: 1.5, py: 0.5, minWidth: 0 }}>
+                                        <Typography variant="caption" noWrap component="div" sx={{ color: '#ffcc00', fontWeight: 900, letterSpacing: 1, textTransform: 'uppercase' }}>
                                             {settings.themeOfMonth}
                                         </Typography>
                                     </Box>

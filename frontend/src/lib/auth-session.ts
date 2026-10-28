@@ -13,6 +13,20 @@ export function isTokenExpired(token: string | null | undefined): boolean {
     }
 }
 
+const RENEW_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/** True when a valid online JWT is over a day old and should be swapped for a fresh one. */
+export function isTokenDueForRenewal(token: string | null | undefined): boolean {
+    if (!token || token.startsWith('offline_token_') || isTokenExpired(token)) return false;
+    try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        if (payload.demo || !payload.iat) return false;
+        return Date.now() - payload.iat * 1000 >= RENEW_AFTER_MS;
+    } catch {
+        return false;
+    }
+}
+
 /** True when a real online JWT exists and is still valid (not offline mode). */
 export function isOnlineSessionActive(): boolean {
     if (sessionInvalidated) return false;
