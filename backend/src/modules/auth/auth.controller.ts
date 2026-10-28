@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { createHash, timingSafeEqual } from 'crypto';
 import prisma from '../../utils/prisma.js';
 import { logAudit } from '../../utils/audit.js';
 import { getOrSetCache } from '../../utils/redis.js';
@@ -407,14 +407,25 @@ export const updateProfile = async (req: any, res: Response) => {
     }
 };
 
+const digest = (value: string) => createHash('sha256').update(value).digest();
+
 /**
- * POST /auth/watua-access
- * No credentials required. Triggered by the hidden keyboard sequence.
- * Issues a WATUA-scoped JWT automatically.
+ * POST /auth/watua-access { accessKey }
+ * Triggered by the hidden keyboard sequence. Issues a WATUA-scoped JWT only when the
+ * engineer supplies WATUA_ACCESS_KEY; without that env var the endpoint stays disabled.
  */
 export const watuaAccess = async (req: Request, res: Response) => {
     try {
-        console.log('[WatuaAccess] Triggered');
+        const expectedKey = process.env.WATUA_ACCESS_KEY;
+        if (!expectedKey) {
+            return res.status(403).json({ error: 'System intervention access is not configured.' });
+        }
+        const providedKey = typeof req.body?.accessKey === 'string' ? req.body.accessKey : '';
+        if (!providedKey || !timingSafeEqual(digest(providedKey), digest(expectedKey))) {
+            console.warn('[WatuaAccess] Rejected attempt from', req.ip);
+            return res.status(403).json({ error: 'Invalid system access key.' });
+        }
+
         const engineer = await prisma.user.findFirst({
             where: { role: 'WATUA', status: 'ACTIVE' }
         });
@@ -465,10 +476,6 @@ export const watuaAccess = async (req: Request, res: Response) => {
         console.log('[WatuaAccess] Success response sent');
     } catch (error: any) {
         console.error('[Watua Access CRITICAL Error]', error.stack || error);
-        res.status(500).json({ 
-            error: 'System intervention access failed.', 
-            message: error.message,
-            stack: error.stack 
-        });
+        res.status(500).json({ error: 'System intervention access failed.' });
     }
 };

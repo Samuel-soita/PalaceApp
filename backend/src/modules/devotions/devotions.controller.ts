@@ -93,15 +93,26 @@ export const createDevotion = async (req: Request, res: Response) => {
             }
         }
 
+        if (!title?.trim() || !content?.trim()) {
+            return res.status(400).json({ error: 'Devotion title and content are required.' });
+        }
+
         const devotionDate = new Date(date || new Date());
         devotionDate.setHours(0, 0, 0, 0);
+
+        const existingForDay = await prisma.devotion.findUnique({ where: { date: devotionDate } });
+        if (existingForDay) {
+            return res.status(409).json({ error: `A devotion is already published for ${devotionDate.toDateString()}. Choose another date.` });
+        }
+
+        const settings = (!themeOfMonth || !themeOfYear) ? await prisma.ministrySettings.findFirst() : null;
 
         const devotion = await prisma.devotion.create({
             data: {
                 title,
                 content,
-                themeOfMonth,
-                themeOfYear,
+                themeOfMonth: themeOfMonth || settings?.themeOfMonth || '',
+                themeOfYear: themeOfYear || settings?.themeOfYear || '',
                 authorId: actor.id,
                 date: devotionDate
             }

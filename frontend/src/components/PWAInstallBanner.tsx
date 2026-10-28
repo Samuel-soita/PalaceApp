@@ -215,7 +215,8 @@ export default function PWAInstallBanner() {
                 <Box
                     sx={{
                         position: 'fixed',
-                        top: 12,
+                        top: { xs: 'auto', sm: 12 },
+                        bottom: { xs: 'calc(16px + env(safe-area-inset-bottom))', sm: 'auto' },
                         left: '50%',
                         transform: 'translateX(-50%)',
                         zIndex: 9999,

@@ -1,4 +1,3 @@
-import { z } from 'zod';
 import { CreateEventSchema } from './src/schemas/EventSchema.js';
 import { CreateProjectSchema } from './src/schemas/ProjectSchema.js';
 import { CreatePlanSchema } from './src/schemas/PlanSchema.js';

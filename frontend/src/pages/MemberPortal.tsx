@@ -1,23 +1,21 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { 
     Container, Grid, Typography, Box, Card, CardContent, Button, Avatar, Chip, 
     IconButton, LinearProgress, Modal, Backdrop, Fade, Stack, Divider,
     Snackbar, Alert
 } from '@mui/material';
 import { 
-    Bell, Calendar, UserPlus, Baby, Heart, BookOpen, Quote, Star, 
-    ArrowRight, Droplet, CheckCircle2, Clock, Sparkles, Megaphone, 
-    ThumbsUp, Smile, Send
-} from 'lucide-react';
+    Bell, Calendar, Baby, Heart, BookOpen, Star, 
+    ArrowRight, Droplet, Clock, Sparkles, Megaphone, 
+    ThumbsUp, Smile} from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../lib/api-client';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { Link } from 'react-router-dom';
 import RequestBaptismModal from '../components/modals/RequestBaptismModal';
 import { useLocalFirstDashboard } from '../hooks/useLocalFirstDashboard';
 import { useOfflineMutation } from '../hooks/useOfflineMutation';
-import SyncIndicator from '../components/SyncIndicator';
 import IntelDetailModal from '../components/modals/IntelDetailModal';
 import { db } from '../lib/db';
 
@@ -84,17 +82,17 @@ export default function MemberPortal() {
         }
     });
 
-    const announcements = syncData?.announcements || [];
     const events = syncData?.events || [];
-    const myChildren = syncData?.children || [];
     const baptisms = syncData?.baptisms || [];
     const activeBaptism = baptisms?.find((b: any) => b.status !== 'COMPLETED');
-
-    const getStatusColor = (status: string) => {
-        if (status.includes('APPROVED') || status === 'COMPLETED' || status === 'DEDICATED') return 'success';
-        if (status.includes('PENDING')) return 'warning';
-        return 'info';
+    const BAPTISM_STAGE_LABELS: Record<string, string> = {
+        PENDING_PASTOR_APPROVAL: 'AWAITING PASTOR',
+        ADMIN_PAYMENT_VERIFICATION: 'PAYMENT CHECK',
+        BISHOP_APPROVED: 'AWAITING RITE',
     };
+    const baptismLabel = activeBaptism
+        ? `BAPTISM: ${BAPTISM_STAGE_LABELS[activeBaptism.status] || activeBaptism.status.replace(/_/g, ' ')}`
+        : 'BAPTISM REQ';
 
     return (
         <DashboardLayout>
@@ -188,7 +186,6 @@ export default function MemberPortal() {
                         const now = new Date();
                         const diffTime = expiry.getTime() - now.getTime();
                         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                        const isExpired = diffDays <= 0;
                         const isGracePeriod = diffDays < 0 && diffDays >= -14;
                         const isLockedOut = diffDays < -14;
 
@@ -215,6 +212,7 @@ export default function MemberPortal() {
                                                 color="inherit" 
                                                 size="small" 
                                                 variant="outlined" 
+                                                disabled={requestRenewalMutation.isLoading || requestRenewalMutation.isSuccess}
                                                 onClick={() => requestRenewalMutation.mutate({})}
                                                 sx={{ fontWeight: 950, borderRadius: 0 }}
                                             >
@@ -250,6 +248,7 @@ export default function MemberPortal() {
                                                 color="warning" 
                                                 size="small" 
                                                 variant="contained" 
+                                                disabled={requestRenewalMutation.isLoading || requestRenewalMutation.isSuccess}
                                                 onClick={() => requestRenewalMutation.mutate({})}
                                                 sx={{ fontWeight: 950, borderRadius: 0, bgcolor: 'orange', color: '#000' }}
                                             >
@@ -277,12 +276,12 @@ export default function MemberPortal() {
                         <Chip 
                             label={`YEAR: ${syncData?.ministrySettings?.themeOfYear || 'YEAR OF DIVINE ESTABLISHMENT'}`} 
                             size="small" 
-                            sx={{ bgcolor: 'rgba(79, 139, 255, 0.1)', color: 'var(--primary)', fontWeight: 900, borderRadius: 0 }} 
+                            sx={{ bgcolor: 'rgba(79, 139, 255, 0.1)', color: 'var(--primary)', fontWeight: 900, borderRadius: 0, height: 'auto', maxWidth: '100%', '& .MuiChip-label': { whiteSpace: 'normal', py: 0.5 } }} 
                         />
                         <Chip 
                             label={`MONTH: ${syncData?.ministrySettings?.themeOfMonth || 'MONTH OF NEW BEGINNINGS'}`} 
                             size="small" 
-                            sx={{ bgcolor: 'rgba(0, 180, 216, 0.1)', color: 'var(--cyan)', fontWeight: 900, borderRadius: 0 }} 
+                            sx={{ bgcolor: 'rgba(0, 180, 216, 0.1)', color: 'var(--cyan)', fontWeight: 900, borderRadius: 0, height: 'auto', maxWidth: '100%', '& .MuiChip-label': { whiteSpace: 'normal', py: 0.5 } }} 
                         />
                     </Box>
                 </Box>
@@ -298,11 +297,13 @@ export default function MemberPortal() {
                                         <Sparkles size={24} color="var(--cyan)" />
                                         <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>DAILY DEVOTION</Typography>
                                     </Box>
-                                    <Chip 
-                                        label={devotion?.themeOfMonth?.toUpperCase() || syncData?.ministrySettings?.themeOfMonth?.toUpperCase()} 
-                                        size="small" variant="outlined" 
-                                        sx={{ color: 'var(--cyan)', borderColor: 'var(--cyan-glow)', fontWeight: 900 }} 
-                                    />
+                                    {(devotion?.themeOfMonth || syncData?.ministrySettings?.themeOfMonth) && (
+                                        <Chip 
+                                            label={String(devotion?.themeOfMonth || syncData?.ministrySettings?.themeOfMonth || '').toUpperCase()} 
+                                            size="small" variant="outlined" 
+                                            sx={{ color: 'var(--cyan)', borderColor: 'var(--cyan-glow)', fontWeight: 900 }} 
+                                        />
+                                    )}
                                 </Box>
 
                                 {isSyncLoading ? <LinearProgress /> : (
@@ -323,8 +324,8 @@ export default function MemberPortal() {
 
                                         <Divider sx={{ mb: 3, opacity: 0.1 }} />
 
-                                        <Box display="flex" justifyContent="space-between" alignItems="center">
-                                            <Stack direction="row" spacing={1}>
+                                        <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1.5}>
+                                            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                                                 {[
                                                     { icon: ThumbsUp, label: 'Amen', value: 'AMEN', type: 'AMEN' },
                                                     { icon: Smile, label: 'Blessed', value: '😊', type: 'EMOJI' },
@@ -338,7 +339,7 @@ export default function MemberPortal() {
                                                             key={btn.value}
                                                             size="small"
                                                             startIcon={<btn.icon size={16} />}
-                                                            onClick={() => devotionMutation.mutate({ type: btn.type, value: btn.value })}
+                                                            disabled={devotionMutation.isLoading} onClick={() => devotionMutation.mutate({ type: btn.type, value: btn.value })}
                                                             sx={{ 
                                                                 borderRadius: 20, 
                                                                 px: 2,
@@ -368,13 +369,14 @@ export default function MemberPortal() {
                         <Grid container spacing={2} mb={4} justifyContent="center">
                             {[
                                 { label: 'REGISTER CHILD', icon: Baby, color: 'cyan', href: '/register-child' },
-                                { label: 'BAPTISM REQ', icon: Droplet, color: 'info', onClick: () => setBaptismModalOpen(true) },
+                                { label: baptismLabel, icon: Droplet, color: 'info', onClick: () => setBaptismModalOpen(true), disabled: !!activeBaptism },
                                 { label: 'MAKE APPOINTMENT', icon: Calendar, color: 'primary', onClick: () => setAppointmentModalOpen(true) },
-                            ].map((action, i) => (
+                            ].map((action: any, i) => (
                                 <Grid item xs={12} sm={4} key={i}>
                                     <Button
                                         fullWidth
                                         component={action.href ? Link : 'button'}
+                                        disabled={!!action.disabled}
                                         {...(action.href ? { to: action.href } : { onClick: action.onClick })}
                                         sx={{
                                             height: 100,
@@ -457,7 +459,7 @@ export default function MemberPortal() {
                                 {(() => {
                                     const allItems = [
                                         ...(syncData?.events || []).map((e: any) => ({ ...e, type: 'EVENT', icon: Calendar, color: 'primary', isPersistent: new Date(e.date).toDateString() === new Date().toDateString() })),
-                                        ...(syncData?.projects || []).map((p: any) => ({ ...p, type: 'PROJECT', icon: Star, color: 'cyan', isPersistent: p.status === 'IN_PROGRESS' })),
+                                        ...(syncData?.projects || []).map((p: any) => ({ ...p, type: 'PROJECT', icon: Star, color: 'cyan', isPersistent: p.status === 'ACTIVE' })),
                                         ...(syncData?.plans || []).map((p: any) => ({ ...p, type: 'PLAN', icon: BookOpen, color: 'orange', isPersistent: p.approvalStatus === 'APPROVED' || p.approvalStatus === 'PENDING_APPROVAL' })),
                                         ...(syncData?.meetings || []).map((m: any) => ({ ...m, type: m.isPartnerOnly ? 'PARTNER MTG' : 'MEETING', icon: Clock, color: m.isPartnerOnly ? 'primary' : 'info', isPersistent: new Date(m.date).toDateString() === new Date().toDateString() })),
                                         ...(syncData?.announcements || []).map((a: any) => ({ ...a, type: 'INTEL', icon: Bell, color: 'error', isPersistent: a.priority === 'HIGH' })),
@@ -526,7 +528,7 @@ export default function MemberPortal() {
 
                                     const departmentalLiveOps = [
                                         ...(syncData?.events || []).map((e: any) => ({ ...e, type: 'EVENT', icon: Calendar, color: 'primary', isLive: isToday(e.date), isNext: isTomorrow(e.date) })),
-                                        ...(syncData?.projects || []).map((p: any) => ({ ...p, type: 'PROJECT', icon: Star, color: 'cyan', isLive: p.status === 'IN_PROGRESS', isNext: false })),
+                                        ...(syncData?.projects || []).map((p: any) => ({ ...p, type: 'PROJECT', icon: Star, color: 'cyan', isLive: p.status === 'ACTIVE', isNext: false })),
                                         ...(syncData?.meetings || []).map((m: any) => ({ ...m, type: 'MEETING', icon: Clock, color: 'info', isLive: isToday(m.date), isNext: isTomorrow(m.date) })),
                                         ...(syncData?.plans || []).map((p: any) => ({ ...p, type: 'PLAN', icon: BookOpen, color: 'orange', isLive: p.approvalStatus === 'APPROVED' || p.approvalStatus === 'PENDING_APPROVAL', isNext: false })),
                                     ].filter(item => item.departmentId === deptId && (item.isLive || item.isNext));
@@ -693,7 +695,7 @@ export default function MemberPortal() {
 
                                         {(() => {
                                             const globalIntel = [
-                                                ...(syncData?.announcements || []).filter((a: any) => a.isGlobal).map((a: any) => ({ ...a, intelType: 'CHURCH UPDATE', icon: Megaphone, color: 'cyan' })),
+                                                ...(syncData?.announcements || []).filter((a: any) => a.isGlobal || a.isMajor).map((a: any) => ({ ...a, intelType: 'CHURCH UPDATE', icon: Megaphone, color: 'cyan' })),
                                                 ...(syncData?.events || []).filter((e: any) => e.isMajor).map((e: any) => ({ ...e, intelType: 'MAJOR EVENT', icon: Calendar, color: 'primary' })),
                                                 ...(syncData?.projects || []).filter((p: any) => p.isMajor).map((p: any) => ({ ...p, intelType: 'STRATEGIC PROJECT', icon: Star, color: 'cyan' })),
                                                 ...(syncData?.plans || []).filter((p: any) => p.isMajor).map((p: any) => ({ ...p, intelType: 'MINISTRY PLAN', icon: BookOpen, color: 'orange' })),
@@ -757,7 +759,7 @@ export default function MemberPortal() {
                 onClose={() => setCalendarModalOpen(false)}
                 closeAfterTransition
                 BackdropComponent={Backdrop}
-                BackdropProps={{ timeout: 500, sx: { backdropFilter: 'blur(8px)' } }}
+                BackdropProps={{ timeout: 200, sx: { backdropFilter: 'blur(8px)' } }}
             >
                 <Fade in={calendarModalOpen}>
                     <Box sx={{ 
@@ -796,7 +798,7 @@ export default function MemberPortal() {
                 onClose={() => setEnrollModalOpen(false)}
                 closeAfterTransition
                 BackdropComponent={Backdrop}
-                BackdropProps={{ timeout: 500, sx: { backdropFilter: 'blur(12px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
+                BackdropProps={{ timeout: 200, sx: { backdropFilter: 'blur(12px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
             >
                 <Fade in={enrollModalOpen}>
                     <Box sx={{ 
@@ -886,7 +888,7 @@ export default function MemberPortal() {
                 onClose={() => setAppointmentModalOpen(false)}
                 closeAfterTransition
                 BackdropComponent={Backdrop}
-                BackdropProps={{ timeout: 500, sx: { backdropFilter: 'blur(10px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
+                BackdropProps={{ timeout: 200, sx: { backdropFilter: 'blur(10px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
             >
                 <Fade in={appointmentModalOpen}>
                     <Box sx={{ 

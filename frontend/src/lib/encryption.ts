@@ -1,4 +1,7 @@
-import CryptoJS from 'crypto-js';
+import AES from 'crypto-js/aes';
+import SHA256 from 'crypto-js/sha256';
+import Hex from 'crypto-js/enc-hex';
+import Utf8 from 'crypto-js/enc-utf8';
 
 // Base secret for generating encryption keys (In true E2EE, this would be negotiated via Diffie-Hellman)
 const MASTER_SECRET = import.meta.env.VITE_E2EE_SECRET || 'church-hub-secure-layer-10x';
@@ -9,7 +12,7 @@ const MASTER_SECRET = import.meta.env.VITE_E2EE_SECRET || 'church-hub-secure-lay
  * can reproducibly encrypt/decrypt messages that only the end-clients can read.
  */
 const deriveRoomKey = (roomId: string): string => {
-    return CryptoJS.SHA256(`${MASTER_SECRET}:${roomId}`).toString(CryptoJS.enc.Hex);
+    return SHA256(`${MASTER_SECRET}:${roomId}`).toString(Hex);
 };
 
 /**
@@ -19,7 +22,7 @@ export const encryptMessage = (plaintext: string, roomId: string): string => {
     if (!plaintext) return plaintext;
     try {
         const key = deriveRoomKey(roomId);
-        const encrypted = CryptoJS.AES.encrypt(plaintext, key).toString();
+        const encrypted = AES.encrypt(plaintext, key).toString();
         // Prefix with E2EE identifier so we know it's encrypted
         return `E2EE::${encrypted}`;
     } catch (e) {
@@ -37,8 +40,8 @@ export const decryptMessage = (ciphertext: string, roomId: string): string => {
     try {
         const key = deriveRoomKey(roomId);
         const actualCiphertext = ciphertext.replace('E2EE::', '');
-        const bytes = CryptoJS.AES.decrypt(actualCiphertext, key);
-        const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+        const bytes = AES.decrypt(actualCiphertext, key);
+        const decrypted = bytes.toString(Utf8);
         return decrypted || ciphertext; // Fallback if decryption returns empty (wrong key)
     } catch (e) {
         console.error('Decryption failed', e);

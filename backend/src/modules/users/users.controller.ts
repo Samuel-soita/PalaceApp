@@ -3,11 +3,12 @@ import prisma, { rawPrisma } from '../../utils/prisma.js';
 import { logAudit } from '../../utils/audit.js';
 import { logAction } from '../../utils/audit.service.js';
 import { findTargetDepartmentId } from '../../utils/department-mapper.js';
-import { getOrSetCache, invalidateCache } from '../../utils/redis.js';
+import { getOrSetCache, invalidateCache, invalidateLiveCaches } from '../../utils/redis.js';
 import { RecoveryService } from '../../utils/recovery.service.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
 import { generateNextMembershipNumber, isEligibleForRenewal } from '../../utils/user-utils.js';
+import { PASTOR_MODULE_ALIASES } from '../../utils/pastor-module-keys.js';
 
 /**
  * 👥 Fetch Users list with role filtering (Paginated)
@@ -198,8 +199,11 @@ export const activateUser = catchAsync(async (req: AuthRequest, res: Response) =
  */
 export const markCardAsPaid = catchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
-    const { isPaid } = req.body;
+    const isPaid = req.body?.isPaid ?? req.body?.isCardPaid;
     const actor = req.user!;
+    if (typeof isPaid !== 'boolean') {
+        return res.status(400).json({ error: 'isPaid must be true or false.' });
+    }
 
     const user = await prisma.user.update({
         where: { id },
@@ -207,6 +211,8 @@ export const markCardAsPaid = catchAsync(async (req: AuthRequest, res: Response)
     });
 
     await logAudit(actor.id, isPaid ? 'CARD_PAYMENT_VERIFIED' : 'CARD_PAYMENT_REVERSED', 'USER', id, { name: user.name });
+    await invalidateCache(`auth:login:${user.membershipNumber}`);
+    await invalidateCache('users:*');
     res.json({ message: `Membership card payment status updated for ${user.name}.`, user });
 });
 // Watua Technical Retrieval
@@ -332,7 +338,9 @@ export const updateUserBioTechnical = catchAsync(async (req: AuthRequest, res: R
         afterState: updated,
         ipAddress: req.ip
     });
-    
+
+    await invalidateCache(`auth:login:${updated.membershipNumber}`);
+    await invalidateCache('users:*');
     res.json(updated);
 });
 
@@ -394,9 +402,11 @@ export const getFeatureFlags = catchAsync(async (req: AuthRequest, res: Response
 
 export const updateFeatureFlag = catchAsync(async (req: AuthRequest, res: Response) => {
     const { name, enabled, scope } = req.body;
-    const flag = await prisma.featureFlag.update({
+    if (typeof name !== 'string' || !name.trim()) throw new AppError('Flag name is required.', 400);
+    const flag = await prisma.featureFlag.upsert({
         where: { name },
-        data: { enabled, scope }
+        update: { enabled, scope },
+        create: { name, enabled: !!enabled, ...(scope && { scope }) }
     });
     await invalidateCache('system:feature_flags');
     res.json(flag);
@@ -412,6 +422,11 @@ export const executeIntervention = catchAsync(async (req: AuthRequest, res: Resp
 
     let updateData: any = {};
     const auditAction = `INTERVENTION_${action}`;
+
+    const target = await prisma.user.findUnique({ where: { id }, select: { role: true, isPartner: true } });
+    if (!target) throw new AppError('User not found.', 404);
+    if (target.role === 'WATUA' && actor.role !== 'WATUA') throw new AppError('Only an engineer can intervene on an engineer account.', 403);
+    if (target.role === 'SUPER_ADMIN' && !['WATUA', 'SUPER_ADMIN'].includes(actor.role)) throw new AppError('Only the Bishop or an engineer can intervene on the Bishop account.', 403);
 
     switch (action) {
         case 'ACTIVATE': updateData = { status: 'ACTIVE' }; break;
@@ -460,6 +475,7 @@ export const executeIntervention = catchAsync(async (req: AuthRequest, res: Resp
         case 'SUSPEND': updateData = { isSuspended: true }; break;
         case 'UNSUSPEND': updateData = { isSuspended: false }; break;
         case 'RESET_STRIKES': updateData = { wrongdoingCount: 0 }; break;
+        case 'TOGGLE_PARTNER': updateData = { isPartner: !target.isPartner }; break;
         default: throw new AppError('Invalid intervention code.', 400);
     }
 
@@ -469,22 +485,26 @@ export const executeIntervention = catchAsync(async (req: AuthRequest, res: Resp
 
         if (action === 'MAKE_PASTOR' || action === 'MAKE_ASSOCIATE_PASTOR') {
             const baselineModules = [
-                'Child Dedication Registry',
-                'Partnership Management',
-                'Event Oversight',
+                'ChildDedication',
+                'PartnershipManagement',
+                'EventOversight',
                 'DevotionPublishing',
-                'Project Oversight'
+                'ProjectOversight'
             ];
             for (const mod of baselineModules) {
-                await (tx as any).pastorModuleAccess.upsert({
-                    where: { pastorId_moduleKey: { pastorId: id, moduleKey: mod } },
-                    update: {},
-                    create: { pastorId: id, moduleKey: mod, permissions: ['READ', 'WRITE', 'EXECUTE'] }
+                const existing = await (tx as any).pastorModuleAccess.findFirst({
+                    where: { pastorId: id, moduleKey: { in: PASTOR_MODULE_ALIASES[mod] || [mod] } }
                 });
+                if (!existing) {
+                    await (tx as any).pastorModuleAccess.create({
+                        data: { pastorId: id, moduleKey: mod, permissions: ['READ', 'WRITE', 'EXECUTE'] }
+                    });
+                }
             }
         }
         return [curr, updated];
     });
+    await invalidateCache(`auth:pastor-modules:${id}`);
 
     await logAction({
         actorId: actor.id,
@@ -516,6 +536,9 @@ export const enrollPartnership = catchAsync(async (req: AuthRequest, res: Respon
     if (!amount || amount < 700) {
         throw new AppError('Partnership enrollment requires a minimum seed of 700 KES.', 400);
     }
+
+    const existing = await prisma.partnership.findFirst({ where: { userId, status: 'ACTIVE' } });
+    if (existing) throw new AppError('You are already enrolled as a Covenant Partner.', 409);
 
     const [partnership, user] = await prisma.$transaction(async (tx) => {
         const p = await tx.partnership.create({
@@ -558,6 +581,7 @@ export const enrollPartnership = catchAsync(async (req: AuthRequest, res: Respon
         metadata: { ref: `COVENANT-${Date.now()}` },
         ipAddress: req.ip
     });
+    invalidateLiveCaches();
 
     res.json({ 
         message: 'Congratulations! You have been successfully enrolled as a Covenant Partner.',
@@ -657,21 +681,6 @@ export const approveCardRenewal = catchAsync(async (req: AuthRequest, res: Respo
 
     res.json({ message: `Membership card renewed for ${updated.name}. New Number: ${newMembershipNumber}`, user: updated });
 });
-
-async function auditRenewalRequest(userId: string, role: string, ip: string) {
-    try {
-        await logAction({
-            actorId: userId,
-            actorRole: role,
-            actionType: 'REQUEST_CARD_RENEWAL',
-            entityType: 'USER',
-            entityId: userId,
-            ipAddress: ip
-        });
-    } catch (e) {
-        console.error('Failed to log renewal request audit.', e);
-    }
-}
 
 /**
  * 🔍 Efficient Real-time User Search

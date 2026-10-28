@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../utils/prisma.js';
 import { logAction } from '../../utils/audit.service.js';
+import { CANONICAL_PASTOR_MODULES } from '../../utils/pastor-module-keys.js';
+import { invalidateCache } from '../../utils/redis.js';
 
 /**
  * 👨‍⚖️ PASTORAL RESPONSIBILITY ENGINE - v2.4.0
@@ -38,6 +40,10 @@ export const assignModuleToPastor = async (req: Request, res: Response) => {
         const { pastorId, moduleKey, permissions } = req.body;
         const actor = (req as any).user;
 
+        if (!CANONICAL_PASTOR_MODULES.includes(moduleKey)) {
+            return res.status(400).json({ success: false, error: `Unknown module '${moduleKey}'.`, message: `Unknown module '${moduleKey}'.` });
+        }
+
         // Ensure pastor exists and has PASTOR or ASSOCIATE_PASTOR role
         const pastor = await prisma.user.findUnique({ where: { id: pastorId } });
         if (!pastor || (pastor.role !== 'PASTOR' && pastor.role !== 'ASSOCIATE_PASTOR')) {
@@ -51,6 +57,7 @@ export const assignModuleToPastor = async (req: Request, res: Response) => {
             update: { permissions },
             create: { pastorId, moduleKey, permissions }
         });
+        await invalidateCache(`auth:pastor-modules:${pastorId}`);
 
         await logAction({
             actorId: actor.id,
@@ -76,6 +83,7 @@ export const revokeModuleFromPastor = async (req: Request, res: Response) => {
         const access = await (prisma as any).pastorModuleAccess.delete({
             where: { id }
         });
+        await invalidateCache(`auth:pastor-modules:${access.pastorId}`);
 
         await logAction({
             actorId: actor.id,

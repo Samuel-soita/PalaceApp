@@ -11,7 +11,6 @@ export async function runStressTest() {
     
     // 1. Inject 1200 actions while offline
     // (Force offline state for simulation)
-    const originalOnLine = navigator.onLine;
     Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
 
     for (let i = 0; i < 1200; i++) {

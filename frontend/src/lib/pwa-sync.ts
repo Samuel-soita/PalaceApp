@@ -49,19 +49,76 @@ function abortPullSync(reason = 'Session expired') {
     handleSessionExpired(reason);
 }
 
-async function syncModule(
-    path: string,
-    dbTable: any,
-    isFullSync = false,
-    sinceQuery: { params: { since: string } }
-): Promise<boolean> {
+// ─── Per-module delta cursors ────────────────────────────────────────────────
+// Each module advances only when its own pull succeeds, using the server's clock
+// (response.timestamp) minus an overlap, so device clock skew or a failed module
+// can never cause updates to be skipped. Re-pulling the overlap is harmless (bulkPut).
+const CURSOR_OVERLAP_MS = 10_000;
+
+function currentUser(): { id?: string; role?: string } | null {
+    try {
+        return JSON.parse(localStorage.getItem('user') || 'null');
+    } catch {
+        return null;
+    }
+}
+
+// Bump the version whenever server-side visibility rules widen, so devices re-pull rows they were previously denied.
+const CURSOR_VERSION = 'v2';
+
+function cursorStorageKey() {
+    return `palace-sync-cursors:${CURSOR_VERSION}:${currentUser()?.id ?? 'anon'}`;
+}
+
+function readCursors(): Record<string, string> {
+    try {
+        return JSON.parse(localStorage.getItem(cursorStorageKey()) || '{}');
+    } catch {
+        return {};
+    }
+}
+
+function cursorFor(path: string): string {
+    // No cursor yet for this account: pull everything it may see, not just what changed
+    // since another account last synced on this device.
+    return readCursors()[path] ?? new Date(0).toISOString();
+}
+
+function saveCursor(path: string, serverTimestamp?: string) {
+    if (!serverTimestamp) return;
+    const t = new Date(serverTimestamp).getTime();
+    if (Number.isNaN(t)) return;
+    const cursors = readCursors();
+    cursors[path] = new Date(t - CURSOR_OVERLAP_MS).toISOString();
+    localStorage.setItem(cursorStorageKey(), JSON.stringify(cursors));
+}
+
+/** Writes live rows, removes soft-deleted ones; a full sync also drops rows the server no longer returns. */
+async function applyServerRows(dbTable: any, rows: any[], isFullSync: boolean) {
+    const live: any[] = [];
+    const deletedIds: string[] = [];
+    for (const row of rows) {
+        if (!row?.id) continue;
+        if (row.deletedAt) deletedIds.push(row.id);
+        else live.push({ ...row, syncStatus: 'SYNCED' });
+    }
+    if (live.length) await dbTable.bulkPut(live);
+    if (deletedIds.length) await dbTable.bulkDelete(deletedIds);
+
+    if (isFullSync) {
+        const keep = new Set(live.map(r => r.id));
+        const stale = await dbTable.filter((r: any) => !keep.has(r.id) && r.syncStatus === 'SYNCED').primaryKeys();
+        if (stale.length) await dbTable.bulkDelete(stale);
+    }
+}
+
+async function syncModule(path: string, dbTable: any, isFullSync = false): Promise<boolean> {
     if (pullAborted || !isOnlineSessionActive()) return false;
     try {
-        const res = await api.get(path, isFullSync ? {} : sinceQuery);
+        const res = await api.get(path, isFullSync ? {} : { params: { since: cursorFor(path) } });
         const data = isFullSync ? (res.data.data || res.data) : res.data.data;
-        if (Array.isArray(data) && data.length) {
-            await dbTable.bulkPut(data.map((item: any) => ({ ...item, syncStatus: 'SYNCED' })));
-        }
+        if (Array.isArray(data)) await applyServerRows(dbTable, data, isFullSync);
+        if (!isFullSync) saveCursor(path, res.data.timestamp);
         return true;
     } catch (err: any) {
         const status = err.response?.status;
@@ -76,66 +133,87 @@ async function syncModule(
     }
 }
 
-async function runPullSync() {
+interface SyncModuleDef {
+    name: string;
+    path: string;
+    table: any;
+    full?: boolean;
+}
+
+/** Modules this role pulls, in priority order. `name` matches the server's 'sync-update' module. */
+function modulesForRole(role?: string): SyncModuleDef[] {
+    const isAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA', 'PASTOR'].includes(role ?? '');
+    const isLeader = role === 'DEPARTMENT_LEADER';
+    const defs: SyncModuleDef[] = [
+        { name: 'departments', path: '/departments', table: db.departments, full: true },
+        { name: 'events', path: '/sync/events', table: db.events },
+        { name: 'announcements', path: '/sync/announcements', table: db.announcements },
+        { name: 'plans', path: '/sync/plans', table: db.plans },
+        { name: 'meetings', path: '/sync/meetings', table: db.meetings },
+        { name: 'projects', path: '/sync/projects', table: db.projects },
+        { name: 'partnerships', path: '/sync/partnerships', table: db.partnerships },
+    ];
+    if (isAdmin || isLeader) {
+        defs.push(
+            // Chat is leader-only, so members never pull it.
+            { name: 'messages', path: '/sync/messages', table: db.messages },
+            { name: 'members', path: '/sync/members', table: db.users },
+            { name: 'devotions', path: '/sync/devotions', table: db.devotions },
+            { name: 'baptisms', path: '/sync/baptisms', table: db.baptisms },
+            { name: 'children', path: '/sync/children', table: db.children },
+            { name: 'finance', path: '/sync/finance', table: db.transactions },
+            { name: 'repairs', path: '/sync/repairs', table: db.repairs },
+            { name: 'appointments', path: '/sync/appointments', table: db.appointments },
+            { name: 'reports', path: '/sync/reports', table: db.reports },
+            { name: 'support_requests', path: '/sync/support_requests', table: db.supportRequests },
+        );
+        if (role === 'WATUA' || role === 'SUPER_ADMIN') {
+            defs.push({ name: 'audit_logs', path: '/sync/audit_logs', table: db.auditLogs });
+        }
+    }
+    return defs;
+}
+
+async function runPullSync(only?: Set<string>) {
     pullAborted = false;
     if (!isOnlineSessionActive()) return;
 
-    const sinceQuery = { params: { since: new Date(lastSyncTimestamp).toISOString() } };
-    const userStr = localStorage.getItem('user');
-    const user = userStr ? JSON.parse(userStr) : null;
-    const isAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA', 'PASTOR'].includes(user?.role);
-    const isLeader = user?.role === 'DEPARTMENT_LEADER';
-
-    const infraOk = await syncModule('/departments', db.departments, true, sinceQuery);
-    if (pullAborted) return;
-
-    const coreModules: Array<[string, any]> = [
-        ['/sync/events', db.events],
-        ['/sync/announcements', db.announcements],
-        ['/sync/plans', db.plans],
-        ['/sync/messages', db.messages],
-        ['/sync/meetings', db.meetings],
-        ['/sync/projects', db.projects],
-    ];
-
-    let coreSuccess = 0;
-    for (const [path, table] of coreModules) {
+    const defs = modulesForRole(currentUser()?.role).filter(d => !only || only.has(d.name));
+    let successes = 0;
+    for (const def of defs) {
         if (pullAborted) break;
-        if (await syncModule(path, table, false, sinceQuery)) coreSuccess++;
+        if (await syncModule(def.path, def.table, def.full)) successes++;
     }
 
-    if (pullAborted) return;
-
-    const partnershipOk = await syncModule('/sync/partnerships', db.partnerships, false, sinceQuery);
-    if (pullAborted) return;
-
-    let secondarySuccess = 0;
-    if (isAdmin || isLeader) {
-        const secondary: Array<[string, any] | null> = [
-            (isAdmin || isLeader) ? ['/sync/members', db.users] : null,
-            ['/sync/devotions', db.devotions],
-            ['/sync/baptisms', db.baptisms],
-            ['/sync/children', db.children],
-            ['/sync/finance', db.transactions],
-            ['/sync/repairs', db.repairs],
-            ['/sync/appointments', db.appointments],
-            ['/sync/reports', db.reports],
-            ['/sync/support_requests', db.supportRequests],
-            (user?.role === 'WATUA' || user?.role === 'SUPER_ADMIN') ? ['/sync/audit_logs', db.auditLogs] : null,
-        ];
-
-        for (const entry of secondary.filter(Boolean) as Array<[string, any]>) {
-            if (pullAborted) break;
-            const [path, table] = entry;
-            if (await syncModule(path, table, false, sinceQuery)) secondarySuccess++;
+    if (successes > 0) {
+        if (!only) {
+            lastSyncTimestamp = Date.now();
+            localStorage.setItem('palace-last-sync', lastSyncTimestamp.toString());
         }
-    }
-
-    if (infraOk || coreSuccess > 0 || partnershipOk || secondarySuccess > 0) {
-        lastSyncTimestamp = Date.now();
-        localStorage.setItem('palace-last-sync', lastSyncTimestamp.toString());
         notifySyncHealthy();
     }
+}
+
+const pendingTargetedModules = new Set<string>();
+
+/**
+ * Pull only the given modules right away (used when the server broadcasts 'sync-update').
+ * Requests that arrive while a sync is running are merged and run right after it.
+ */
+export async function syncModulesNow(moduleNames: string[]) {
+    moduleNames.forEach(m => pendingTargetedModules.add(m));
+    if (isSyncing || !navigator.onLine || !isOnlineSessionActive() || expireSessionIfNeeded()) return;
+    if (typeof document !== 'undefined' && document.hidden) return; // full sync runs on return to the tab
+
+    const batch = new Set(pendingTargetedModules);
+    pendingTargetedModules.clear();
+    isSyncing = true;
+    try {
+        await runPullSync(batch);
+    } finally {
+        isSyncing = false;
+    }
+    if (pendingTargetedModules.size > 0) void syncModulesNow([]);
 }
 
 async function runPushSync() {
@@ -169,7 +247,7 @@ async function runPushSync() {
                 createdAt,
                 updatedAt,
                 deletedAt,
-                id,
+                id: _id,
                 ...cleanPayload
             } = job.payload;
 
@@ -178,7 +256,7 @@ async function runPushSync() {
                 'X-Client-Version': job.payload.version?.toString() || '1',
             };
 
-            const finalPayload = job.method === 'POST' ? cleanPayload : { ...cleanPayload, id };
+            const finalPayload = cleanPayload;
             let response;
 
             if (job.method === 'POST') {
@@ -240,7 +318,9 @@ async function runPushSync() {
             } else if (table && job.method !== 'DELETE') {
                 const serverRecord = responseData?.devotion ?? responseData;
                 const finalId = serverRecord?.id || responseData?.id || job.payload.id;
-                if (finalId !== job.payload.id) {
+                if (!finalId) {
+                    // Nothing local to reconcile.
+                } else if (job.payload.id && finalId !== job.payload.id) {
                     const record = await table.get(job.payload.id);
                     if (record) {
                         await table.delete(job.payload.id);
@@ -251,6 +331,9 @@ async function runPushSync() {
                             updatedAt: new Date().toISOString(),
                         });
                     }
+                } else if (!job.payload.id) {
+                    const existing = await table.get(finalId);
+                    await table.put({ ...(existing || {}), ...serverRecord, id: finalId, syncStatus: 'SYNCED' });
                 } else {
                     await table.update(job.payload.id, {
                         syncStatus: 'SYNCED',
@@ -314,6 +397,8 @@ export async function processSyncDaemon() {
     } finally {
         isSyncing = false;
     }
+    // Broadcasts that arrived mid-run may postdate what this pull saw.
+    if (pendingTargetedModules.size > 0) void syncModulesNow([]);
 }
 
 function onOnline() {

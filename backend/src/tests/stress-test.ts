@@ -48,7 +48,7 @@ const runStressTest = async () => {
     const startTime = Date.now();
 
     // Mapping 600 concurrent asynchronous HTTP calls
-    const requests = tokens.map(async (token, index) => {
+    const requests = tokens.map(async (token) => {
         const reqStart = Date.now();
         try {
             const res = await axios.get(`${SERVER_URL}/dashboard/sync`, {

@@ -1,13 +1,14 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
 import prisma from '../../utils/prisma.js';
 import { logAction } from '../../utils/audit.service.js';
 import { hasPermission } from '../../utils/permissions.js';
 import { WorkflowEngine } from '../../utils/WorkflowEngine.js';
+import { invalidateCache } from '../../utils/redis.js';
 
 /**
  * BAPTISM WORKFLOW
- * PENDING_PASTOR_APPROVAL -> ADMIN_PROCESSING -> READY_FOR_PAYMENT -> BISHOP_APPROVED -> COMPLETED
+ * PENDING_PASTOR_APPROVAL -> ADMIN_PAYMENT_VERIFICATION -> BISHOP_APPROVED -> COMPLETED
  */
 
 // Member requests baptism
@@ -15,13 +16,18 @@ export const requestBaptism = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user!.id;
         
-        // Members can only have one active baptism request
+        // One live request per member; a completed baptism is final, rejected/cancelled ones may be re-requested
         const existing = await prisma.baptism.findFirst({
-            where: { userId, status: { not: 'COMPLETED' } }
+            where: { userId, deletedAt: null, status: { notIn: ['REJECTED', 'CANCELED', 'CANCELLED'] } },
+            select: { status: true }
         });
 
         if (existing) {
-            return res.status(400).json({ error: 'You already have an active baptism request.' });
+            return res.status(400).json({
+                error: existing.status === 'COMPLETED'
+                    ? 'You are already baptized.'
+                    : 'You already have an active baptism request.'
+            });
         }
 
         const baptism = await prisma.baptism.create({
@@ -40,6 +46,20 @@ export const requestBaptism = async (req: AuthRequest, res: Response) => {
             afterState: baptism,
             ipAddress: req.ip
         });
+
+        const [requester, pastors] = await Promise.all([
+            prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
+            prisma.user.findMany({ where: { role: 'PASTOR', status: 'ACTIVE' }, select: { id: true } }),
+        ]);
+        if (pastors.length > 0) {
+            await prisma.notification.createMany({
+                data: pastors.map(p => ({
+                    userId: p.id,
+                    title: 'New Baptism Request',
+                    message: `${requester?.name || 'A member'} has requested baptism and is awaiting pastoral approval.`,
+                })),
+            });
+        }
         
         return res.status(201).json({ message: 'Baptism request submitted to your Pastor.', baptism });
     } catch (error) {
@@ -101,6 +121,11 @@ export const updateBaptismStatus = async (req: AuthRequest, res: Response) => {
             }
         }
 
+        const verifyingPayment = current.status === 'ADMIN_PAYMENT_VERIFICATION';
+        if (verifyingPayment && (!baptismCardNumber || !paymentReference)) {
+            return res.status(400).json({ error: 'Payment reference and baptism card number are required to verify payment.' });
+        }
+
         const baptism = await prisma.baptism.update({
             where: { id },
             data: { 
@@ -109,9 +134,7 @@ export const updateBaptismStatus = async (req: AuthRequest, res: Response) => {
                 ...(recordedAt && { recordedAt: new Date(recordedAt) }),
                 ...(plannedDate && { plannedDate: new Date(plannedDate) }),
                 ...(plannedTime && { plannedTime }),
-                ...(baptismCardNumber && { baptismCardNumber }),
-                ...(isPaid !== undefined && { isPaid }),
-                ...(paymentReference && { paymentReference })
+                ...(verifyingPayment && { baptismCardNumber, paymentReference, isPaid: isPaid !== false })
             }
         });
 
@@ -212,18 +235,22 @@ export const updateChildDedicationStatus = async (req: AuthRequest, res: Respons
             }
         }
 
+        const verifyingPayment = current.workflowStatus === 'ADMIN_PAYMENT_VERIFICATION';
+        if (verifyingPayment && (!dedicationCardNumber || !dedicationPaymentReference)) {
+            return res.status(400).json({ error: 'Payment reference and dedication card number are required to verify payment.' });
+        }
+
         const child = await prisma.child.update({
             where: { id },
             data: { 
                 workflowStatus,
                 ...(plannedDate && { plannedDate: new Date(plannedDate) }),
                 ...(plannedTime && { plannedTime }),
-                ...(dedicationCardNumber && { dedicationCardNumber }),
-                ...(isDedicationPaid !== undefined && { isDedicationPaid }),
-                ...(dedicationPaymentReference && { dedicationPaymentReference }),
+                ...(verifyingPayment && { dedicationCardNumber, dedicationPaymentReference, isDedicationPaid: isDedicationPaid !== false }),
                 ...(workflowStatus === 'DEDICATED' && { isDedicated: true })
             }
         });
+        await invalidateCache('children:list:*');
 
         await logAction({
             actorId,

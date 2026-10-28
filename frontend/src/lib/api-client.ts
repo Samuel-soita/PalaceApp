@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { expireSessionIfNeeded, handleSessionExpired, isOnlineSessionActive, isTokenExpired } from './auth-session';
+import { handleSessionExpired, isOnlineSessionActive, isTokenExpired } from './auth-session';
 
 const api = axios.create({
     baseURL: (import.meta.env.VITE_API_URL as string) || '/api',
@@ -8,13 +8,16 @@ const api = axios.create({
     },
 });
 
+const isAuthRoute = (url?: string) => !!url && (
+    url.startsWith('/auth/login')
+    || url.startsWith('/auth/register')
+    || url.startsWith('/auth/watua-access')
+);
+
 api.interceptors.request.use((config) => {
     const token = localStorage.getItem('token');
-    const isAuthRoute = config.url?.startsWith('/auth/login')
-        || config.url?.startsWith('/auth/register')
-        || config.url?.startsWith('/auth/watua-access');
 
-    if (token && !isAuthRoute) {
+    if (token && !isAuthRoute(config.url)) {
         if (token.startsWith('offline_token_')) {
             return Promise.reject(Object.assign(new Error('Offline session'), { code: 'OFFLINE_SESSION' }));
         }
@@ -40,8 +43,17 @@ api.interceptors.response.use(
         if (error?.code === 'SESSION_EXPIRED' || error?.code === 'OFFLINE_SESSION') {
             return Promise.reject(error);
         }
-        if (error.response?.status === 401) {
-            handleSessionExpired(error.response?.data?.error || 'Session expired');
+        // The global error handler answers `{ error: true, message, details }`; screens read `data.error`.
+        const data = error.response?.data;
+        if (data && typeof data === 'object' && typeof data.error !== 'string' && typeof data.message === 'string') {
+            const details = Array.isArray(data.details)
+                ? data.details.map((d: any) => d?.message).filter(Boolean).join('; ')
+                : '';
+            data.error = details ? `${data.message}: ${details}` : data.message;
+        }
+        // A 401 from the sign-in endpoints means wrong credentials, not an expired session.
+        if (error.response?.status === 401 && !isAuthRoute(error.config?.url)) {
+            handleSessionExpired(data?.error || 'Session expired');
         }
         return Promise.reject(error);
     }

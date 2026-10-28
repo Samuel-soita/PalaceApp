@@ -1,6 +1,7 @@
-import { prisma } from './prisma.js';
+import { prisma, rawPrisma } from './prisma.js';
 import { seedPermissions } from './seed-permissions.js';
 import { ensureDepartmentAccounts } from './department-accounts.js';
+import { DEFAULT_DEPARTMENTS, cleanDepartmentName, departmentKey } from './department-names.js';
 
 /**
  * System Bootstrap: PRODUCTION-READY (Zero-Seed compatible)
@@ -13,40 +14,29 @@ export async function bootstrapSystem() {
     await seedPermissions();
 
     // 2. Initial Departments (Essential Infrastructure)
-    const defaultDepts = [
-        'PPAM ABRAHAM GENERATION', 
-        'Esther Arise', 
-        '3 SixTeen Generation', 
-        'Royal Tribe of Light', 
-        'Rising star generation',
-        'Pastoral',
-        'Ushering & Protocol',
-        'Media & ICT',
-        'Praise and worship',
-        'Hospitality & Welfare',
-        'Mission & Evangelism',
-        'Technical, Sound & Lighting',
-        'Treasury  DEpartment ',
-        'Deacons  Department ',
-        'Intercessory & Prayer'
-    ];
-    const initialDepts = process.env.INITIAL_DEPARTMENTS?.split(',') || defaultDepts;
-    for (const name of initialDepts) {
-        const trimmed = name.trim();
-        if (!trimmed) continue;
-        
-        console.log(`[Bootstrap] Preparing department: ${trimmed}`);
+    // Matched by departmentKey (case/spacing/"&" insensitive) and including soft-deleted
+    // rows, so renamed or merged departments are never recreated as duplicates.
+    const initialDepts = process.env.INITIAL_DEPARTMENTS?.split(',') || DEFAULT_DEPARTMENTS;
+    const existing = await rawPrisma.department.findMany({ select: { name: true } });
+    const existingKeys = new Set(existing.map(d => departmentKey(d.name)));
+
+    for (const raw of initialDepts) {
+        const name = cleanDepartmentName(raw);
+        if (!name) continue;
+        const key = departmentKey(name);
+        if (existingKeys.has(key)) continue;
+
+        console.log(`[Bootstrap] Creating missing department: ${name}`);
         try {
-            await prisma.department.upsert({
-                where: { name: trimmed },
-                update: {},
-                create: {
-                    name: trimmed,
-                    description: `Prayer Palace Apostolic Ministry — Strategic Hub for ${trimmed} operations.`
+            await prisma.department.create({
+                data: {
+                    name,
+                    description: `Prayer Palace Apostolic Ministry — Strategic Hub for ${name} operations.`
                 }
             });
+            existingKeys.add(key);
         } catch (err: any) {
-            console.error(`[Bootstrap] FAILED department ${trimmed}:`, err.message);
+            console.error(`[Bootstrap] FAILED department ${name}:`, err.message);
             throw err; // Fail fast if essential infra cannot be created
         }
     }

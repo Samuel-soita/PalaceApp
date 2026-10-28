@@ -5,9 +5,8 @@ import { db } from '../lib/db';
 import {
     Box, Typography, Card, CardContent, Grid, Button, Chip, Dialog, DialogTitle,
     DialogContent, DialogActions, TextField, Select, MenuItem, FormControl, InputLabel,
-    Avatar, LinearProgress, IconButton, Tooltip
-} from '@mui/material';
-import { Coins, Upload, Image as ImageIcon, CheckCircle, Clock, AlertTriangle, X } from 'lucide-react';
+    Avatar} from '@mui/material';
+import { Coins, Upload, CheckCircle, Clock, AlertTriangle, X } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
 import { executeApiFirstMutation } from '../lib/api-first-mutation';
@@ -102,11 +101,27 @@ export default function Support() {
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            alert('Please choose an image file.');
+            return;
+        }
         const reader = new FileReader();
         reader.onloadend = () => {
-            const base64 = reader.result as string;
-            setSelectedImage(base64);
-            setImagePreview(base64);
+            const img = new Image();
+            img.onload = () => {
+                // Keep the JSON request well under the API body limit.
+                const maxSide = 1280;
+                const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.round(img.width * scale);
+                canvas.height = Math.round(img.height * scale);
+                canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
+                const base64 = canvas.toDataURL('image/jpeg', 0.75);
+                setSelectedImage(base64);
+                setImagePreview(base64);
+            };
+            img.onerror = () => alert('Could not read that image. Try a different screenshot.');
+            img.src = reader.result as string;
         };
         reader.readAsDataURL(file);
     };

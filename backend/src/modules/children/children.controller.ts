@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
 import prisma from '../../utils/prisma.js';
 import { logAction } from '../../utils/audit.service.js';
@@ -28,14 +28,19 @@ export const registerChild = async (req: AuthRequest, res: Response) => {
         }
 
         // --- Generate Atomic Dedication Number (Concurrency-Safe) ---
-        let counter = await redis.incr('children:dedication:counter');
-        if (counter === 1) {
-            // First time use or Redis reset - sync with DB count
-            const dbCount = await prisma.child.count();
-            if (dbCount > 0) {
-                await redis.set('children:dedication:counter', dbCount + 1);
-                counter = dbCount + 1;
+        let counter: number;
+        try {
+            counter = await redis.incr('children:dedication:counter');
+            if (counter === 1) {
+                // First time use or Redis reset - sync with DB count
+                const dbCount = await prisma.child.count();
+                if (dbCount > 0) {
+                    await redis.set('children:dedication:counter', dbCount + 1);
+                    counter = dbCount + 1;
+                }
             }
+        } catch {
+            counter = (await prisma.child.count()) + 1;
         }
         
         const formattedDob = new Date(dob).toISOString().split('T')[0].replace(/-/g, '');
@@ -106,11 +111,12 @@ export const getAllChildren = async (req: AuthRequest, res: Response) => {
     const skip = (Number(page) - 1) * Number(limit);
     const take = Number(limit);
     const cacheKey = `children:list:p${page}:l${limit}`;
+    // Pastors get a per-pastor scoped list, so they must neither read nor write the shared cache.
+    const isPastoral = req.user!.role === 'PASTOR' || req.user!.role === 'ASSOCIATE_PASTOR';
 
     try {
-        const cachedData = await getCachedData(cacheKey);
-        // Skip cache for pastors to ensure they see real-time assignments
-        if (cachedData && (req.user as any).role !== 'PASTOR') return res.json(cachedData);
+        const cachedData = isPastoral ? null : await getCachedData(cacheKey);
+        if (cachedData) return res.json(cachedData);
 
         const where: any = { deletedAt: null }; // GLOBAL EXCLUSION OF SOFT-DELETED
         
@@ -131,7 +137,7 @@ export const getAllChildren = async (req: AuthRequest, res: Response) => {
                 skip,
                 take,
                 include: { 
-                    parent: true,
+                    parent: { select: { id: true, name: true, phoneNumber: true, membershipNumber: true, departmentId: true, isCardPaid: true, status: true } },
                     department: true,
                     assignedPastor: { select: { id: true, name: true, role: true } }
                 },
@@ -150,7 +156,7 @@ export const getAllChildren = async (req: AuthRequest, res: Response) => {
             }
         };
 
-        await setCachedData(cacheKey, response, 120);
+        if (!isPastoral) await setCachedData(cacheKey, response, 120);
         res.json(response);
     } catch (error: any) {
         res.status(500).json({ error: 'Failed to fetch children.' });

@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../lib/db';
-import { io, Socket } from 'socket.io-client';
 import {
-    Box, Typography, Card, CardContent, TextField, IconButton, Avatar,
-    CircularProgress, Divider, Paper, useTheme, Menu, MenuItem, Tooltip,
+    Box, Typography, Card, TextField, IconButton, Avatar,
+    CircularProgress, Divider, Paper, Menu, MenuItem, Tooltip,
     InputAdornment, Chip
 } from '@mui/material';
 import { Send, Hash, Users, MessageSquare, MoreVertical, Edit2, Trash2, AtSign, Check } from 'lucide-react';
@@ -12,7 +11,6 @@ import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../lib/api-client';
 import { encryptMessage, decryptMessage } from '../lib/encryption';
-import { canSendChurchWideComms } from '../utils/approval-rules';
 import { executeApiFirstMutation } from '../lib/api-first-mutation';
 
 interface Message {
@@ -27,10 +25,8 @@ interface Message {
 
 export default function Messages() {
     const { user } = useAuth();
-    const theme = useTheme();
     const [newMessage, setNewMessage] = useState('');
     const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
-    const [socket, setSocket] = useState<Socket | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     // Mentions state
@@ -44,14 +40,22 @@ export default function Messages() {
     const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
     const [selectedMsg, setSelectedMsg] = useState<Message | null>(null);
 
-    const effectiveDeptId = user?.departmentId;
+    const effectiveDeptId = user?.role === 'DEPARTMENT_LEADER' ? user?.departmentId : null;
+    const roomOf = (msg: any) => (msg.departmentId ? `dept-${msg.departmentId}` : 'church-wide');
+    const viewerRoom = effectiveDeptId ? `dept-${effectiveDeptId}` : 'church-wide';
 
     const messages = useLiveQuery(
-        () => effectiveDeptId 
-            ? db.messages.where('departmentId').equals(effectiveDeptId).sortBy('createdAt')
-            : db.messages.orderBy('createdAt').toArray(), 
+        () => db.messages
+            .orderBy('createdAt')
+            .filter((m: any) => !m.receiverId && !m.projectId && !m.eventId && (
+                !effectiveDeptId
+                || m.departmentId === effectiveDeptId
+                || !m.departmentId
+                || (m.taggedDepartmentIds || []).includes(effectiveDeptId)
+            ))
+            .toArray(),
         [effectiveDeptId]
-    ) || [];
+    );
 
     const department = useLiveQuery(
         () => effectiveDeptId ? db.departments.get(effectiveDeptId) : undefined,
@@ -59,12 +63,13 @@ export default function Messages() {
     );
 
     const allDepartments = useLiveQuery(() => db.departments.toArray(), []) || [];
+    const knownUsers = useLiveQuery(() => db.users.where('role').notEqual('MEMBER').toArray(), []) || [];
 
     const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
         const actionId = id || payload.id;
 
         try {
-            const result = await executeApiFirstMutation({
+            await executeApiFirstMutation({
                 entity: 'MESSAGE',
                 method,
                 url: method === 'POST' ? '/messages' : `/messages/${actionId}`,
@@ -86,11 +91,6 @@ export default function Messages() {
                 },
             });
 
-            if (method === 'POST') {
-                const saved = result?.data?.data ?? result?.data ?? payload;
-                socket?.emit('send_message', { ...saved, id: saved.id || actionId });
-            }
-
             setEditingMsgId(null);
             setNewMessage('');
         } catch (err: any) {
@@ -99,45 +99,23 @@ export default function Messages() {
     };
 
     useEffect(() => {
-        if (!user) return;
-        const newSocket = io(import.meta.env.VITE_API_URL || window.location.origin, {
-            transports: ['websocket', 'polling'],
-            reconnectionAttempts: 5,
-        });
-        setSocket(newSocket);
-
-        newSocket.on('receive_message', (message: Message) => {
-            db.messages.put({ ...message, syncStatus: 'SYNCED', version: 1 } as any);
-        });
-
-        newSocket.on('message_edited', (updatedMsg: Message) => {
-            db.messages.put({ ...updatedMsg, syncStatus: 'SYNCED', version: 1 } as any);
-        });
-
-        newSocket.on('message_deleted', ({ id }: { id: string }) => {
-            db.messages.update(id, { isDeleted: true, content: 'This message was deleted' });
-        });
-
-        return () => { newSocket.close(); };
-    }, [user]);
-
-    useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
     const handleSend = (e: React.FormEvent) => {
         e.preventDefault();
         if (!newMessage.trim() || !user) return;
-        if (!effectiveDeptId && !canSendChurchWideComms(user.role)) return;
-        
-        const roomId = effectiveDeptId ? `dept-${effectiveDeptId}` : 'church-wide';
+
         if (editingMsgId) {
-            handleAction({ id: editingMsgId, content: encryptMessage(newMessage, roomId) }, 'PATCH', editingMsgId);
+            const original = messages?.find((m: any) => m.id === editingMsgId);
+            const editRoom = original ? roomOf(original) : (effectiveDeptId ? `dept-${effectiveDeptId}` : 'church-wide');
+            handleAction({ content: encryptMessage(newMessage, editRoom) }, 'PATCH', editingMsgId);
         } else {
+            const roomId = effectiveDeptId ? `dept-${effectiveDeptId}` : 'church-wide';
             handleAction({
                 content: encryptMessage(newMessage, roomId),
-                senderId: user.id,
                 departmentId: effectiveDeptId || null,
+                chatType: effectiveDeptId ? 'DEPARTMENT' : 'GLOBAL',
                 taggedDepartmentIds: taggedDepts.map(d => d.id),
                 taggedUserIds: taggedUsers.map(u => u.id)
             }, 'POST');
@@ -157,16 +135,15 @@ export default function Messages() {
     };
 
     const startEdit = () => {
-        const roomId = effectiveDeptId ? `dept-${effectiveDeptId}` : 'church-wide';
         if (selectedMsg) {
             setEditingMsgId(selectedMsg.id);
-            setNewMessage(decryptMessage(selectedMsg.content, roomId));
+            setNewMessage(decryptMessage(selectedMsg.content, roomOf(selectedMsg)));
         }
         handleCloseMenu();
     };
 
     const handleDelete = () => {
-        if (selectedMsg) {
+        if (selectedMsg && window.confirm('Delete this message?')) {
             handleAction({ id: selectedMsg.id }, 'DELETE', selectedMsg.id);
         }
         handleCloseMenu();
@@ -203,6 +180,17 @@ export default function Messages() {
         }, 300);
         return () => clearTimeout(delay);
     }, [userSearch]);
+
+    if (user?.role === 'MEMBER') {
+        return (
+            <DashboardLayout>
+                <Box m="auto" mt={10} textAlign="center" sx={{ opacity: 0.7 }}>
+                    <MessageSquare size={48} className="mx-auto mb-4" />
+                    <Typography>Leadership communications are reserved for church leaders.</Typography>
+                </Box>
+            </DashboardLayout>
+        );
+    }
 
     if (messages === undefined) return <DashboardLayout><Box display="flex" justifyContent="center" mt={10}><CircularProgress /></Box></DashboardLayout>;
 
@@ -264,13 +252,20 @@ export default function Messages() {
                                         {showHeader && (
                                             <Box display="flex" alignItems="center" gap={1} mb={0.5} justifyContent={isMe ? 'flex-end' : 'flex-start'}>
                                                 <Typography variant="caption" fontWeight="900" sx={{ opacity: 0.9 }}>
-                                                    {isMe ? 'You' : (msg.sender?.name || 'Unknown User')}
+                                                    {isMe ? 'You' : (msg.sender?.name || knownUsers.find((u: any) => u.id === msg.senderId)?.name || 'Unknown User')}
                                                 </Typography>
                                                 <Typography variant="caption" sx={{ opacity: 0.4, fontSize: '0.65rem' }}>
                                                     {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                 </Typography>
                                                 {!isMe && msg.sender?.role === 'DEPARTMENT_LEADER' && (
                                                     <span className="neon-label" style={{ fontSize: '0.5rem', padding: '2px 4px' }}>COMMANDER</span>
+                                                )}
+                                                {roomOf(msg) !== viewerRoom && (
+                                                    <Chip
+                                                        size="small"
+                                                        label={msg.departmentId ? `#${allDepartments.find((d: any) => d.id === msg.departmentId)?.name || 'department'}` : '#church-wide'}
+                                                        sx={{ height: 18, fontSize: '0.6rem' }}
+                                                    />
                                                 )}
                                             </Box>
                                         )}
@@ -289,7 +284,7 @@ export default function Messages() {
                                             fontStyle: msg.isDeleted ? 'italic' : 'normal'
                                         }}>
                                             <Typography variant="body1" sx={{ lineHeight: 1.5 }}>
-                                                {msg.isDeleted ? msg.content : decryptMessage(msg.content, effectiveDeptId ? `dept-${effectiveDeptId}` : 'church-wide')}
+                                                {msg.isDeleted ? msg.content : decryptMessage(msg.content, roomOf(msg))}
                                                 {msg.isEdited && !msg.isDeleted && (
                                                     <Typography variant="caption" sx={{ ml: 1, opacity: 0.5, fontSize: '0.6rem' }}>(edited)</Typography>
                                                 )}

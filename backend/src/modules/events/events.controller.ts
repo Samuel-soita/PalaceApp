@@ -2,10 +2,11 @@ import { Response } from 'express';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
 import prisma from '../../utils/prisma.js';
 import { logAudit } from '../../utils/audit.js';
-import { getOrSetCache, invalidateCache } from '../../utils/redis.js';
+import { getOrSetCache, invalidateCache, liveCacheKey } from '../../utils/redis.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
 import { isGlobalOperator, resolveTargetDepartmentId } from '../../utils/department-accounts.js';
 import { canAutoPublishContent } from '../../utils/approval-utils.js';
+import { assertAwaitingApproval, assertCanSetApprovalStatus, assertPastorSelection, createApprovalChain, notifyApprovers, publishLinkedAnnouncement, recordApproval } from '../../utils/approval-chain.js';
 
 export const getEvents = catchAsync(async (req: AuthRequest, res: Response) => {
     const { departmentId, isMajor, page = '1', limit = '10' } = req.query;
@@ -49,7 +50,7 @@ export const getEvents = catchAsync(async (req: AuthRequest, res: Response) => {
         }
     }
 
-    const cacheKey = `events:${user.role}:${user.departmentId || 'none'}:${departmentId || 'all'}:${isMajor || 'any'}:${page}:${limit}`;
+    const cacheKey = liveCacheKey('events', `${user.role}:${user.id}:${departmentId || 'all'}:${isMajor || 'any'}:${page}:${limit}`);
 
     const result = await getOrSetCache(cacheKey, async () => {
         const [data, total] = await Promise.all([
@@ -135,6 +136,12 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
     }
 
     const autoApprove = canAutoPublishContent(user.role);
+    assertPastorSelection(autoApprove, req.body.pastorIds, 'You must select exactly 2 Pastors to approve this event.');
+    const approvalNotice = {
+        title: '📅 Event Authorization Required',
+        message: `Event "${title}" requires your approval.`
+    };
+    let approverIds: string[] = [];
 
     const event = await prisma.$transaction(async (tx) => {
         const newEvent = await tx.event.create({
@@ -148,9 +155,15 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
                 departmentId: targetDeptId,
                 status: 'PLANNED',
                 approvalStatus: autoApprove ? 'APPROVED' : 'PENDING_APPROVAL',
-                volunteersNeeded: Number(req.body.volunteersNeeded || 0)
+                volunteersNeeded: Number(req.body.volunteersNeeded || 0),
+                attachmentUrl: req.body.attachmentUrl || null,
+                createdById: user.id
             } as any
         });
+
+        if (!autoApprove) {
+            approverIds = await createApprovalChain(tx, 'event', newEvent.id, req.body.pastorIds, approvalNotice);
+        }
 
         await tx.announcement.create({
             data: {
@@ -164,7 +177,8 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
                 eventTime: time,
                 location: location,
                 authorId: user.id,
-                departmentId: targetDeptId
+                departmentId: targetDeptId,
+                eventId: newEvent.id
             } as any
         });
 
@@ -172,6 +186,7 @@ export const createEvent = catchAsync(async (req: AuthRequest, res: Response) =>
     });
 
     await logAudit(user.id, 'CREATE', 'EVENT', event.id, { title, location }, req.ip, req.get('user-agent'));
+    notifyApprovers(approverIds, approvalNotice);
 
     // Invalidate Event Cache
     await invalidateEventCache();
@@ -188,43 +203,31 @@ export const approveEvent = catchAsync(async (req: AuthRequest, res: Response) =
         include: { department: true }
     });
     
-    if (!event) throw new AppError('Event not found', 404);
+    if (!event || event.deletedAt) throw new AppError('Event not found', 404);
+    assertAwaitingApproval(event.approvalStatus);
 
-    const existing = await prisma.eventApproval.findUnique({
-        where: { eventId_userId: { eventId: id, userId: user.id } }
-    });
-    
-    if (existing) throw new AppError('You have already approved this event.', 400);
-
-    const totalApprovals = await prisma.$transaction(async (tx) => {
-        await tx.eventApproval.create({
-            data: {
-                eventId: id,
-                userId: user.id,
-                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role) ? 'PASTOR' : user.role)
-            }
-        });
-
-        const allApprovals = await tx.eventApproval.findMany({ where: { eventId: id } });
-        const bishopApproved = allApprovals.some((a: any) => a.role === 'BISHOP');
-        const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR').length;
-
-        const quorumMet = bishopApproved && pastorCount >= 2;
-
-        if (quorumMet) {
+    const { approvals, quorumMet } = await prisma.$transaction(async (tx) => {
+        const result = await recordApproval(tx, 'event', id, user);
+        if (result.quorumMet) {
             await tx.event.update({
                 where: { id },
                 data: { approvalStatus: 'APPROVED' }
             });
-            await logAudit(user.id, 'PUBLISH', 'EVENT', id, { title: event.title }, req.ip, req.get('user-agent'));
+            await publishLinkedAnnouncement(tx, 'event', event);
         }
-        return allApprovals.length;
+        return result;
     });
 
-        // Side effects handled via transaction result logic if needed, 
-        // but easier to check quorum inside and log there.
+    if (quorumMet) {
+        await logAudit(user.id, 'PUBLISH', 'EVENT', id, { title: event.title }, req.ip, req.get('user-agent'));
+    }
+    await invalidateEventCache();
 
-    res.json({ message: 'Approval recorded.', totalApprovals });
+    res.json({
+        message: quorumMet ? 'Event approved.' : 'Approval recorded.',
+        totalApprovals: approvals.filter((a) => a.approved).length,
+        approvalStatus: quorumMet ? 'APPROVED' : event.approvalStatus
+    });
 });
 
 export const updateEventStatus = catchAsync(async (req: AuthRequest, res: Response) => {
@@ -235,11 +238,15 @@ export const updateEventStatus = catchAsync(async (req: AuthRequest, res: Respon
     if (!['APPROVED', 'REJECTED'].includes(approvalStatus)) {
         throw new AppError('Invalid approval status', 400);
     }
+    await assertCanSetApprovalStatus(prisma, 'event', id, user, approvalStatus);
 
     const event = await prisma.event.update({
         where: { id },
         data: { approvalStatus }
     });
+    if (approvalStatus === 'APPROVED') {
+        await publishLinkedAnnouncement(prisma, 'event', event);
+    }
 
     await logAudit(user.id, 'FORCE_APPROVE', 'EVENT', id, { title: event.title, approvalStatus }, req.ip, req.get('user-agent'));
     
@@ -255,14 +262,23 @@ export const updateEvent = catchAsync(async (req: AuthRequest, res: Response) =>
         where: { id },
         include: { department: true }
     });
-    if (!event) throw new AppError('Event not found.', 404);
+    if (!event || event.deletedAt) throw new AppError('Event not found.', 404);
+
+    if (user.role === 'DEPARTMENT_LEADER') {
+        const isManaging = user.managedDepartments?.some((d: any) => d.id === event.departmentId) || user.departmentId === event.departmentId;
+        if (!isManaging) throw new AppError('Leaders can only update events for their own department', 403);
+    }
 
     // ─── Operational Lock ───
     if (event.approvalStatus === 'APPROVED' && user.role === 'DEPARTMENT_LEADER') {
         throw new AppError('OPERATIONAL LOCK: Approved events cannot be modified. Contact Palace Command for changes.', 403);
     }
 
-    const { date: newDate, time: newTime, location: newLoc, budgetSource, pastorIds, ...rest } = req.body;
+    const {
+        date: newDate, time: newTime, location: newLoc, budgetSource,
+        pastorIds: _pastorIds, approvalStatus: _approvalStatus, departmentId, ...rest
+    } = req.body;
+    const canMoveDepartment = isGlobalOperator(user.role) && departmentId && departmentId !== event.departmentId;
 
     // ─── Universal Financial Safeguard on Update ───
     const deptAccount = await prisma.account.findUnique({ where: { departmentId: event.departmentId } });
@@ -291,6 +307,7 @@ export const updateEvent = catchAsync(async (req: AuthRequest, res: Response) =>
         where: { id },
         data: { 
             ...rest, 
+            ...(canMoveDepartment && { departmentId }),
             date: newDate ? new Date(newDate) : event.date,
             time: newTime || event.time,
             location: newLoc || event.location,
@@ -349,4 +366,5 @@ export const deleteEvent = catchAsync(async (req: AuthRequest, res: Response) =>
  */
 async function invalidateEventCache() {
     void invalidateCache('events:*');
+    void invalidateCache('announcements:*');
 }

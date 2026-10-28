@@ -50,7 +50,7 @@ export default function DepartmentReportModal({ open, onClose, departmentId, onS
             onClose={onClose}
             closeAfterTransition
             BackdropComponent={Backdrop}
-            BackdropProps={{ timeout: 500, sx: { backdropFilter: 'blur(8px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
+            BackdropProps={{ timeout: 200, sx: { backdropFilter: 'blur(8px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
         >
             <Fade in={open}>
                 <Box sx={{ 
@@ -103,7 +103,7 @@ export default function DepartmentReportModal({ open, onClose, departmentId, onS
                                 {file ? `📄 ${file.name}` : 'SELECT PDF MISSION REPORT'}
                             </Typography>
                             <Typography variant="caption" sx={{ fontSize: '0.6rem', color: 'var(--cyan)' }}>
-                                CLICK TO BROUSE COMMAND ARCHIVES
+                                CLICK TO BROWSE COMMAND ARCHIVES
                             </Typography>
                         </Box>
 

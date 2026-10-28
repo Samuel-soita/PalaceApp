@@ -22,6 +22,13 @@ export const queryClient = new QueryClient({
     },
     mutations: {
         retry: 0, // Handled by our custom PWA Sync Engine
+        // Fallback for mutations without their own onError; a mutation-level onError replaces this.
+        onError: (error: unknown) => {
+            const err = error as { response?: { status?: number; data?: { error?: unknown } }; code?: string; message?: string };
+            if (err?.response?.status === 401 || err?.code === 'SESSION_EXPIRED') return;
+            const serverMessage = err?.response?.data?.error;
+            window.alert(typeof serverMessage === 'string' ? serverMessage : err?.message || 'The action could not be completed.');
+        },
     }
   }
 });

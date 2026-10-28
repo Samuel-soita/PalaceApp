@@ -2,10 +2,10 @@ import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
 import { logAudit } from '../../utils/audit.js';
-import { getOrSetCache, invalidateCache } from '../../utils/redis.js';
-import { hasPermission } from '../../utils/permissions.js';
+import { getOrSetCache, invalidateCache, liveCacheKey } from '../../utils/redis.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
-import { canAutoPublishContent, bishopRoleApproved } from '../../utils/approval-utils.js';
+import { canAutoPublishContent } from '../../utils/approval-utils.js';
+import { assertAwaitingApproval, assertCanSetApprovalStatus, assertPastorSelection, createApprovalChain, notifyApprovers, recordApproval } from '../../utils/approval-chain.js';
 
 export const getAnnouncements = catchAsync(async (req: Request, res: Response) => {
     const { departmentId, isGlobal, isMajor, page = '1', limit = '10' } = req.query;
@@ -46,8 +46,13 @@ export const getAnnouncements = catchAsync(async (req: Request, res: Response) =
         }
     }
 
-    // Cache Key based on user role, department, and filters
-    const cacheKey = `announcements:${user.role}:${user.departmentId || 'none'}:${departmentId || 'all'}:${isGlobal || 'any'}:${isMajor || 'any'}:${page}:${limit}`;
+    // The church-wide ticker must never surface pending or rejected broadcasts.
+    if (isGlobal === 'true') {
+        where.status = 'PUBLISHED';
+    }
+
+    // Visibility depends on managed departments, so the cache is per user.
+    const cacheKey = liveCacheKey('announcements', `${user.role}:${user.id}:${departmentId || 'all'}:${isGlobal || 'any'}:${isMajor || 'any'}:${page}:${limit}`);
 
     const result = await getOrSetCache(cacheKey, async () => {
         const [data, total] = await Promise.all([
@@ -137,6 +142,12 @@ export const createAnnouncement = catchAsync(async (req: AuthRequest, res: Respo
     }
 
     const autoPublish = canAutoPublishContent(user.role);
+    assertPastorSelection(autoPublish, pastorIds, 'You must select exactly 2 Pastors to authorize this broadcast.');
+    const approvalNotice = {
+        title: '📢 Broadcast Authorization Required',
+        message: `New announcement "${title}" requires your executive clearance.`
+    };
+    let approverIds: string[] = [];
 
     const announcement = await prisma.$transaction(async (tx) => {
         const newAnnouncement = await tx.announcement.create({
@@ -156,42 +167,16 @@ export const createAnnouncement = catchAsync(async (req: AuthRequest, res: Respo
             } as any,
         });
 
-        if (autoPublish) {
-            return newAnnouncement;
+        if (!autoPublish) {
+            approverIds = await createApprovalChain(tx, 'announcement', newAnnouncement.id, pastorIds, approvalNotice);
         }
 
-        // 👨‍⚖️ Initializing Approval Chain for Announcements
-        const approvalData: any[] = (pastorIds || []).map((pid: string) => ({
-            announcementId: newAnnouncement.id,
-            userId: pid,
-            role: 'PASTOR'
-        }));
-
-        const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
-        if (bishop) {
-            approvalData.push({
-                announcementId: newAnnouncement.id,
-                userId: bishop.id,
-                role: 'BISHOP'
-            });
-        }
-
-        if (approvalData.length > 0) {
-            await tx.announcementApproval.createMany({ data: approvalData });
-            
-            // Notifications to Authorizers
-            const notifications = approvalData.map((app: any) => ({
-                userId: app.userId,
-                title: '📢 Broadcast Authorization Required',
-                message: `New announcement "${title}" requires your executive clearance.`
-            }));
-            await tx.notification.createMany({ data: notifications });
-        }
-        
         return newAnnouncement;
     });
 
     await logAudit(user.id, 'CREATE', 'ANNOUNCEMENT', announcement.id, { title, isGlobal });
+    notifyApprovers(approverIds, approvalNotice);
+    void invalidateCache('announcements:*');
 
     res.status(201).json(announcement);
 });
@@ -201,35 +186,12 @@ export const approveAnnouncement = catchAsync(async (req: AuthRequest, res: Resp
     const { id } = req.params;
     const user = req.user!;
 
-    const existing = await prisma.announcementApproval.findUnique({
-        where: { announcementId_userId: { announcementId: id, userId: user.id } }
-    });
-    
-    if (existing) throw new AppError('You have already approved this announcement.', 400);
-
-    const announcementData = await prisma.announcement.findUnique({ where: { id } });
+    const announcementData = await prisma.announcement.findFirst({ where: { id, deletedAt: null } });
     if (!announcementData) throw new AppError('Announcement not found', 404);
+    assertAwaitingApproval(announcementData.status);
 
-    const totalApprovals = await prisma.$transaction(async (tx) => {
-        // Record approval
-            await tx.announcementApproval.create({
-            data: {
-                announcementId: id,
-                userId: user.id,
-                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role) ? 'PASTOR' : user.role)
-            }
-        });
-
-        // Get all approvals for this announcement
-            const allApprovals = await tx.announcementApproval.findMany({
-            where: { announcementId: id }
-        });
-
-        const bishopApproved = bishopRoleApproved(allApprovals);
-        const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR').length;
-
-        // Strictly: 1 Bishop + 2 Pastors
-        const quorumMet = bishopApproved && pastorCount >= 2;
+    const { approvals, quorumMet } = await prisma.$transaction(async (tx) => {
+        const { approvals, quorumMet } = await recordApproval(tx, 'announcement', id, user);
 
         if (quorumMet) {
             await tx.announcement.update({
@@ -251,15 +213,19 @@ export const approveAnnouncement = catchAsync(async (req: AuthRequest, res: Resp
             });
         }
 
-        return allApprovals.length;
+        return { approvals, quorumMet };
     });
 
-    const refreshedAnnouncement = await prisma.announcement.findUnique({ where: { id } });
-    if(refreshedAnnouncement?.status === 'PUBLISHED') {
+    if (quorumMet) {
         await logAudit(user.id, 'PUBLISH', 'ANNOUNCEMENT', id, { title: announcementData.title });
     }
+    void invalidateCache('announcements:*');
 
-    res.json({ message: 'Approval recorded.', totalApprovals });
+    res.json({
+        message: quorumMet ? 'Announcement published.' : 'Approval recorded.',
+        totalApprovals: approvals.filter((a) => a.approved).length,
+        status: quorumMet ? 'PUBLISHED' : announcementData.status
+    });
 });
 
 export const updateAnnouncement = catchAsync(async (req: Request, res: Response) => {
@@ -277,12 +243,25 @@ export const updateAnnouncement = catchAsync(async (req: Request, res: Response)
         throw new AppError('Published announcements are locked and cannot be modified.', 403);
     }
 
+    const { pastorIds: _pastorIds, ...data } = req.body;
+    if (user.role === 'DEPARTMENT_LEADER') delete data.departmentId;
+    const nextStatus = data.status;
+
+    if (user.role === 'ASSOCIATE_PASTOR' && (Object.keys(data).length !== 1 || nextStatus !== 'REJECTED')) {
+        throw new AppError('Associate pastors may only reject announcements awaiting their signature.', 403);
+    }
+
+    if (nextStatus && nextStatus !== announcement.status && (nextStatus === 'PUBLISHED' || nextStatus === 'REJECTED')) {
+        await assertCanSetApprovalStatus(prisma, 'announcement', announcement.id, user, nextStatus === 'PUBLISHED' ? 'APPROVED' : 'REJECTED');
+    }
+
     const updated = await prisma.announcement.update({
         where: { id: req.params.id },
-        data: req.body,
+        data,
     });
 
     await logAudit(user.id, 'UPDATE', 'ANNOUNCEMENT', updated.id, req.body);
+    void invalidateCache('announcements:*');
 
     res.json(updated);
 });

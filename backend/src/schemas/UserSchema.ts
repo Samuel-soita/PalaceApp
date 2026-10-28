@@ -28,6 +28,18 @@ export const UserUpdateSchema = z.object({
     }).strict()
 });
 
+export const UserBioRepairSchema = z.object({
+    params: z.object({
+        id: z.string().uuid()
+    }),
+    body: z.object({
+        name: z.string().trim().min(3).max(100).optional(),
+        idNumber: z.string().trim().min(5).max(20).optional(),
+        dob: z.string().refine((v) => !Number.isNaN(Date.parse(v)), 'Invalid date of birth').optional(),
+        gender: z.enum(['MALE', 'FEMALE', 'OTHER']).optional()
+    }).strict()
+});
+
 export const ChangePasswordSchema = z.object({
     body: z.object({
         currentPassword: z.string(),

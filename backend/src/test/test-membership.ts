@@ -1,4 +1,3 @@
-import prisma from '../utils/prisma.js';
 import { generateNextMembershipNumber, isEligibleForRenewal } from '../utils/user-utils.js';
 
 async function runTests() {

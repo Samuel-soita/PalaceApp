@@ -3,6 +3,8 @@ import OfflineQueue from './offline-queue';
 import { AuditLogService } from './AuditLogService';
 import { PermissionService } from './PermissionService';
 import { DeviceService } from './DeviceService';
+import api from './api-client';
+import { requestSyncSoon } from './pwa-sync';
 import { PERMISSIONS } from './PermissionService';
 
 /**
@@ -109,6 +111,23 @@ export const InterventionService = {
                 throw new Error('Invalid administrative intervention code.');
         }
 
+        if (navigator.onLine) {
+            try {
+                const res = await api.post(`/users/technical/intervention/${userId}`, { action, departmentId });
+                const serverUser = res.data?.user ?? res.data;
+                await db.users.update(userId, serverUser?.id ? { ...serverUser, syncStatus: 'SYNCED' } : { ...updateData, syncStatus: 'SYNCED' });
+            } catch (err: any) {
+                throw new Error(err.response?.data?.error || err.response?.data?.message || 'Intervention rejected by the server.');
+            }
+            await AuditLogService.log(action, 'USER', userId, {
+                previousRole: currentUser.role,
+                newRole: updateData.role || currentUser.role,
+                departmentId
+            });
+            requestSyncSoon();
+            return { success: true, action, userId };
+        }
+
         // 3. Commit to Local Kernel (Dexie)
         await db.users.update(userId, { ...updateData, syncStatus: 'PENDING' });
 
@@ -132,12 +151,11 @@ export const InterventionService = {
 
     /**
      * Handle "Force-Approval" of complex workflows.
+     * Runs against the server first; the local store only reflects what the server accepted.
      */
     async forceApproval(resourceType: string, id: string) {
-        const deviceId = await DeviceService.getDeviceId();
         const savedUser = localStorage.getItem('user');
         const actor = savedUser ? JSON.parse(savedUser) : null;
-        const actorId = actor?.id || 'SYSTEM';
         const actorRole = actor?.role || 'MEMBER';
 
         // 🛡️ Security Check
@@ -153,62 +171,82 @@ export const InterventionService = {
 
         await PermissionService.enforce(actorRole, permissionMap[resourceType] || PERMISSIONS.ACCESS_WATUA);
 
+        if (!navigator.onLine) {
+            throw new Error('Force-approval needs a live server connection.');
+        }
+
         let table: any;
-        let url = '';
-        let statusField = 'status';
-        const statusValue = 'APPROVED';
+        let request: () => Promise<any>;
+        let pick: (data: any) => any = (data) => data;
 
         switch (resourceType) {
             case 'PROJECT':
                 table = db.projects;
-                statusField = 'approvalStatus';
-                url = `/projects/${id}/status`;
+                request = () => api.patch(`/projects/${id}/status`, { approvalStatus: 'APPROVED' });
+                pick = (data) => data?.project;
                 break;
             case 'EVENT':
                 table = db.events;
-                statusField = 'approvalStatus';
-                url = `/events/${id}/status`;
+                request = () => api.patch(`/events/${id}/status`, { approvalStatus: 'APPROVED' });
+                pick = (data) => data?.event;
                 break;
             case 'PLAN':
                 table = db.plans;
-                statusField = 'approvalStatus';
-                url = `/plans/${id}/status`;
+                request = () => api.patch(`/plans/${id}/status`, { approvalStatus: 'APPROVED' });
+                pick = (data) => data?.plan;
                 break;
             case 'ANNOUNCEMENT':
                 table = db.announcements;
-                url = `/announcements/${id}/status`;
+                request = () => api.put(`/announcements/${id}`, { status: 'PUBLISHED' });
                 break;
-            case 'REPAIR':
-                table = db.repairs;
-                url = `/repairs/${id}/approve`;
+            case 'MEETING':
+                table = db.meetings;
+                request = () => api.patch(`/meetings/${id}`, { meetingStatus: 'SCHEDULED' });
                 break;
-            case 'BAPTISM':
+            case 'BAPTISM': {
                 table = db.baptisms;
-                url = `/workflows/baptism/${id}/status`;
+                const current = await table.get(id);
+                const next: Record<string, string> = {
+                    PENDING_PASTOR_APPROVAL: 'ADMIN_PAYMENT_VERIFICATION',
+                    BISHOP_APPROVED: 'COMPLETED',
+                };
+                const status = next[current?.status];
+                if (!status) throw new Error('Payment verification needs the admin to record the card number and payment reference.');
+                request = () => api.patch(`/workflows/baptism/${id}/status`, { status });
+                pick = (data) => data?.baptism;
                 break;
-            case 'C_DEDICATION':
+            }
+            case 'C_DEDICATION': {
                 table = db.children;
-                statusField = 'workflowStatus';
-                url = `/workflows/dedication/${id}/status`;
+                const current = await table.get(id);
+                const next: Record<string, string> = {
+                    PENDING_DEDICATION: 'ADMIN_PAYMENT_VERIFICATION',
+                    BISHOP_RITE_PENDING: 'DEDICATED',
+                };
+                const workflowStatus = next[current?.workflowStatus];
+                if (!workflowStatus) throw new Error('Payment verification needs the admin to record the card number and payment reference.');
+                request = () => api.patch(`/workflows/dedication/${id}/status`, { workflowStatus });
+                pick = (data) => data?.child;
                 break;
+            }
+            case 'REPAIR':
+                throw new Error('Repairs are approved through the pastor, admin and Bishop signature chain.');
             default:
                 throw new Error('Unknown Resource Type for Force-Approval');
         }
 
-        if (table) {
-            const current = await table.get(id);
-            const updateData = { 
-                [statusField]: statusValue,
-                syncStatus: 'PENDING', 
-                updatedAt: new Date().toISOString(),
-                version: (current?.version || 0) + 1,
-                deviceId,
-                lastModifiedBy: actorId
-            };
-
-            await table.update(id, updateData);
-            await AuditLogService.log(`FORCE_APPROVE_${resourceType}`, resourceType, id);
-            await OfflineQueue.dispatch(url, 'PATCH', updateData, 'HIGH');
+        try {
+            const res = await request();
+            const record = pick(res.data);
+            if (record?.id) {
+                const existing = await table.get(id);
+                await table.put({ ...existing, ...record, syncStatus: 'SYNCED' });
+            }
+        } catch (err: any) {
+            throw new Error(err.response?.data?.error || err.response?.data?.message || `Force-approval of ${resourceType} failed.`);
         }
+
+        await AuditLogService.log(`FORCE_APPROVE_${resourceType}`, resourceType, id);
+        requestSyncSoon();
     }
 };

@@ -1,20 +1,118 @@
 import { Response } from 'express';
 import prisma from '../../utils/prisma.js';
-import { getOrSetCache } from '../../utils/redis.js';
+import { getOrSetCache, liveCacheKey } from '../../utils/redis.js';
+import { getDepartmentNameByDob } from '../../utils/department-mapper.js';
+
+const DASHBOARD_TTL_SECONDS = 10;
+// Same shape as the /sync streams: the client overwrites its local rows with these.
+const liveItemInclude = { approvals: true, department: { select: { name: true } } } as const;
+const devotionInteractionSelect = { select: { userId: true, type: true, value: true } } as const;
+
+const todayRange = () => ({
+    gte: new Date(new Date().setHours(0, 0, 0, 0)),
+    lt: new Date(new Date().setHours(23, 59, 59, 999)),
+});
+
+/** Department-scoped feed shared by every member of the same department, so one query set serves them all. */
+async function buildMemberSharedFeed(userDeptId: string | null | undefined) {
+    const approvedIn = (field: string, value: string, withGlobal = false): any => ({
+        OR: [
+            ...(userDeptId ? [{ departmentId: userDeptId, [field]: value }] : []),
+            { isMajor: true, [field]: value },
+            ...(withGlobal ? [{ isGlobal: true, [field]: value }] : []),
+        ],
+    });
+
+    const [projects, events, plans, announcements, departments, ministrySettings, affirmation, devotion] = await Promise.all([
+        prisma.project.findMany({ where: approvedIn('approvalStatus', 'APPROVED'), take: 50, include: liveItemInclude, orderBy: { createdAt: 'desc' } }),
+        prisma.event.findMany({ where: approvedIn('approvalStatus', 'APPROVED'), take: 50, include: liveItemInclude, orderBy: { date: 'asc' } }),
+        prisma.plan.findMany({ where: approvedIn('approvalStatus', 'APPROVED'), take: 50, include: liveItemInclude, orderBy: { createdAt: 'desc' } }),
+        prisma.announcement.findMany({ where: approvedIn('status', 'PUBLISHED', true), take: 50, include: liveItemInclude, orderBy: { createdAt: 'desc' } }),
+        prisma.department.findMany({ select: { id: true, name: true } }),
+        prisma.ministrySettings ? prisma.ministrySettings.findUnique({ where: { id: 'GLOBAL' } }) : Promise.resolve(null),
+        prisma.affirmation ? prisma.affirmation.findFirst({ where: { date: new Date(new Date().setHours(0, 0, 0, 0)) } }) : Promise.resolve(null),
+        prisma.devotion.findFirst({ where: { date: todayRange() }, include: { interactions: devotionInteractionSelect }, orderBy: { createdAt: 'desc' } }),
+    ]);
+
+    return {
+        projects,
+        events,
+        plans,
+        meetings: [],
+        announcements,
+        departments,
+        ministrySettings: ministrySettings || { id: 'GLOBAL', themeOfYear: 'YEAR OF DIVINE ESTABLISHMENT', themeOfMonth: 'MONTH OF NEW BEGINNINGS', churchBudget: 0 },
+        affirmation,
+        devotion,
+    };
+}
+
+async function buildMemberPersonalFeed(userId: string) {
+    const [userRecord, baptisms, children, partnership, appointments] = await Promise.all([
+        prisma.user.findUnique({ where: { id: userId }, select: { dob: true, gender: true, departmentId: true, isPartner: true } }),
+        prisma.baptism.findMany({ where: { userId } }),
+        prisma.child.findMany({ where: { parentId: userId }, include: { department: { select: { name: true } } } }),
+        prisma.partnership.findFirst({
+            where: { userId, deletedAt: null },
+            orderBy: { updatedAt: 'desc' },
+            include: { ledgers: { orderBy: { date: 'desc' }, take: 5 } },
+        }),
+        prisma.appointment.findMany({
+            where: { deletedAt: null, memberId: userId },
+            take: 50,
+            include: { member: { select: { name: true } }, target: { select: { name: true } } },
+            orderBy: { preferredDate: 'asc' },
+        }),
+    ]);
+
+    // Auto fellowship mapping (members only: leaders keep the department they lead).
+    if (userRecord?.dob && userRecord.gender) {
+        const targetDeptName = getDepartmentNameByDob(userRecord.dob, userRecord.gender);
+        if (targetDeptName) {
+            const departments = await getOrSetCache('departments:names', () => prisma.department.findMany({ select: { id: true, name: true } }), 60);
+            const targetDept = departments.find((d: any) => d.name.toUpperCase() === targetDeptName.toUpperCase());
+            if (targetDept && targetDept.id !== userRecord.departmentId) {
+                await prisma.user.update({ where: { id: userId }, data: { departmentId: targetDept.id } });
+            }
+        }
+    }
+
+    return { baptisms, children, partnership, appointments, isPartner: userRecord?.isPartner || false };
+}
+
+const MEMBER_HIDDEN_SECTIONS = {
+    pendingUsers: [],
+    account: null,
+    transactions: [],
+    allPartnerships: [],
+    globalMetrics: null,
+    auditLogs: [],
+    departmentMembers: [],
+    repairs: [],
+    reports: [],
+};
 
 export const getDashboardSync = async (req: any, res: Response) => {
     try {
         const { id: userId, role, departmentId: userDeptId } = req.user;
         const { departmentId } = req.query;
 
+        if (role === 'MEMBER') {
+            const [shared, personal] = await Promise.all([
+                getOrSetCache(liveCacheKey('dashboard:sync', `member-feed:${userDeptId || 'none'}`), () => buildMemberSharedFeed(userDeptId), DASHBOARD_TTL_SECONDS),
+                getOrSetCache(liveCacheKey('dashboard:sync', `member-own:${userId}`), () => buildMemberPersonalFeed(userId), DASHBOARD_TTL_SECONDS),
+            ]);
+            return res.json({ ...shared, ...personal, ...MEMBER_HIDDEN_SECTIONS });
+        }
+
         // Effective department ID for filtering
-        const isAdmin = ['SUPER_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'WATUA', 'SYSTEM_ADMIN', 'BISHOP'].includes(req.user.role);
+        const isAdmin = ['SUPER_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'WATUA', 'SYSTEM_ADMIN', 'SECRETARY', 'BISHOP'].includes(req.user.role);
         const effectiveDeptId = (isAdmin && departmentId) ? departmentId : (isAdmin ? null : userDeptId);
 
-        const isLeader = ['PASTOR', 'DEPARTMENT_LEADER'].includes(role);
+        const isLeader = ['PASTOR', 'ASSOCIATE_PASTOR', 'DEPARTMENT_LEADER'].includes(role);
 
         // Cache key includes role and department for security/relevance
-        const cacheKey = `dashboard:sync:${userId}:${effectiveDeptId || 'global'}`;
+        const cacheKey = liveCacheKey('dashboard:sync', `${userId}:${effectiveDeptId || 'global'}`);
 
         const data = await getOrSetCache(cacheKey, async () => {
             // 1. Fetch user record first to use for filtering in subsequent queries
@@ -27,6 +125,13 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 const approvalField = modelName === 'Announcement' ? 'status' : 
                                     modelName === 'Meeting' ? 'meetingStatus' : 
                                     'approvalStatus';
+                const approvedValue = modelName === 'Announcement' ? 'PUBLISHED' :
+                                    modelName === 'Meeting' ? 'SCHEDULED' :
+                                    'APPROVED';
+                const churchWide = (): any[] => modelName === 'Meeting' ? [] : [
+                    { isMajor: true, [approvalField]: approvedValue },
+                    ...(modelName === 'Announcement' ? [{ isGlobal: true, [approvalField]: approvedValue }] : []),
+                ];
 
                 // Base condition setup
                 const baseWhere: any = { OR: [] };
@@ -39,13 +144,13 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 baseWhere.OR.push({ approvals: { some: { userId } } });
                 baseWhere.OR.push({ targetPastorId: userId });
 
-                if (['WATUA', 'BISHOP', 'SUPER_ADMIN'].includes(role)) {
+                if (['WATUA', 'BISHOP', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY'].includes(role)) {
                     if (departmentId) {
                         return { departmentId };
                     }
                     return {
                         OR: [
-                            { [approvalField]: 'APPROVED' },
+                            { [approvalField]: approvedValue },
                             { approvals: { some: { userId } } },
                             { targetPastorId: userId }
                         ]
@@ -54,22 +159,14 @@ export const getDashboardSync = async (req: any, res: Response) => {
 
                 if (isLeader) { // PASTOR, ASSOCIATE_PASTOR, DEPARTMENT_LEADER
                     // Leaders see everything in their department OR assigned to them
-                    // Plus global major items (Meetings do not have an isMajor field)
-                    if (modelName !== 'Meeting') {
-                        baseWhere.OR.push({ isMajor: true, [approvalField]: 'APPROVED' });
-                    }
+                    // Plus approved church-wide items (Meetings do not have an isMajor field)
+                    baseWhere.OR.push(...churchWide());
                     return baseWhere;
                 }
 
-                // Members only see approved items in their dept OR global major items
-                const memberOr: any[] = [
-                    { departmentId: userDeptId, [approvalField]: 'APPROVED' }
-                ];
-                if (modelName !== 'Meeting') {
-                    memberOr.push({ isMajor: true, [approvalField]: 'APPROVED' });
-                }
-
-                return { OR: memberOr };
+                // Members only see approved items in their dept OR church-wide items; leadership meetings stay private
+                if (modelName === 'Meeting') return { id: { in: [] } };
+                return { OR: [{ departmentId: userDeptId, [approvalField]: approvedValue }, ...churchWide()] };
             };
 
             const wrap = async (name: string, promise: Promise<any>) => {
@@ -108,26 +205,31 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 wrap('projects', prisma.project.findMany({ 
                     where: getWhere('Project'), 
                     take: 50, 
+                    include: liveItemInclude,
                     orderBy: { createdAt: 'desc' },
                 })),
                 wrap('events', prisma.event.findMany({ 
                     where: getWhere('Event'), 
                     take: 50, 
+                    include: liveItemInclude,
                     orderBy: { date: 'asc' },
                 })),
                 wrap('plans', prisma.plan.findMany({ 
                     where: getWhere('Plan'), 
                     take: 50, 
+                    include: liveItemInclude,
                     orderBy: { createdAt: 'desc' },
                 })),
                 wrap('meetings', prisma.meeting.findMany({ 
                     where: getWhere('Meeting'),
                     take: 50, 
+                    include: liveItemInclude,
                     orderBy: { date: 'asc' },
                 })),
                 wrap('announcements', prisma.announcement.findMany({ 
                     where: getWhere('Announcement'),
                     take: 50, 
+                    include: liveItemInclude,
                     orderBy: { createdAt: 'desc' },
                 })),
                 wrap('departments', prisma.department.findMany({ select: { id: true, name: true } })),
@@ -207,7 +309,11 @@ export const getDashboardSync = async (req: any, res: Response) => {
                     take: (role === 'WATUA' || !effectiveDeptId) ? undefined : 1000 // WATUA gets everyone; others limited in global view
                 }) : (effectiveDeptId ? prisma.user.findMany({
                     where: { departmentId: effectiveDeptId as string },
-                    orderBy: { name: 'asc' }
+                    orderBy: { name: 'asc' },
+                    // membershipNumber + idNumber are login credentials: never send them to ordinary members.
+                    ...(isLeader ? {} : {
+                        select: { id: true, name: true, role: true, departmentId: true, status: true, avatarUrl: true, updatedAt: true }
+                    })
                 }) : Promise.resolve([]))),
                 wrap('repairs', prisma.technicalRepair ? prisma.technicalRepair.findMany({
                     where: isAdmin ? (effectiveDeptId ? { departmentId: effectiveDeptId } : {}) : { departmentId: userDeptId },
@@ -220,13 +326,8 @@ export const getDashboardSync = async (req: any, res: Response) => {
                     orderBy: { createdAt: 'desc' }
                 }) : Promise.resolve([])),
                 wrap('devotion', prisma.devotion.findFirst({
-                    where: {
-                        date: {
-                            gte: new Date(new Date().setHours(0, 0, 0, 0)),
-                            lt: new Date(new Date().setHours(23, 59, 59, 999))
-                        }
-                    },
-                    include: { interactions: true },
+                    where: { date: todayRange() },
+                    include: { interactions: devotionInteractionSelect },
                     orderBy: { createdAt: 'desc' }
                 })),
                 wrap('appointments', prisma.appointment.findMany({
@@ -246,17 +347,9 @@ export const getDashboardSync = async (req: any, res: Response) => {
                 }))
             ]);
 
-            // --- AUTO DEPARTMENT MAPPING ---
-            if (userRecord && userRecord.dob && userRecord.gender) {
-                const age = new Date().getFullYear() - new Date(userRecord.dob).getFullYear();
-                let targetDeptName = '';
-                
-                if (age > 57) targetDeptName = 'Elders';
-                else if (age < 13) targetDeptName = 'Rising star generation';
-                else if (age < 20) targetDeptName = '3 SixTeen Generation';
-                else if (age <= 32) targetDeptName = 'Royal Tribe of Light';
-                else if (userRecord.gender === 'FEMALE') targetDeptName = 'Esther Arise';
-                else if (userRecord.gender === 'MALE') targetDeptName = 'PPAM ABRAHAM GENERATION';
+            // --- AUTO FELLOWSHIP MAPPING (members only: leaders keep the department they lead) ---
+            if (role === 'MEMBER' && userRecord && userRecord.dob && userRecord.gender) {
+                const targetDeptName = getDepartmentNameByDob(userRecord.dob, userRecord.gender);
 
                 if (targetDeptName) {
                     const targetDept = departments.find((d: any) => d.name.toUpperCase() === targetDeptName.toUpperCase());

@@ -82,7 +82,7 @@ export default function PublicUpdateToast() {
                 zIndex: 9999,
                 width: { xs: 'calc(100% - 32px)', sm: 320 }
             }}>
-                <Paper elevation={24} sx={{ 
+                <Paper elevation={24} className="floating-surface" sx={{ 
                     p: 2.5, 
                     bgcolor: 'rgba(15, 15, 15, 0.95)', 
                     backdropFilter: 'blur(20px)',

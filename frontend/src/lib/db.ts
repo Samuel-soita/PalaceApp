@@ -466,7 +466,38 @@ export class PalaceLocalDatabase extends Dexie {
             supportRequests: 'id, requesterId, eventId, status, createdAt, syncStatus',
             syncQueue: 'id, timestamp, status, deviceId'
         });
+
+        // Version 17: Messages page queries by departmentId and sorts by createdAt.
+        this.version(17).stores({
+            messages: 'id, senderId, receiverId, departmentId, timestamp, createdAt, syncStatus, deviceId, version',
+        });
     }
 }
 
 export const db = new PalaceLocalDatabase();
+
+const DB_OWNER_KEY = 'palace-db-owner';
+// Device-scoped, not user data: offline PIN vault and device identity survive a user switch.
+const DEVICE_TABLES = new Set(['localCredentials', 'deviceSettings']);
+
+/**
+ * The local mirror holds whatever the previous account was allowed to see. When a different
+ * person signs in on this device, wipe it (and the delta cursors) so they neither see that
+ * data nor skip rows older than the previous account's last sync.
+ */
+export async function prepareLocalDataForUser(userId: string) {
+    const owner = localStorage.getItem(DB_OWNER_KEY);
+    if (owner === userId) return;
+
+    // Pending offline writes of a known previous owner must not be replayed under this account.
+    const keepQueue = owner === null;
+    await Promise.all(
+        db.tables
+            .filter(t => !DEVICE_TABLES.has(t.name) && !(keepQueue && t.name === 'syncQueue'))
+            .map(t => t.clear())
+    );
+    Object.keys(localStorage)
+        .filter(k => k.startsWith('palace-sync-cursors:') || k === 'palace-last-sync')
+        .forEach(k => localStorage.removeItem(k));
+    localStorage.setItem(DB_OWNER_KEY, userId);
+}

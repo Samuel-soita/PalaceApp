@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { evaluateAccess, PERMISSIONS } from '../utils/permissions.js';
 
 describe('ChurchHub 2.4.0 Logic & RBAC Certification', () => {

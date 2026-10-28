@@ -7,6 +7,9 @@ import prisma from '../../utils/prisma.js';
  * modules to ensure minimum latency and maximum PWA offline reliability.
  */
 export const getDeltaSync = async (req: any, res: Response) => {
+    // Captured before querying: clients use it as their next `since` cursor, so rows
+    // written while this request runs are picked up next time instead of skipped.
+    const serverNow = new Date();
     try {
         const { module } = req.params;
         const { since, departmentId } = req.query;
@@ -21,7 +24,7 @@ export const getDeltaSync = async (req: any, res: Response) => {
             const { majField = 'isMajor', supportsDept = true, supportsSoftDelete = true, modelName } = options;
             
             // 1. ADMINISTRATIVE OVERRIDE: Global oversight for Bishop, Systems Admin, and Watua engineers
-            if (['SUPER_ADMIN', 'SYSTEM_ADMIN', 'WATUA', 'BISHOP'].includes(role)) {
+            if (['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA', 'BISHOP'].includes(role)) {
                 return {
                     AND: [
                         { OR: [
@@ -58,15 +61,21 @@ export const getDeltaSync = async (req: any, res: Response) => {
             }
             
             if (supportsDept) {
-                if (effectiveDeptId) {
-                    visibilityConditions.push({ departmentId: effectiveDeptId });
-                } else if (userDeptId) {
-                    visibilityConditions.push({ departmentId: userDeptId });
+                const scopeDeptId = effectiveDeptId || userDeptId;
+                if (scopeDeptId) {
+                    visibilityConditions.push(
+                        modelName === 'Transaction'
+                            ? { account: { departmentId: scopeDeptId } }
+                            : { departmentId: scopeDeptId }
+                    );
                 }
             }
 
             if (majField) {
                 visibilityConditions.push({ [majField]: true });
+            }
+            if (modelName === 'Announcement') {
+                visibilityConditions.push({ isMajor: true });
             }
 
             // Final where clause: (Any Visibility Condition) AND (Recently Updated or Deleted)
@@ -137,12 +146,13 @@ export const getDeltaSync = async (req: any, res: Response) => {
                             where: {
                                 AND: [
                                     { OR: [{ updatedAt: { gt: timestamp } }, { deletedAt: { gt: timestamp } }] },
-                                    {
+                                    // Admins without a department filter see everyone; Prisma does not treat `{}` inside OR as match-all.
+                                    ...(effectiveDeptId ? [{
                                         OR: [
-                                            effectiveDeptId ? { departmentId: effectiveDeptId as string } : {},
+                                            { departmentId: effectiveDeptId as string },
                                             { role: { in: ['PASTOR', 'ASSOCIATE_PASTOR'] } }
                                         ]
-                                    }
+                                    }] : (isAdmin ? [] : [{ role: { in: ['PASTOR', 'ASSOCIATE_PASTOR'] } }]))
                                 ]
                             },
                             select: { 
@@ -189,15 +199,27 @@ export const getDeltaSync = async (req: any, res: Response) => {
                     });
                     break;
 
-                case 'messages':
-                    result = (prisma as any).message ? await (prisma as any).message.findMany({ 
+                case 'messages': {
+                    if (role === 'MEMBER') break;
+                    const leaderScope = {
+                        OR: [
+                            ...(userDeptId ? [{ departmentId: userDeptId }, { taggedDepartmentIds: { has: userDeptId } }] : []),
+                            { chatType: 'GLOBAL' },
+                            { senderId: userId },
+                            { receiverId: userId },
+                            { taggedUsers: { some: { id: userId } } },
+                        ]
+                    };
+                    result = await prisma.message.findMany({
                         where: {
-                            createdAt: { gt: timestamp },
-                            ...(isAdmin ? (effectiveDeptId ? { departmentId: effectiveDeptId } : {}) : (userDeptId ? { departmentId: userDeptId } : {}))
+                            updatedAt: { gt: timestamp },
+                            ...(isAdmin ? (effectiveDeptId ? { departmentId: effectiveDeptId as string } : {}) : leaderScope)
                         },
-                        orderBy: { createdAt: 'desc' }
-                    }) : [];
+                        include: { sender: { select: { id: true, name: true, role: true, avatarUrl: true } } },
+                        orderBy: { updatedAt: 'desc' }
+                    });
                     break;
+                }
 
                 case 'baptisms':
                     result = await prisma.baptism.findMany({
@@ -235,13 +257,13 @@ export const getDeltaSync = async (req: any, res: Response) => {
 
                 case 'appointments':
                     result = (prisma as any).appointment ? await (prisma as any).appointment.findMany({
-                        where: (role === 'SUPER_ADMIN') ? {
+                        where: ['SUPER_ADMIN', 'WATUA', 'SYSTEM_ADMIN', 'SECRETARY'].includes(role) ? {
                             OR: [{ updatedAt: { gt: timestamp } }, { deletedAt: { gt: timestamp } }]
                         } : {
                             OR: [
                                 { memberId: userId },
                                 { targetId: userId },
-                                { targetRole: 'SUPER_ADMIN' }
+                                ...(['PASTOR', 'ASSOCIATE_PASTOR'].includes(role) ? [{ targetRole: role, targetId: null }] : [])
                             ],
                             AND: [
                                 { OR: [{ updatedAt: { gt: timestamp } }, { deletedAt: { gt: timestamp } }] }
@@ -329,7 +351,7 @@ export const getDeltaSync = async (req: any, res: Response) => {
         
         res.json({
             module,
-            timestamp: new Date().toISOString(),
+            timestamp: serverNow.toISOString(),
             count: result.length,
             data: result
         });

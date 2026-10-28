@@ -1,45 +1,52 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../lib/db';
 import { PermissionService } from '../../lib/PermissionService';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import api from '../../lib/api-client';
 import {
-    Box, Typography, Paper, Grid, Card, Table, TableBody,
+    Box, Typography, Paper, Table, TableBody,
     TableCell, TableContainer, TableHead, TableRow, Switch,
-    Button, Chip, TextField, Dialog, DialogTitle, DialogContent,
-    DialogActions, List, ListItem, ListItemText, Alert, IconButton,
-    Tooltip, CircularProgress
+    Button, Chip, 
+    Alert, 
+    CircularProgress
 } from '@mui/material';
 import { 
-    Shield, ShieldCheck, ShieldAlert, History, UserPlus, 
-    RefreshCcw, Search, Zap, Filter
-} from 'lucide-react';
+    Shield, ShieldCheck, History, 
+    RefreshCcw, Zap} from 'lucide-react';
 
 export default function PermissionEnginePanel() {
     const [tab, setTab] = useState<'MATRIX' | 'AUDIT'>('MATRIX');
-    const [searchTerm, setSearchTerm] = useState('');
 
     // 🏛️ LOCAL-FIRST REACTIVE MATRIX
     // fetch all permissions
-    const allPermissions = useLiveQuery(() => db.permissions.toArray()) || [];
+    const livePermissions = useLiveQuery(() => db.permissions.toArray());
     // fetch all roles
-    const rolesTable = useLiveQuery(() => db.roles.toArray()) || [];
+    const liveRoles = useLiveQuery(() => db.roles.toArray());
     // fetch mapping
-    const mappings = useLiveQuery(() => db.rolePermissions.toArray()) || [];
-    // audit logs locally if implemented
-    const auditLogs = useLiveQuery(() => db.syncQueue.where('type').equals('PERMISSION_UPDATE').toArray()) || []; 
+    const liveMappings = useLiveQuery(() => db.rolePermissions.toArray());
+    const allPermissions = useMemo(() => livePermissions ?? [], [livePermissions]);
+    const queryClient = useQueryClient();
+    const { data: auditLogs = [], isLoading: auditLoading, isError: auditError } = useQuery(
+        ['permission-audit-log'],
+        async () => (await api.get('/permissions/audit-log')).data,
+        { enabled: tab === 'AUDIT', staleTime: 60000 }
+    );
 
     // ✅ Hydrate Roles with their permissions reactively
     const roles = useMemo(() => {
-        return rolesTable.map(role => ({
+        const permissionById = new Map(allPermissions.map(p => [p.id, p]));
+        const mappings = liveMappings ?? [];
+        return (liveRoles ?? []).map(role => ({
             ...role,
             permissions: mappings
                 .filter(m => m.roleId === role.id)
                 .map(m => ({
                     permissionId: m.permissionId,
-                    permission: allPermissions.find(p => p.id === m.permissionId)
+                    permission: permissionById.get(m.permissionId)
                 }))
         }));
-    }, [rolesTable, allPermissions, mappings]);
+    }, [liveRoles, allPermissions, liveMappings]);
 
     const isGlobalError = roles.length === 0 && allPermissions.length === 0;
 
@@ -49,7 +56,7 @@ export default function PermissionEnginePanel() {
     const handleSync = async () => {
         setIsSyncing(true);
         try {
-            await PermissionService.syncWithCloud();
+            await PermissionService.syncWithCloud({ force: true });
         } catch (err) {
             console.error('Cloud Sync failed:', err);
         } finally {
@@ -69,6 +76,7 @@ export default function PermissionEnginePanel() {
         }
 
         await PermissionService.updateRolePermissions(role.id, newPermIds);
+        queryClient.invalidateQueries(['permission-audit-log']);
     };
 
     if (isGlobalError) {
@@ -85,10 +93,10 @@ export default function PermissionEnginePanel() {
     }
 
     return (
-        <Box sx={{ p: 4 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-                <Box>
-                    <Typography variant="h4" fontWeight="900" sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Box sx={{ p: { xs: 1, md: 4 } }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2, mb: 4 }}>
+                <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="h4" fontWeight="900" sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: { xs: 1, md: 2 }, fontSize: { xs: '1.4rem', md: '2.125rem' } }}>
                         <Zap color="var(--cyan)" size={32} />
                         PERMISSION ENGINE <Chip label="WATUA ONLY" color="error" size="small" sx={{ fontWeight: 900 }} />
                     </Typography>
@@ -96,6 +104,7 @@ export default function PermissionEnginePanel() {
                         CENTRAL PERMISSION MANAGEMENT & ROLE-CAPABILITY MATRIX
                     </Typography>
                 </Box>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                     <Button 
                         variant="outlined" 
                         color="inherit"
@@ -120,6 +129,7 @@ export default function PermissionEnginePanel() {
                     >
                         Audit Logs
                     </Button>
+                </Box>
             </Box>
 
             {tab === 'MATRIX' ? (
@@ -179,7 +189,14 @@ export default function PermissionEnginePanel() {
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {auditLogs?.map((log: any) => (
+                            {(auditLoading || auditError || auditLogs.length === 0) && (
+                                <TableRow>
+                                    <TableCell colSpan={4} sx={{ textAlign: 'center', color: 'text.secondary', py: 4 }}>
+                                        {auditLoading ? <CircularProgress size={20} /> : auditError ? 'Could not load the audit log. Check your connection and try again.' : 'No permission changes recorded yet.'}
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                            {auditLogs.map((log: any) => (
                                 <TableRow key={log.id}>
                                     <TableCell>{new Date(log.createdAt).toLocaleString()}</TableCell>
                                     <TableCell>

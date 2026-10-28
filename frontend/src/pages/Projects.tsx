@@ -1,16 +1,15 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../lib/db';
-import api from '../lib/api-client';
 import {
     Typography, Grid, Card, CardContent, Box, Button, TextField, Dialog, DialogTitle,
     DialogContent, DialogActions, MenuItem, LinearProgress, Chip, IconButton,
-    LinearProgress as Progress, Divider, Select, Checkbox, ListItemText, FormControl, InputLabel
+    LinearProgress as Progress, Select, Checkbox, ListItemText, FormControl, InputLabel
 } from '@mui/material';
-import { Plus, Edit, Trash2, Briefcase, TrendingUp, Clock } from 'lucide-react';
+import { Plus, Edit, Trash2, Briefcase, Clock } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
-import { pastorAuthorizationBlocked } from '../utils/approval-rules';
+import { canBypassPastorAuthorization, pastorAuthorizationBlocked } from '../utils/approval-rules';
 import { isUserManagingDepartment } from '../utils/auth-options';
 import { executeApiFirstMutation } from '../lib/api-first-mutation';
 
@@ -42,7 +41,9 @@ export default function Projects() {
     });
 
     const isGlobalAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(user?.role || '');
-    const isAuthorized = isGlobalAdmin || ['DEPARTMENT_LEADER', 'PASTOR'].includes(user?.role || '');
+    const isAuthorized = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'DEPARTMENT_LEADER', 'PASTOR'].includes(user?.role || '');
+    const canDeleteProjects = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'WATUA'].includes(user?.role || '');
+    const needsPastors = !canBypassPastorAuthorization(user?.role);
 
     const [page, setPage] = useState(1);
     const limit = 12;
@@ -63,7 +64,8 @@ export default function Projects() {
 
     const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
         const actionId = id || payload.id;
-        const { department, syncStatus, version, ...apiPayload } = payload;
+        const { department, syncStatus, version, id: _id, ...rest } = payload;
+        const apiPayload = method === 'POST' ? rest : (({ pastorIds: _p, ...r }) => r)(rest);
 
         try {
             await executeApiFirstMutation({
@@ -132,7 +134,7 @@ export default function Projects() {
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!editProject && pastorAuthorizationBlocked(user?.role, formData.pastorIds)) {
-            alert('You must select exactly 2 Pastors to authorize this ChurchProject before deployment.');
+            alert('You must select exactly 2 Pastors to authorize this project before deployment.');
             return;
         }
 
@@ -180,6 +182,13 @@ export default function Projects() {
                 )}
             </Box>
 
+            {filteredProjects.length === 0 && (
+                <Box sx={{ py: 8, textAlign: 'center', border: '1px dashed var(--glass-border)', borderRadius: 2 }}>
+                    <Typography variant="subtitle2" fontWeight="900" sx={{ opacity: 0.6 }}>NO PROJECTS YET</Typography>
+                    <Typography variant="caption" sx={{ display: 'block', mt: 1, opacity: 0.5 }}>Approved projects will appear here.</Typography>
+                </Box>
+            )}
+
             <Grid container spacing={4}>
                 {filteredProjects?.map((project: any) => (
                     <Grid item xs={12} md={6} key={project.id}>
@@ -189,16 +198,18 @@ export default function Projects() {
                                     <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary border border-primary/20">
                                         <Briefcase size={24} />
                                     </div>
-                                    {(isGlobalAdmin || isUserManagingDepartment(user, project.departmentId)) && (
-                                        <Box display="flex" gap={1}>
-                                            <IconButton size="small" onClick={() => handleOpen(project)} sx={{ color: 'primary.main' }}>
+                                    <Box display="flex" gap={1}>
+                                        {isAuthorized && (isGlobalAdmin || isUserManagingDepartment(user, project.departmentId)) && (
+                                            <IconButton size="small" aria-label="edit project" onClick={() => handleOpen(project)} sx={{ color: 'primary.main' }}>
                                                 <Edit size={16} />
                                             </IconButton>
-                                            <IconButton size="small" color="error" onClick={() => handleDelete(project.id)}>
+                                        )}
+                                        {canDeleteProjects && (
+                                            <IconButton size="small" aria-label="delete project" color="error" onClick={() => handleDelete(project.id)}>
                                                 <Trash2 size={16} />
                                             </IconButton>
-                                        </Box>
-                                    )}
+                                        )}
+                                    </Box>
                                 </Box>
 
                                 <Typography variant="h5" fontWeight="900" sx={{ mb: 1 }}>{project.title}</Typography>
@@ -216,13 +227,13 @@ export default function Projects() {
                                     <Grid item xs={6}>
                                         <Box sx={{ p: 2, borderRadius: 3, bgcolor: 'action.hover', border: '1px solid rgba(255,255,255,0.05)' }}>
                                             <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 'bold', display: 'block', mb: 0.5 }}>BUDGET</Typography>
-                                            <Typography variant="subtitle1" fontWeight="900">{project.budget.toLocaleString()} KES</Typography>
+                                            <Typography variant="subtitle1" fontWeight="900">{Number(project.budget || 0).toLocaleString()} KES</Typography>
                                         </Box>
                                     </Grid>
                                     <Grid item xs={6}>
                                         <Box sx={{ p: 2, borderRadius: 3, bgcolor: 'action.hover', border: '1px solid rgba(255,255,255,0.05)' }}>
                                             <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 'bold', display: 'block', mb: 0.5 }}>SECTOR</Typography>
-                                            <Typography variant="subtitle1" fontWeight="900" noWrap>{project.department.name}</Typography>
+                                            <Typography variant="subtitle1" fontWeight="900" noWrap>{project.department?.name || departments.find((d: any) => d.id === project.departmentId)?.name || '—'}</Typography>
                                         </Box>
                                     </Grid>
                                 </Grid>
@@ -279,7 +290,7 @@ export default function Projects() {
                     <DialogContent>
                         <Box display="flex" flexDirection="column" gap={3} mt={1}>
                             <TextField
-                                label="ChurchProject Title"
+                                label="Project Title"
                                 fullWidth
                                 required
                                 value={formData.title}
@@ -311,7 +322,6 @@ export default function Projects() {
                                     onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                                 >
                                     <MenuItem value="PLANNED">Planned</MenuItem>
-                                    <MenuItem value="IN_PROGRESS">In Progress</MenuItem>
                                     <MenuItem value="ACTIVE">Active</MenuItem>
                                     <MenuItem value="ON_HOLD">On Hold</MenuItem>
                                     <MenuItem value="COMPLETED">Completed</MenuItem>
@@ -346,7 +356,8 @@ export default function Projects() {
                                 </TextField>
                             )}
                             
-                            <FormControl fullWidth required error={formData.pastorIds.length > 0 && formData.pastorIds.length !== 2}>
+                            {!editProject && (
+                            <FormControl fullWidth required={needsPastors} error={needsPastors && formData.pastorIds.length > 0 && formData.pastorIds.length !== 2}>
                                 <InputLabel id="pastors-label">Select 2 Authorizing Pastors</InputLabel>
                                     <Select
                                         labelId="pastors-label"
@@ -371,6 +382,7 @@ export default function Projects() {
                                         ))}
                                     </Select>
                                 </FormControl>
+                            )}
                         </Box>
                     </DialogContent>
                     <DialogActions sx={{ p: 4 }}>

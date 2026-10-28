@@ -23,6 +23,7 @@ export function useOfflineMutation(options: {
         const endpoint = options.url + (isUpdate ? `/${id}` : '');
 
         const {
+            id: _id,
             syncStatus: _syncStatus,
             deviceId: _deviceId,
             lastModifiedBy: _lastModifiedBy,

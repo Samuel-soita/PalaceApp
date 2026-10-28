@@ -27,7 +27,7 @@ export const UpdateMeetingSchema = z.object({
         followUpPersonId: z.string().uuid().optional().nullable(),
         followUpDeadline: z.string().datetime().optional().nullable(),
         minutes: z.string().optional(),
-        attendance: z.number().int().nonnegative().optional(),
+        attendance: z.union([z.number().int().nonnegative(), z.string().regex(/^\d+$/)]).optional(),
         meetingStatus: z.enum(['PENDING_APPROVAL', 'SCHEDULED', 'CONCLUDED', 'CANCELLED']).optional(),
         isPartnerOnly: z.boolean().optional()
     }).strict()

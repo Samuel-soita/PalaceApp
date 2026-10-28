@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import {
     Container, Paper, TextField, Button, Typography, Box,
-    Alert, Link as MuiLink, MenuItem, Stepper, Step, StepLabel, Divider
+    Alert, Link as MuiLink, MenuItem, Divider
 } from '@mui/material';
 import { Link } from 'react-router-dom';
 import { UserPlus, Church } from 'lucide-react';
 import api from '../lib/api-client';
 
-const STEPS = ['Identity', 'Membership', 'Confirmation'];
 
 const GENDER_OPTIONS = [
     { value: 'MALE', label: 'Male' },

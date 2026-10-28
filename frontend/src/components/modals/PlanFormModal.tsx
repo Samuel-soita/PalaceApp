@@ -9,6 +9,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../lib/db';
 import api from '../../lib/api-client';
 import { useAuth } from '../../contexts/AuthContext';
+import { canBypassPastorAuthorization, canOverrideApproval, canSignApproval, isAwaitingApproval, pastorAuthorizationBlocked } from '../../utils/approval-rules';
 
 interface PlanFormModalProps {
     open: boolean;
@@ -60,7 +61,8 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
         }
     }, [plan, open, user, defaultDepartmentId]);
 
-    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
+    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
+    const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
 
     const mutation = useMutation(
         (data: any) => plan 
@@ -74,10 +76,15 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
         }
     );
 
+    const canSign = !!plan && canSignApproval(plan, user);
+    const showApprovalActions = !!plan && isAwaitingApproval(plan.approvalStatus) && (canSign || canOverrideApproval(user?.role));
+
     const approveMutation = useMutation(
         async (status: 'APPROVED' | 'REJECTED') => {
             if (status === 'APPROVED') {
-                return await api.post(`/plans/${plan.id}/approve`);
+                return canSign
+                    ? await api.post(`/plans/${plan.id}/approve`)
+                    : await api.patch(`/plans/${plan.id}/status`, { approvalStatus: 'APPROVED' });
             } else {
                 return await api.patch(`/plans/${plan.id}/status`, { approvalStatus: 'REJECTED' });
             }
@@ -92,7 +99,7 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!plan && formData.pastorIds.length !== 2) {
+        if (!plan && pastorAuthorizationBlocked(user?.role, formData.pastorIds)) {
             alert("Exactly 2 Pastors must authorize this Strategic Plan.");
             return;
         }
@@ -100,8 +107,8 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
             alert("Please select a Department for this Plan.");
             return;
         }
-        const { pastorIds, ...restFormData } = formData;
-        const submitPayload = plan ? restFormData : formData;
+        const { pastorIds, budgetNeeded: _budgetNeeded, status: _status, ...restFormData } = formData;
+        const submitPayload = plan ? restFormData : { ...restFormData, pastorIds };
         mutation.mutate(submitPayload);
     };
 
@@ -126,7 +133,7 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
                 </DialogTitle>
                 <DialogContent>
                     {/* 👨‍⚖️ COMMAND APPROVAL OVERRIDE */}
-                    {plan && plan.approvalStatus !== 'APPROVED' && (plan.targetPastorId === user?.id || ['WATUA', 'BISHOP'].includes(user?.role || '')) && (
+                    {showApprovalActions && (
                         <Box sx={{ mb: 4, p: 3, bgcolor: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: 0, textAlign: 'center' }}>
                             <Typography variant="subtitle2" fontWeight="950" color="orange" mb={1}>
                                 ACTION REQUIRED: PLAN CLEARANCE
@@ -183,18 +190,12 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
                             rows={4}
                             fullWidth
                             required
+                            inputProps={{ minLength: 10 }}
                             value={formData.content}
                             onChange={(e) => setFormData({ ...formData, content: e.target.value })}
                         />
                         
                         <Box display="flex" gap={2}>
-                            <TextField
-                                label="Budget (KES)"
-                                type="number"
-                                fullWidth
-                                value={formData.budgetNeeded}
-                                onChange={(e) => setFormData({ ...formData, budgetNeeded: Number(e.target.value) })}
-                            />
                             <TextField
                                 label="Budget Source"
                                 select
@@ -226,9 +227,24 @@ export default function PlanFormModal({ open, onClose, plan, onSuccess, defaultD
                                 sx={{ color: 'primary.main' }}
                             />
                         </Box>
-                        
+
+                        {!plan && !user?.departmentId && !defaultDepartmentId && (
+                            <TextField
+                                label="Department"
+                                select
+                                fullWidth
+                                required
+                                value={formData.departmentId}
+                                onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
+                            >
+                                {departments.map((dept: any) => (
+                                    <MenuItem key={dept.id} value={dept.id}>{dept.name}</MenuItem>
+                                ))}
+                            </TextField>
+                        )}
+
                         {!plan && (
-                            <FormControl fullWidth required>
+                            <FormControl fullWidth required={!canBypassPastorAuthorization(user?.role)}>
                                 <InputLabel id="plan-pastors-label" sx={{ fontWeight: 700 }}>CHOOSE 2 AUTHORIZING PASTORS</InputLabel>
                                 <Select
                                     labelId="plan-pastors-label"

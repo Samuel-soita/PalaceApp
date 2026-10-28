@@ -46,25 +46,33 @@ export default function ProfileModal({ open, onClose }: ProfileModalProps) {
         phoneNumber: '',
     });
 
-    // Sync user data into form when modal opens
-    useEffect(() => {
-        if (open && user) {
-            setFormData({
-                name: user.name || '',
-                gender: (user as any).gender || '',
-                dob: (user as any).dob ? new Date((user as any).dob).toISOString().split('T')[0] : '',
-                membershipNumber: (user as any).membershipNumber || '',
-                phoneNumber: (user as any).phoneNumber || '',
-            });
-            setPreviewUrl(null);
-            setSelectedFile(null);
-            setError(null);
-            setSuccess(false);
-        }
-    }, [open, user]);
+    // The session user only carries a few fields, so the full profile is loaded from the server.
+    const [profile, setProfile] = useState<any>(null);
 
-    const { canUpdate: canUpdateMembershipCard, validYear, expired: cardExpired } =
-        parseCardValidity((user as any)?.membershipNumber || null);
+    useEffect(() => {
+        if (!open || !user) return;
+        let active = true;
+        const fill = (source: any) => setFormData({
+            name: source.name || '',
+            gender: source.gender || '',
+            dob: source.dob ? new Date(source.dob).toISOString().split('T')[0] : '',
+            membershipNumber: source.membershipNumber || '',
+            phoneNumber: source.phoneNumber || '',
+        });
+        fill(profile ?? user);
+        setPreviewUrl(null);
+        setSelectedFile(null);
+        setError(null);
+        setSuccess(false);
+        api.get('/auth/profile')
+            .then(res => { if (active) { setProfile(res.data); fill(res.data); } })
+            .catch(() => { /* keep the cached session values */ });
+        return () => { active = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, user?.id]);
+
+    const { canUpdate: canUpdateMembershipCard, validYear } =
+        parseCardValidity(profile?.membershipNumber ?? (user as any)?.membershipNumber ?? null);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -104,11 +112,13 @@ export default function ProfileModal({ open, onClose }: ProfileModalProps) {
             };
 
             // Only include membershipNumber if it changed
-            if (formData.membershipNumber !== (user as any).membershipNumber) {
+            const currentCard = profile?.membershipNumber ?? (user as any).membershipNumber;
+            if (formData.membershipNumber && formData.membershipNumber !== currentCard) {
                 payload.membershipNumber = formData.membershipNumber;
             }
 
             const res = await api.patch('/auth/profile', payload);
+            setProfile((prev: any) => ({ ...prev, ...res.data }));
             updateUser({ ...res.data, avatarUrl: finalAvatarUrl });
             setSuccess(true);
             setTimeout(() => { setSuccess(false); onClose(); }, 1500);
@@ -252,7 +262,7 @@ export default function ProfileModal({ open, onClose }: ProfileModalProps) {
                     {/* Read-only ID Number */}
                     <TextField
                         fullWidth label="National ID Number"
-                        value={(user as any)?.idNumber || '—'}
+                        value={profile?.idNumber || (user as any)?.idNumber || '—'}
                         disabled
                         helperText="ID Number cannot be changed after registration."
                         InputProps={{ startAdornment: <Fingerprint size={18} style={{ marginRight: 8, opacity: 0.4 }} /> }}

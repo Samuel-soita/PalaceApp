@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import prisma from '../../utils/prisma.js';
 import { Prisma } from '@prisma/client';
 import { logAction } from '../../utils/audit.service.js';

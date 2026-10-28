@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Box, Typography, Chip, IconButton, Modal, Backdrop, Fade, Button } from '@mui/material';
+import { Box, Typography, IconButton, Modal, Backdrop, Fade, Button } from '@mui/material';
 import { AlertCircle, AlertTriangle, Info, Bell, X, Globe, Building2, Edit, Trash2 } from 'lucide-react';
 
 interface Announcement {

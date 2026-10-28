@@ -1,6 +1,5 @@
-import React from 'react';
-import { Box, Typography, Card, CardContent, Avatar, Chip, Tooltip } from '@mui/material';
-import { Award, CheckCircle, Droplet, Baby, Star, Calendar } from 'lucide-react';
+import { Box, Typography, Card, CardContent } from '@mui/material';
+import { Award, CheckCircle, Droplet, Baby, Calendar } from 'lucide-react';
 
 interface Achievement {
     id: string;

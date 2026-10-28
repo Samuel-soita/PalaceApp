@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import prisma from '../../utils/prisma.js';
 
 // GET all support requests (Role-scoped visibility engine)
@@ -89,12 +89,12 @@ export const createSupportRequest = async (req: any, res: Response) => {
         });
 
         // Broadcast to relevant high-clearance peers
-        const leaders = await prisma.user.findMany({ where: { role: 'DEPARTMENT_LEADER' } });
+        const leaders = await prisma.user.findMany({ where: { role: 'DEPARTMENT_LEADER', id: { not: req.user!.id } } });
         await prisma.notification.createMany({
             data: leaders.map(leader => ({
                 userId: leader.id,
                 title: '🤝 Critical Event Support Request',
-                message: `[DEPT FUNDING] ${req.user!.name} is requesting 1,500/- for event: ${title}`
+                message: `[DEPT FUNDING] ${supportRequest.requester?.name || 'A department leader'} is requesting 1,500/- for event: ${title}`
             }))
         });
 

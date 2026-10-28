@@ -43,7 +43,7 @@ router.post('/:id/updates',
 );
 
 router.post('/:id/approve',
-    authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'PASTOR']),
+    authorize(['SUPER_ADMIN', 'WATUA', 'PASTOR', 'ASSOCIATE_PASTOR']),
     approveProject
 );
 

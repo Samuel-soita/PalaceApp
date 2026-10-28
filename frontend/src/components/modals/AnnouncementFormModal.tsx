@@ -4,12 +4,12 @@ import {
     MenuItem, Button, Typography, Checkbox, RadioGroup, FormControlLabel, Radio, FormControl, FormLabel,
     InputLabel, Select, Chip, ListItemText
 } from '@mui/material';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../lib/db';
-import { Shield, Users, CheckCircle } from 'lucide-react';
 import api from '../../lib/api-client';
 import { useAuth } from '../../contexts/AuthContext';
+import { canBypassPastorAuthorization, canOverrideApproval, canSignApproval, isAwaitingApproval, pastorAuthorizationBlocked } from '../../utils/approval-rules';
 
 interface AnnouncementFormModalProps {
     open: boolean;
@@ -21,17 +21,22 @@ interface AnnouncementFormModalProps {
 
 export default function AnnouncementFormModal({ open, onClose, announcement, onSuccess, defaultDepartmentId }: AnnouncementFormModalProps) {
     const { user } = useAuth();
+    const canPickDepartment = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'WATUA'].includes(user?.role || '');
+    const ownDepartmentId = defaultDepartmentId || user?.departmentId || '';
+    const departmentalAvailable = canPickDepartment || !!ownDepartmentId;
+    const defaultAudience = departmentalAvailable ? 'DEPARTMENTAL' : 'CHURCH_WIDE';
+    const needsPastors = !canBypassPastorAuthorization(user?.role);
     const [formData, setFormData] = useState({
         title: '',
         content: '',
         priority: 'NORMAL',
-        isMajor: false,
-        audience: 'DEPARTMENTAL', // 'DEPARTMENTAL' or 'CHURCH_WIDE'
-        departmentId: defaultDepartmentId || user?.departmentId || '',
+        isMajor: defaultAudience === 'CHURCH_WIDE',
+        audience: defaultAudience, // 'DEPARTMENTAL' or 'CHURCH_WIDE'
+        departmentId: ownDepartmentId,
         pastorIds: [] as string[]
     });
 
-    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
+    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
     useEffect(() => {
         if (announcement) {
@@ -49,13 +54,13 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                 title: '',
                 content: '',
                 priority: 'NORMAL',
-                isMajor: false,
-                audience: 'DEPARTMENTAL',
-                departmentId: defaultDepartmentId || user?.departmentId || '',
+                isMajor: defaultAudience === 'CHURCH_WIDE',
+                audience: defaultAudience,
+                departmentId: ownDepartmentId,
                 pastorIds: []
             });
         }
-    }, [announcement, open, user, defaultDepartmentId]);
+    }, [announcement, open, user, defaultDepartmentId, defaultAudience, ownDepartmentId]);
 
     const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
 
@@ -67,14 +72,20 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
             onSuccess: () => {
                 onSuccess();
                 onClose();
-            }
+            },
+            onError: (err: any) => alert(err.response?.data?.error || err.message || 'Failed to save broadcast.')
         }
     );
+
+    const canSign = !!announcement && canSignApproval(announcement, user);
+    const showApprovalActions = !!announcement && isAwaitingApproval(announcement.status) && (canSign || canOverrideApproval(user?.role));
 
     const approveMutation = useMutation(
         async (status: 'APPROVED' | 'REJECTED') => {
             if (status === 'APPROVED') {
-                return await api.post(`/announcements/${announcement.id}/approve`);
+                return canSign
+                    ? await api.post(`/announcements/${announcement.id}/approve`)
+                    : await api.put(`/announcements/${announcement.id}`, { status: 'PUBLISHED' });
             } else {
                 return await api.put(`/announcements/${announcement.id}`, { status: 'REJECTED' });
             }
@@ -83,17 +94,31 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
             onSuccess: () => {
                 onSuccess();
                 onClose();
-            }
+            },
+            onError: (err: any) => alert(err.response?.data?.error || err.message || 'Action failed.')
         }
     );
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!announcement && formData.pastorIds.length !== 2) {
+        if (!announcement && pastorAuthorizationBlocked(user?.role, formData.pastorIds)) {
             alert("You must select exactly 2 Pastors to authorize this Broadcast.");
             return;
         }
-        mutation.mutate(formData);
+        if (formData.audience === 'DEPARTMENTAL' && !formData.departmentId) {
+            alert('Please choose the department for this broadcast.');
+            return;
+        }
+        if (formData.content.trim().length < 10) {
+            alert('Broadcast content must be at least 10 characters.');
+            return;
+        }
+        const { audience, pastorIds, departmentId, ...rest } = formData;
+        mutation.mutate({
+            ...rest,
+            departmentId: departmentId || null,
+            ...(announcement ? {} : { pastorIds }),
+        });
     };
 
     return (
@@ -117,7 +142,7 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                 </DialogTitle>
                 <DialogContent sx={{ px: 4 }}>
                     {/* 👨‍⚖️ COMMAND APPROVAL OVERRIDE */}
-                    {announcement && announcement.status !== 'APPROVED' && (announcement.targetPastorId === user?.id || ['WATUA', 'BISHOP'].includes(user?.role || '')) && (
+                    {showApprovalActions && (
                         <Box sx={{ mb: 4, mt: 2, p: 3, bgcolor: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: 0, textAlign: 'center' }}>
                             <Typography variant="subtitle2" fontWeight="950" color="orange" mb={1}>
                                 ACTION REQUIRED: BROADCAST CLEARANCE
@@ -180,11 +205,11 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                                         ...formData, 
                                         audience: aud,
                                         isMajor: aud === 'CHURCH_WIDE',
-                                        departmentId: aud === 'CHURCH_WIDE' ? '' : (user?.departmentId || '')
+                                        departmentId: aud === 'CHURCH_WIDE' ? '' : ownDepartmentId
                                     });
                                 }}
                             >
-                                <FormControlLabel value="DEPARTMENTAL" control={<Radio sx={{ color: 'var(--cyan)' }} />} label={<Typography variant="body2" fontWeight={700}>Internal (Department members)</Typography>} />
+                                <FormControlLabel disabled={!departmentalAvailable} value="DEPARTMENTAL" control={<Radio sx={{ color: 'var(--cyan)' }} />} label={<Typography variant="body2" fontWeight={700}>Internal (Department members)</Typography>} />
                                 <FormControlLabel value="CHURCH_WIDE" control={<Radio sx={{ color: 'var(--cyan)' }} />} label={<Typography variant="body2" fontWeight={700}>Church-Wide</Typography>} />
                             </RadioGroup>
                         </FormControl>
@@ -215,7 +240,7 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                             </Box>
                         )}
 
-                        {user?.role === 'SUPER_ADMIN' && formData.audience === 'DEPARTMENTAL' && (
+                        {canPickDepartment && formData.audience === 'DEPARTMENTAL' && (
                             <TextField
                                 select
                                 label="Target Sector"
@@ -231,7 +256,7 @@ export default function AnnouncementFormModal({ open, onClose, announcement, onS
                         )}
 
                         {!announcement && (
-                            <FormControl fullWidth required>
+                            <FormControl fullWidth required={needsPastors}>
                                 <InputLabel id="ann-pastors-label" sx={{ fontWeight: 700 }}>CHOOSE 2 AUTHORIZING PASTORS</InputLabel>
                                 <Select
                                     labelId="ann-pastors-label"

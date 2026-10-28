@@ -1,12 +1,27 @@
 import { Request, Response } from 'express';
-import prisma from '../../utils/prisma.js';
+import prisma, { rawPrisma } from '../../utils/prisma.js';
+import { cleanDepartmentName, departmentKey } from '../../utils/department-names.js';
 import { logAudit } from '../../utils/audit.js';
-import { getOrSetCache, getCachedData, setCachedData, invalidateCache } from '../../utils/redis.js';
+import { getOrSetCache, getCachedData, setCachedData, invalidateCache, liveCacheKey } from '../../utils/redis.js';
 import { hasPermission } from '../../utils/permissions.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
 
 export const createDepartment = catchAsync(async (req: any, res: Response) => {
-    const { name, description, leaderId } = req.body;
+    const { description, leaderId } = req.body;
+    const name = typeof req.body.name === 'string' ? cleanDepartmentName(req.body.name) : '';
+    if (!name) throw new AppError('Department name is required', 400);
+
+    const key = departmentKey(name);
+    const all = await rawPrisma.department.findMany({ select: { name: true, deletedAt: true } });
+    const clash = all.find(d => departmentKey(d.name) === key);
+    if (clash) {
+        throw new AppError(
+            clash.deletedAt
+                ? `A deleted department named "${clash.name}" already exists. Restore it instead of creating a duplicate.`
+                : `Department "${clash.name}" already exists.`,
+            409
+        );
+    }
 
     const department = await prisma.department.create({
         data: { name, description, leaderId },
@@ -23,7 +38,7 @@ export const createDepartment = catchAsync(async (req: any, res: Response) => {
 });
 
 export const getDepartments = catchAsync(async (req: Request, res: Response) => {
-    const cacheKey = 'departments:all';
+    const cacheKey = liveCacheKey('departments', 'all');
     const departments = await getOrSetCache(cacheKey, async () => {
         return prisma.department.findMany({
             include: { leaders: { select: { id: true, name: true } } }

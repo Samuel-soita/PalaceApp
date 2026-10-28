@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useQueryClient, useMutation } from '@tanstack/react-query';
 import api from '../lib/api-client';
 import {
-    Typography, Grid, Card, CardContent, Box, Button, Chip, Divider, LinearProgress,
+    Typography, Grid, Card, CardContent, Box, Button, Chip, Divider, 
     Avatar, Skeleton, useMediaQuery, useTheme, Modal, Backdrop, Fade, Stack, Snackbar, Alert, Container
 } from '@mui/material';
 import {
@@ -75,8 +75,6 @@ export default function DepartmentDashboard() {
     });
     const [intelDetail, setIntelDetail] = useState<any>(null);
 
-    const isReady = !!effectiveId && effectiveId !== 'undefined';
-
     // --- Data Streams (Tactical Local Mirror) ---
     const { data: syncData, isLoading: isSyncLoading } = useLocalFirstDashboard(effectiveId);
 
@@ -109,7 +107,7 @@ export default function DepartmentDashboard() {
             onSuccess: () => {
                 setAppointmentModalOpen(false);
                 queryClient.invalidateQueries(['dashboard-sync', effectiveId]);
-                setToast({ open: true, message: 'Appointment request submitted to the Administrator.', severity: 'success' });
+                setToast({ open: true, message: 'Appointment request submitted. You will be notified once it is scheduled.', severity: 'success' });
             },
             onError: (err: any) => {
                 setToast({ open: true, message: err.response?.data?.error || 'Failed to submit request.', severity: 'error' });
@@ -275,11 +273,13 @@ export default function DepartmentDashboard() {
                                         <Sparkles size={24} color="var(--cyan)" />
                                         <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1 }}>MINISTERIAL DEVOTION</Typography>
                                     </Box>
-                                    <Chip 
-                                        label={devotion?.themeOfMonth?.toUpperCase() || settings?.themeOfMonth?.toUpperCase()} 
-                                        size="small" icon={<Sparkles size={10} />} variant="outlined" 
-                                        sx={{ color: 'var(--cyan)', borderColor: 'var(--cyan-glow)', fontWeight: 900, mb: 3 }} 
-                                    />
+                                    {(devotion?.themeOfMonth || settings?.themeOfMonth) && (
+                                        <Chip 
+                                            label={String(devotion?.themeOfMonth || settings?.themeOfMonth || '').toUpperCase()} 
+                                            size="small" icon={<Sparkles size={10} />} variant="outlined" 
+                                            sx={{ color: 'var(--cyan)', borderColor: 'var(--cyan-glow)', fontWeight: 900, mb: 3 }} 
+                                        />
+                                    )}
                                     
                                     {!devotion ? (
                                         <Box sx={{ p: 4, textAlign: 'center', border: '1px dashed rgba(0,255,255,0.3)', bgcolor: 'rgba(0,255,255,0.02)', borderRadius: 2 }}>
@@ -296,8 +296,8 @@ export default function DepartmentDashboard() {
 
                                             <Divider sx={{ mb: 3, opacity: 0.1 }} />
 
-                                            <Box display="flex" justifyContent="space-between" alignItems="center">
-                                                <Stack direction="row" spacing={1}>
+                                            <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1.5}>
+                                                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                                                     {[
                                                         { icon: ThumbsUp, label: 'Amen', value: 'AMEN', type: 'AMEN' },
                                                         { icon: Smile, label: 'Blessed', value: '😊', type: 'EMOJI' },
@@ -306,7 +306,7 @@ export default function DepartmentDashboard() {
                                                         const count = devotion?.interactions?.filter((i: any) => i.value === btn.value).length || 0;
                                                         const isActive = devotion?.interactions?.some((i: any) => i.value === btn.value && i.userId === user?.id);
                                                         return (
-                                                            <Button key={btn.value} size="small" startIcon={<btn.icon size={16} />} onClick={() => devotionMutation.mutate({ type: btn.type, value: btn.value })}
+                                                            <Button key={btn.value} size="small" startIcon={<btn.icon size={16} />} disabled={devotionMutation.isLoading} onClick={() => devotionMutation.mutate({ type: btn.type, value: btn.value })}
                                                                 sx={{ 
                                                                     borderRadius: 20, px: 2, 
                                                                     bgcolor: isActive ? 'rgba(0,180,216,0.2)' : 'rgba(255,255,255,0.03)', 
@@ -411,7 +411,7 @@ export default function DepartmentDashboard() {
                     <Grid item xs={12} lg={5}>
                         <Stack spacing={4}>
                             {/* PARTNER CTA - Apex Right Column Stack */}
-                            <Card className="holographic-card" sx={{ borderRadius: 0, border: '1px solid rgba(255, 165, 0, 0.4)', background: 'rgba(255, 165, 0, 0.05)' }}>
+                            {!isPartner && <Card className="holographic-card" sx={{ borderRadius: 0, border: '1px solid rgba(255, 165, 0, 0.4)', background: 'rgba(255, 165, 0, 0.05)' }}>
                                 <CardContent sx={{ p: 3 }}>
                                     <Box display="flex" alignItems="center" gap={2} mb={1}>
                                         <Avatar sx={{ bgcolor: 'orange', width: 32, height: 32 }}><Star size={16} /></Avatar>
@@ -430,7 +430,7 @@ export default function DepartmentDashboard() {
                                         sx={{ borderColor: 'orange', color: 'orange', fontWeight: 900, borderRadius: 0, fontSize: '0.65rem', '&:hover': { bgcolor: 'orange', color: 'black' } }}
                                     > ENROLL IN PARTNERSHIP </Button>
                                 </CardContent>
-                            </Card>
+                            </Card>}
 
                             {/* LATEST CHURCH INTEL - Unified Card Structure */}
                             <Card className="holographic-card" sx={{ p: 0, borderRadius: 0 }}>
@@ -565,7 +565,7 @@ export default function DepartmentDashboard() {
                 onClose={() => setEnrollModalOpen(false)}
                 closeAfterTransition
                 BackdropComponent={Backdrop}
-                BackdropProps={{ timeout: 500, sx: { backdropFilter: 'blur(12px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
+                BackdropProps={{ timeout: 200, sx: { backdropFilter: 'blur(12px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
             >
                 <Fade in={enrollModalOpen}>
                     <Box tabIndex={-1} sx={{ 
@@ -631,7 +631,7 @@ export default function DepartmentDashboard() {
                 onClose={() => setAppointmentModalOpen(false)}
                 closeAfterTransition
                 BackdropComponent={Backdrop}
-                BackdropProps={{ timeout: 500, sx: { backdropFilter: 'blur(10px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
+                BackdropProps={{ timeout: 200, sx: { backdropFilter: 'blur(10px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
             >
                 <Fade in={appointmentModalOpen}>
                     <Box sx={{ 

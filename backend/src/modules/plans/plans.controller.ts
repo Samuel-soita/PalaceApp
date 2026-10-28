@@ -1,11 +1,12 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import prisma from '../../utils/prisma.js';
 import { logAudit } from '../../utils/audit.js';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
-import { getOrSetCache, invalidateCache } from '../../utils/redis.js';
+import { getOrSetCache, invalidateCache, liveCacheKey } from '../../utils/redis.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
 import { isGlobalOperator, resolveTargetDepartmentId } from '../../utils/department-accounts.js';
-import { canAutoPublishContent, bishopRoleApproved } from '../../utils/approval-utils.js';
+import { canAutoPublishContent } from '../../utils/approval-utils.js';
+import { assertAwaitingApproval, assertCanSetApprovalStatus, assertPastorSelection, createApprovalChain, notifyApprovers, recordApproval } from '../../utils/approval-chain.js';
 
 export const getPlans = catchAsync(async (req: AuthRequest, res: Response) => {
     const { departmentId, isMajor, page = '1', limit = '10' } = req.query;
@@ -58,7 +59,7 @@ export const getPlans = catchAsync(async (req: AuthRequest, res: Response) => {
         }
     }
 
-    const cacheKey = `plans:${user.role}:${user.departmentId || 'none'}:${departmentId || 'all'}:${isMajor || 'any'}:${page}:${limit}`;
+    const cacheKey = liveCacheKey('plans', `${user.role}:${user.id}:${departmentId || 'all'}:${isMajor || 'any'}:${page}:${limit}`);
 
     const result = await getOrSetCache(cacheKey, async () => {
         const [data, total] = await Promise.all([
@@ -131,56 +132,40 @@ export const createPlan = catchAsync(async (req: AuthRequest, res: Response) => 
     }
 
     const autoApprove = canAutoPublishContent(req.user!.role);
+    assertPastorSelection(autoApprove, pastorIds, 'You must select exactly 2 Pastors to authorize this plan.');
+    const content = String(description || req.body.content || '').trim();
+    if (content.length < 10) {
+        throw new AppError('Plan description must be at least 10 characters.', 400);
+    }
+    const approvalNotice = {
+        title: '📜 Plan Authorization Required',
+        message: `New strategic plan "${title}" requires your executive approval.`
+    };
+    let approverIds: string[] = [];
 
     const plan = await prisma.$transaction(async (tx) => {
         const newPlan = await tx.plan.create({
             data: {
-                type, title, content: description || req.body.content || "",
+                type, title, content,
                 departmentId: targetDeptId,
                 budgetSource: (req.body.budgetSource || 'DEPARTMENT') as any,
                 isMajor: req.body.isMajor === true,
                 approvalStatus: autoApprove ? 'APPROVED' : 'PENDING_APPROVAL',
                 status: 'PLANNED',
+                createdById: req.user!.id,
             } as any,
         });
 
-        if (autoApprove) {
-            return newPlan;
+        if (!autoApprove) {
+            approverIds = await createApprovalChain(tx, 'plan', newPlan.id, pastorIds, approvalNotice);
         }
 
-        // 👨‍⚖️ Initializing Approval Chain for Plans
-        const approvalData: any[] = (pastorIds || []).map((pid: string) => ({
-            planId: newPlan.id,
-            userId: pid,
-            role: 'PASTOR'
-        }));
-
-        const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
-        if (bishop) {
-            approvalData.push({
-                planId: newPlan.id,
-                userId: bishop.id,
-                role: 'BISHOP'
-            });
-        }
-
-        if (approvalData.length > 0) {
-            await tx.planApproval.createMany({ data: approvalData });
-            
-            // 🔔 Notify Authorizers
-            const notifications = approvalData.map((app: any) => ({
-                userId: app.userId,
-                title: '📜 Plan Authorization Required',
-                message: `New strategic plan "${title}" requires your executive approval.`
-            }));
-            await tx.notification.createMany({ data: notifications });
-        }
-        
         return newPlan;
     });
 
     const user = req.user!;
     await logAudit(user.id, 'CREATE', 'PLAN', plan.id, { title, type }, req.ip, req.get('user-agent'));
+    notifyApprovers(approverIds, approvalNotice);
 
     // Invalidate Cache
     await invalidatePlanCache();
@@ -192,63 +177,48 @@ export const approvePlan = catchAsync(async (req: AuthRequest, res: Response) =>
     const { id } = req.params;
     const user = req.user!;
 
-    const existing = await prisma.planApproval.findUnique({
-        where: { planId_userId: { planId: id, userId: user.id } }
-    });
-    if (existing) throw new AppError('Already approved', 400);
-
-    const planData = await prisma.plan.findUnique({ where: { id } });
+    const planData = await prisma.plan.findFirst({ where: { id, deletedAt: null } });
     if (!planData) throw new AppError('Plan not found', 404);
+    assertAwaitingApproval(planData.approvalStatus);
 
-    const totalApprovals = await prisma.$transaction(async (tx) => {
-        await tx.planApproval.create({
-            data: {
-                planId: id,
-                userId: user.id,
-                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role) ? 'PASTOR' : user.role)
-            }
-        });
-
-        const allApprovals = await tx.planApproval.findMany({ where: { planId: id } });
-        const bishopApproved = bishopRoleApproved(allApprovals);
-        const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR').length;
-
-        const quorumMet = bishopApproved && pastorCount >= 2;
-
-        if (quorumMet) {
+    const { approvals, quorumMet } = await prisma.$transaction(async (tx) => {
+        const result = await recordApproval(tx, 'plan', id, user);
+        if (result.quorumMet) {
             await tx.plan.update({
                 where: { id },
                 data: { approvalStatus: 'APPROVED' }
             });
         }
-        return allApprovals.length;
+        return result;
     });
 
-    const refreshedPlan = await prisma.plan.findUnique({ where: { id } });
-    if (refreshedPlan?.approvalStatus === 'APPROVED') {
+    if (quorumMet) {
         await logAudit(user.id, 'PUBLISH', 'PLAN', id, { title: planData.title }, req.ip, req.get('user-agent'));
-        
-        // Invalidate Cache
-        await invalidatePlanCache();
     }
+    await invalidatePlanCache();
 
-    res.json({ message: 'Approval recorded', totalApprovals });
+    res.json({
+        message: quorumMet ? 'Plan approved' : 'Approval recorded',
+        totalApprovals: approvals.filter((a) => a.approved).length,
+        approvalStatus: quorumMet ? 'APPROVED' : planData.approvalStatus
+    });
 });
 
 export const updatePlanStatus = catchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const { approvalStatus } = req.body;
+    const user = req.user!;
 
     if (!['APPROVED', 'REJECTED'].includes(approvalStatus)) {
         throw new AppError('Invalid approval status', 400);
     }
+    await assertCanSetApprovalStatus(prisma, 'plan', id, user, approvalStatus);
 
     const plan = await prisma.plan.update({
         where: { id },
         data: { approvalStatus }
     });
 
-    const user = req.user!;
     await logAudit(user.id, 'FORCE_APPROVE', 'PLAN', id, { title: plan.title, approvalStatus }, req.ip, req.get('user-agent'));
     
     // Invalidate plan cache
@@ -278,16 +248,21 @@ export const updatePlan = catchAsync(async (req: AuthRequest, res: Response) => 
         throw new AppError('INSUFFICIENT SECTORAL LIQUIDITY: A minimum departmental reserve of 1,500 KES is required for all operations.', 402);
     }
 
-    const { description, ...rest } = req.body;
-    
-    // Explicit Mapping for Database Consistency
+    const {
+        description,
+        pastorIds: _pastorIds,
+        approvalStatus: _approvalStatus,
+        budgetNeeded: _budgetNeeded,
+        departmentId,
+        ...rest
+    } = req.body;
+
+    const canMoveDepartment = isGlobalOperator(user.role) && departmentId && departmentId !== plan.departmentId;
     const updateData = {
         ...rest,
+        ...(canMoveDepartment && { departmentId }),
         content: description || req.body.content || plan.content,
     };
-
-    // Remove pastorIds if present (handled via specific auth logic in future or create-only)
-    delete (updateData as any).pastorIds;
 
     const updatedPlan = await prisma.plan.update({
         where: { id: req.params.id },
@@ -318,7 +293,7 @@ export const deletePlan = catchAsync(async (req: AuthRequest, res: Response) => 
     if (!canDelete) throw new AppError('Access denied: Executive or Sector priority required', 403);
 
     if (user.role === 'DEPARTMENT_LEADER') {
-        if (plan.status !== 'COMPLETED' && plan.status !== 'TACKLED' && plan.status !== 'REJECTED') {
+        if (plan.status !== 'COMPLETED' && plan.status !== 'TACKLED' && plan.approvalStatus !== 'REJECTED') {
             throw new AppError('DELETION RESTRICTED: Plans can only be decommissioned after achievement (COMPLETED/TACKLED).', 403);
         }
     } else if (plan.approvalStatus === 'APPROVED' && user.role !== 'SUPER_ADMIN') {

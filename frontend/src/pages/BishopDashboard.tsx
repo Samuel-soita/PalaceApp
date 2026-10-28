@@ -1,31 +1,28 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { 
-    Switch, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, TextField, 
-    IconButton, LinearProgress, Stack, Divider, Badge, Paper, Tooltip, Snackbar, Alert,
-    Container, Grid, Typography, Box, Card, CardContent, Button, Avatar, Chip
+    Switch, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, 
+    LinearProgress, Stack, Snackbar, Alert,
+    Container, Grid, Typography, Box, Card, CardContent, Button, Chip
 } from '@mui/material';
 import { 
-    Calendar, Target, Search, UserCheck, Smartphone, CheckCircle, Zap, ShieldCheck, PenTool, Trash2, 
-    ArrowRight, MessageSquare, Bell, Star, ChevronRight, Filter, LayoutDashboard, Briefcase, Coins,
-    ArrowUpRight, Clock, CheckCircle2, AlertCircle, Send, Wrench, FileText, SwitchCamera,
-    Shield, Activity, Users, Landmark, Globe, TrendingUp
-} from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
-import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
+    Calendar, Target, Zap, ShieldCheck, 
+    Bell, Briefcase, Coins,
+    ArrowUpRight, AlertCircle, Wrench, FileText, 
+    Shield, Users, Landmark, Globe} from 'lucide-react';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { useLiveQuery } from 'dexie-react-hooks';
 import api from '../lib/api-client';
+import { PASTOR_MODULE_KEYS, findPastorModuleAssignment, type PastorModuleKey } from '../utils/pastor-modules';
 import { db } from '../lib/db';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { Link } from 'react-router-dom';
 import FinancialLedger from '../components/dashboard/FinancialLedger';
 import RepairApprovalManager from '../components/dashboard/RepairApprovalManager';
 import MissionReportsViewer from '../components/dashboard/MissionReportsViewer';
-import { OperationalTimeline } from '../components/dashboard/OperationalTimeline';
 import EventFormModal from '../components/modals/EventFormModal';
 import ProjectFormModal from '../components/modals/ProjectFormModal';
 import PlanFormModal from '../components/modals/PlanFormModal';
 import AnnouncementFormModal from '../components/modals/AnnouncementFormModal';
-import DevotionFormModal from '../components/modals/DevotionFormModal';
 import DepartmentReportModal from '../components/modals/DepartmentReportModal';
 import ThemeFormModal from '../components/modals/ThemeFormModal';
 import { ExecutiveTaskTrack } from '../components/dashboard/ExecutiveTaskTrack';
@@ -34,14 +31,14 @@ import AppointmentManager from '../components/dashboard/AppointmentManager';
 import BaptismManager from '../components/dashboard/BaptismManager';
 import DedicationManager from '../components/dashboard/DedicationManager';
 import PartnershipManager from '../components/dashboard/PartnershipManager';
+import PendingApprovalsPanel from '../components/dashboard/PendingApprovalsPanel';
 import { useLocalFirstDashboard } from '../hooks/useLocalFirstDashboard';
 
 export default function BishopDashboard() {
-    const { user } = useAuth();
     const queryClient = useQueryClient();
     
     // --- Data Streams (Tactical Mirror) ---
-    const { data: syncData, isLoading: isSyncLoading } = useLocalFirstDashboard();
+    const { data: syncData } = useLocalFirstDashboard();
 
     const { data: departments } = useQuery(['departments'], async () => {
         const res = await api.get('/departments');
@@ -74,7 +71,7 @@ export default function BishopDashboard() {
 
     // --- MISSION: OFFLINE-FIRST PASTORAL LIST ---
     const pastorsData = useLiveQuery(() => 
-        db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role) && u.status === 'ACTIVE').toArray()
+        db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR'].includes(u.role) && u.status === 'ACTIVE').toArray()
     , []) || [];
     const isPastorsLoading = false;
 
@@ -95,7 +92,7 @@ export default function BishopDashboard() {
             if (active) {
                 await api.post('/users/pastor/modules/assign', { pastorId: userId, moduleKey, permissions: {} });
             } else {
-                const existing = pastorModules.find(m => m.moduleKey === moduleKey);
+                const existing = findPastorModuleAssignment(pastorModules, moduleKey as PastorModuleKey);
                 if (existing) {
                     await api.delete(`/users/pastor/modules/revoke/${existing.id}`);
                 }
@@ -115,47 +112,6 @@ export default function BishopDashboard() {
 
     // --- Intelligence Analytics ---
     const totalBalance = syncData?.account?.balance || 0;
-    const pendingApprovals = syncData?.transactions?.filter((tx: any) => tx.status !== 'APPROVED' && tx.type === 'WITHDRAWAL').length || 0;
-
-    // ─── Delete Mutation ─────────────────────────────────────────────────────
-    const deleteMutation = useMutation(
-        async ({ id, type }: { id: string; type: string }) => {
-            const endpoint = {
-                PROJECT: `/projects/${id}`,
-                EVENT: `/events/${id}`,
-                PLAN: `/plans/${id}`,
-                MEETING: `/meetings/${id}`,
-                ANNOUNCEMENT: `/announcements/${id}`
-            }[type];
-            return api.delete(endpoint!);
-        },
-        {
-            onSuccess: () => {
-                queryClient.invalidateQueries(['dashboard-sync']);
-                setToast({ open: true, message: 'Record decommissioned successfully.', severity: 'success' });
-            },
-            onError: (err: any) => {
-                setToast({ 
-                    open: true, 
-                    message: err.response?.data?.error || 'Failed to delete record.', 
-                    severity: 'error' 
-                });
-            }
-        }
-    );
-
-    const handleEdit = (item: any) => {
-        const type = item.type || (item.priority ? 'ANNOUNCEMENT' : 'PROJECT');
-        if (type === 'PROJECT') { setEditingProject(item); setProjectModalOpen(true); }
-        if (type === 'EVENT') { setEditingEvent(item); setEventModalOpen(true); }
-        if (type === 'PLAN') { setEditingPlan(item); setPlanModalOpen(true); }
-        if (type === 'ANNOUNCEMENT' || type === 'ALERT') { setEditingAnnouncement(item); setAnnouncementModalOpen(true); }
-    };
-
-    const handleDelete = (item: any) => {
-        const type = item.type || (item.priority ? 'ANNOUNCEMENT' : 'PROJECT');
-        deleteMutation.mutate({ id: item.id, type });
-    };
 
     return (
         <DashboardLayout>
@@ -230,6 +186,13 @@ export default function BishopDashboard() {
                         </Alert>
                     </Box>
                 )}
+
+                <PendingApprovalsPanel
+                    projects={syncData?.projects}
+                    events={syncData?.events}
+                    plans={syncData?.plans}
+                    announcements={syncData?.announcements}
+                />
 
                 <Grid container spacing={4}>
                     {/* TOP ANALYTICS STRIP */}
@@ -374,7 +337,7 @@ export default function BishopDashboard() {
                                             <Globe size={24} color="var(--primary)" />
                                             <Typography variant="h5" fontWeight="950" sx={{ letterSpacing: -1, fontSize: { xs: '1.1rem', md: '1.5rem' } }}>SECTORAL OVERWATCH</Typography>
                                         </Box>
-                                        <Button size="small" sx={{ color: 'var(--cyan)', fontWeight: 900 }}>DASHBOARD MAP</Button>
+                                        <Button size="small" component={Link} to="/departments" sx={{ color: 'var(--cyan)', fontWeight: 900, flexShrink: 0, whiteSpace: 'nowrap' }}>DASHBOARD MAP</Button>
                                     </Box>
                                     
                                     <Grid container spacing={2}>
@@ -626,14 +589,8 @@ export default function BishopDashboard() {
                     </Typography>
                     {moduleLoading ? <CircularProgress size={24} sx={{ m: 'auto', display: 'block' }} /> : (
                         <Stack spacing={2}>
-                            {[
-                                'DevotionPublishing',
-                                'EventOversight',
-                                'IntelligencePublishing',
-                                'PartnershipManagement',
-                                'ChildDedicationRegistry'
-                            ].map((moduleKey) => {
-                                const isActive = pastorModules.some(m => m.moduleKey === moduleKey);
+                            {PASTOR_MODULE_KEYS.map((moduleKey) => {
+                                const isActive = !!findPastorModuleAssignment(pastorModules, moduleKey);
                                 return (
                                     <Box key={moduleKey} display="flex" justifyContent="space-between" alignItems="center" p={1.5} sx={{ bgcolor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
                                         <Typography variant="body2" fontWeight="700">{moduleKey}</Typography>

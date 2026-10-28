@@ -41,7 +41,7 @@ export const createRepairRequest = async (req: Request, res: Response) => {
 
         // --- NOTIFICATION 1: To all Pastors ---
         const pastors = await prisma.user.findMany({ 
-            where: { role: { in: ['PASTOR', 'ASSOCIATE_PASTOR'] } } 
+            where: { role: 'PASTOR' } 
         });
         const notifications = pastors.map(p => ({
             userId: p.id,
@@ -75,21 +75,22 @@ export const approveRepair = async (req: Request, res: Response) => {
         let notificationMsg = '';
 
         // 1. Pastor 1 Approval
-        if (repair.status === 'PENDING_PASTOR_1' && (user.role === 'PASTOR' || user.role === 'ASSOCIATE_PASTOR')) {
+        if (repair.status === 'PENDING_PASTOR_1' && user.role === 'PASTOR') {
             nextStatus = 'PENDING_PASTOR_2';
             // Notify other pastors
             const otherPastors = await prisma.user.findMany({ 
-                where: { role: { in: ['PASTOR', 'ASSOCIATE_PASTOR'] }, id: { not: user.id } } 
+                where: { role: 'PASTOR', id: { not: user.id } } 
             });
             notificationTargets = otherPastors.map(p => p.id);
-            notificationMsg = `Pastor ${user.name} has signed the repair request for "${repair.instrumentName}". A second signature is required.`;
+            const signer = await prisma.user.findUnique({ where: { id: user.id }, select: { name: true } });
+            notificationMsg = `${signer?.name || 'A pastor'} has signed the repair request for "${repair.instrumentName}". A second signature is required.`;
         } 
         // 2. Pastor 2 Approval
-        else if (repair.status === 'PENDING_PASTOR_2' && (user.role === 'PASTOR' || user.role === 'ASSOCIATE_PASTOR')) {
+        else if (repair.status === 'PENDING_PASTOR_2' && user.role === 'PASTOR') {
             const existingApproval = await prisma.repairApproval.findFirst({
-                where: { repairId: id, role: 'PASTOR_1' }
+                where: { repairId: id, userId: user.id }
             });
-            if (existingApproval?.userId === user.id) return res.status(400).json({ error: 'Already approved by you. Need a second pastor.' });
+            if (existingApproval) return res.status(400).json({ error: 'Already approved by you. Need a second pastor.' });
             
             nextStatus = 'PENDING_ADMIN';
             // Notify Admin
@@ -164,8 +165,8 @@ export const getRepairs = async (req: Request, res: Response) => {
             where,
             include: {
                 department: true,
-                requester: true,
-                approvals: { include: { user: true } }
+                requester: { select: { id: true, name: true, role: true, avatarUrl: true } },
+                approvals: { include: { user: { select: { id: true, name: true, role: true } } } }
             },
             orderBy: { createdAt: 'desc' }
         });
@@ -184,9 +185,21 @@ export const updateRepair = async (req: Request, res: Response) => {
 
         if (!repair) return res.status(404).json({ error: 'Repair not found' });
 
+        if (user.role === 'DEPARTMENT_LEADER') {
+            const ownsDept = repair.departmentId === user.departmentId
+                || user.managedDepartments?.some((d: any) => d.id === repair.departmentId);
+            if (!ownsDept) return res.status(403).json({ error: 'You can only edit repairs for your own department.' });
+        }
+
         // Operational Lock
         if (repair.status === 'APPROVED' && user.role === 'DEPARTMENT_LEADER') {
             return res.status(403).json({ error: 'OPERATIONAL LOCK: Fully approved repairs are locked. Contact Admin for changes.' });
+        }
+
+        const { instrumentName, problemDescription, estimatedCost, budgetSource, status } = req.body;
+        // Approval states are only reachable through the signature chain; the only manual transition is marking an approved repair as tackled.
+        if (status !== undefined && !(status === 'TACKLED' && repair.status === 'APPROVED')) {
+            return res.status(400).json({ error: 'Repair status can only be changed through the approval chain.' });
         }
 
         // ─── Universal Financial Safeguard on Update ───
@@ -198,8 +211,11 @@ export const updateRepair = async (req: Request, res: Response) => {
         const updated = await prisma.technicalRepair.update({
             where: { id },
             data: {
-                ...req.body,
-                estimatedCost: req.body.estimatedCost ? Number(req.body.estimatedCost) : repair.estimatedCost
+                ...(instrumentName !== undefined && { instrumentName }),
+                ...(problemDescription !== undefined && { problemDescription }),
+                ...(budgetSource !== undefined && { budgetSource }),
+                ...(status !== undefined && { status }),
+                estimatedCost: estimatedCost ? Number(estimatedCost) : repair.estimatedCost
             }
         });
 

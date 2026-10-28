@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { 
     Dialog, DialogTitle, DialogContent, Box, Typography, Card, 
     CardContent, Avatar, Chip, Button, IconButton, 
     Divider, Grid, Alert, TextField
 } from '@mui/material';
 import { 
-    Baby, X, CheckCircle, Clock as ClockIcon, Shield as ShieldIcon, 
-    User, ArrowRight, Info, CreditCard
+    Baby, X, Clock as ClockIcon, Shield as ShieldIcon, 
+    Info, CreditCard
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api-client';
@@ -28,8 +28,8 @@ export default function DedicationManager({ open, onClose }: { open: boolean, on
     const [dedicationCardNumber, setDedicationCardNumber] = useState('');
     const [paymentReference, setPaymentReference] = useState('');
 
-    const { data: children = [], isLoading } = useQuery(['all-children'], async () => {
-        const res = await api.get('/children');
+    const { data: children = [] } = useQuery(['all-children'], async () => {
+        const res = await api.get('/children/all', { params: { limit: 200 } });
         return res.data.data || [];
     }, { enabled: open });
 
@@ -37,7 +37,12 @@ export default function DedicationManager({ open, onClose }: { open: boolean, on
 
     const updateStatusMutation = useMutation(
         async ({ id, workflowStatus, plannedDate, plannedTime, dedicationCardNumber, paymentReference }: any) => {
-            return api.patch(`/workflows/dedication/${id}/status`, { workflowStatus, plannedDate, plannedTime, dedicationCardNumber, paymentReference, isDedicationPaid: true });
+            // Payment is only confirmed when the admin verifies it (ADMIN_PAYMENT_VERIFICATION -> BISHOP_RITE_PENDING).
+            const verifiesPayment = workflowStatus === 'BISHOP_RITE_PENDING';
+            return api.patch(`/workflows/dedication/${id}/status`, {
+                workflowStatus, plannedDate, plannedTime, dedicationCardNumber,
+                ...(verifiesPayment ? { dedicationPaymentReference: paymentReference, isDedicationPaid: true } : {}),
+            });
         },
         {
             onSuccess: () => {
@@ -46,7 +51,9 @@ export default function DedicationManager({ open, onClose }: { open: boolean, on
                 setPlannedDate('');
                 setPlannedTime('');
                 setDedicationCardNumber('');
-            }
+                setPaymentReference('');
+            },
+            onError: (err: any) => alert(err.response?.data?.error || 'Could not advance this dedication.')
         }
     );
 
@@ -62,12 +69,16 @@ export default function DedicationManager({ open, onClose }: { open: boolean, on
         const status = child.workflowStatus;
 
         if (role === 'WATUA' || role === 'SUPER_ADMIN') return true;
-        if ((role === 'PASTOR' || role === 'ASSOCIATE_PASTOR') && status === 'PENDING_DEDICATION') return true;
+        if (role === 'PASTOR' && status === 'PENDING_DEDICATION') return true;
         if ((role === 'SYSTEM_ADMIN' || role === 'SECRETARY') && status === 'ADMIN_PAYMENT_VERIFICATION') return true;
         if (role === 'SUPER_ADMIN' && status === 'BISHOP_RITE_PENDING') return true;
 
         return false;
     };
+
+    const parentNotCleared = !!selectedChild?.parent
+        && selectedChild.workflowStatus === 'PENDING_DEDICATION'
+        && (selectedChild.parent.isCardPaid === false || (selectedChild.parent.status && selectedChild.parent.status !== 'ACTIVE'));
 
     const getActionLabel = (status: string) => {
         switch (status) {
@@ -99,7 +110,7 @@ export default function DedicationManager({ open, onClose }: { open: boolean, on
                     <Baby size={24} color="orange" />
                     <Typography variant="h6" fontWeight="950" className="glow-text">CHILD DEDICATION MISSION CONTROL</Typography>
                 </Box>
-                <IconButton onClick={onClose} size="small" sx={{ color: 'text.secondary' }}>
+                <IconButton aria-label="close" onClick={onClose} size="small" sx={{ color: 'text.secondary' }}>
                     <X size={22} />
                 </IconButton>
             </DialogTitle>
@@ -202,6 +213,13 @@ export default function DedicationManager({ open, onClose }: { open: boolean, on
 
                                 {canApprove(selectedChild) ? (
                                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                        {parentNotCleared && (
+                                            <Alert severity="warning" sx={{ borderRadius: 2 }}>
+                                                <Typography variant="caption" fontWeight={900}>
+                                                    The parent&apos;s membership card payment or account is not verified. Ask administration to verify the parent before scheduling.
+                                                </Typography>
+                                            </Alert>
+                                        )}
                                         {selectedChild.workflowStatus === 'PENDING_DEDICATION' && (
                                             <Grid container spacing={2}>
                                                 <Grid item xs={6}>
@@ -264,7 +282,7 @@ export default function DedicationManager({ open, onClose }: { open: boolean, on
                                                 dedicationCardNumber,
                                                 paymentReference
                                             })}
-                                            disabled={updateStatusMutation.isLoading || 
+                                            disabled={updateStatusMutation.isLoading || parentNotCleared ||
                                                 (selectedChild.workflowStatus === 'PENDING_DEDICATION' && (!plannedDate || !plannedTime)) ||
                                                 (selectedChild.workflowStatus === 'ADMIN_PAYMENT_VERIFICATION' && (!dedicationCardNumber || !paymentReference))
                                             }

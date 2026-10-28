@@ -64,7 +64,12 @@ export const getMessages = async (req: Request, res: Response) => {
 };
 
 export const createMessage = async (req: Request, res: Response) => {
-    const { content, senderId, receiverId, departmentId, projectId, eventId, chatType, taggedUserIds, taggedDepartmentIds } = req.body;
+    const { content, receiverId, departmentId, projectId, eventId, chatType, taggedUserIds, taggedDepartmentIds } = req.body;
+    const senderId = (req as any).user?.id;
+
+    if (typeof content !== 'string' || !content.trim()) {
+        return res.status(400).json({ error: 'Message content is required.' });
+    }
 
     // Inappropriate keywords check (Moderation)
     const inappropriateKeywords = ['gossip', 'attack', 'abuse', 'hate', 'foul', 'badword']; // Placeholder keywords
@@ -80,15 +85,24 @@ export const createMessage = async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Your account is suspended due to moderation policy.' });
         }
 
+        const isScoped = Boolean(receiverId || projectId || eventId);
+        const resolvedChatType = chatType || (departmentId || isScoped ? 'DEPARTMENT' : 'GLOBAL');
+        if (!isScoped && resolvedChatType !== 'GLOBAL' && sender.role === 'DEPARTMENT_LEADER') {
+            const managed = ((req as any).user?.managedDepartments || []).map((d: any) => d.id);
+            if (!departmentId || (departmentId !== sender.departmentId && !managed.includes(departmentId))) {
+                return res.status(403).json({ error: 'You can only post in your own department channel.' });
+            }
+        }
+
         const message = await prisma.message.create({
             data: {
                 content,
                 senderId,
                 receiverId,
-                departmentId,
+                departmentId: resolvedChatType === 'GLOBAL' ? null : departmentId,
                 projectId,
                 eventId,
-                chatType: chatType || 'DEPARTMENT',
+                chatType: resolvedChatType,
                 isFlagged,
                 flagReason: isFlagged ? 'Inappropriate content detected' : null,
                 taggedDepartmentIds: taggedDepartmentIds || [],
@@ -188,6 +202,15 @@ export const updateMessage = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { content } = req.body;
     try {
+        const existing = await prisma.message.findUnique({ where: { id } });
+        if (!existing) return res.status(404).json({ error: 'Message not found.' });
+        if (existing.senderId !== (req as any).user?.id) {
+            return res.status(403).json({ error: 'You can only edit your own messages.' });
+        }
+        if (typeof content !== 'string' || !content.trim()) {
+            return res.status(400).json({ error: 'Message content is required.' });
+        }
+
         const message = await prisma.message.update({
             where: { id },
             data: { content, isEdited: true },
@@ -208,6 +231,13 @@ export const updateMessage = async (req: Request, res: Response) => {
 export const deleteMessage = async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
+        const existing = await prisma.message.findUnique({ where: { id } });
+        if (!existing) return res.status(404).json({ error: 'Message not found.' });
+        const actor = (req as any).user;
+        if (existing.senderId !== actor?.id && !['SUPER_ADMIN', 'WATUA'].includes(actor?.role)) {
+            return res.status(403).json({ error: 'You can only delete your own messages.' });
+        }
+
         // Soft delete
         const message = await prisma.message.update({
             where: { id },

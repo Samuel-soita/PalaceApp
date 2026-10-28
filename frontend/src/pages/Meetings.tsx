@@ -1,14 +1,12 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../lib/db';
-import api from '../lib/api-client';
 import {
     Card, CardContent, Typography, Grid, Button, Box, Chip,
     Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem,
-    IconButton, Tooltip, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-    FormControl, InputLabel, Select, Checkbox, ListItemText
+    IconButton, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow
 } from '@mui/material';
-import { Plus, Calendar, Clock, MapPin, Edit, Trash2, Users, FileText, ChevronRight } from 'lucide-react';
+import { Plus, Calendar, Clock, MapPin, Edit, Trash2 } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
 import { executeApiFirstMutation } from '../lib/api-first-mutation';
@@ -22,27 +20,41 @@ export default function Meetings() {
         date: '',
         time: '',
         venue: '',
-        meetingType: 'REVIEW',
+        meetingType: 'IN_PERSON',
         agenda: '',
         departmentId: '',
-        meetingStatus: 'PENDING_APPROVAL',
-        pastorIds: [] as string[]
+        meetingStatus: 'SCHEDULED',
     });
 
-    const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+    const isLeader = user?.role === 'DEPARTMENT_LEADER';
+    const isExecutive = ['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'SECRETARY'].includes(user?.role || '');
+    const canSchedule = isExecutive || isLeader;
+    const canEdit = (meeting: any) => isExecutive || (isLeader && meeting.departmentId === user?.departmentId);
+    const canDelete = (meeting: any) => (isExecutive && user?.role !== 'SECRETARY') || (isLeader && meeting.departmentId === user?.departmentId);
 
     const [page, setPage] = useState(1);
     const limit = 10;
 
     const meetings = useLiveQuery(() => db.meetings.orderBy('createdAt').reverse().toArray(), []) || [];
     const meta = { total: meetings.length, totalPages: Math.ceil((meetings.length || 1) / limit) };
+    const pagedMeetings = meetings.slice((page - 1) * limit, page * limit);
 
     const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
-    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
+
+    const typeLabel = (type: string) => ({ IN_PERSON: 'In Person', VIRTUAL: 'Virtual', HYBRID: 'Hybrid' } as Record<string, string>)[type] || type;
+    const toDateInput = (value: string) => {
+        const d = new Date(value);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    const confirmDelete = (meeting: any) => {
+        if (window.confirm(`Delete the briefing "${meeting.title}"?`)) {
+            handleAction({ id: meeting.id }, 'DELETE', meeting.id);
+        }
+    };
 
     const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
         const actionId = id || payload.id;
-        const { department, syncStatus, ...apiPayload } = payload;
+        const { department, syncStatus, id: _id, ...apiPayload } = payload;
 
         try {
             await executeApiFirstMutation({
@@ -77,14 +89,13 @@ export default function Meetings() {
             setEditMeeting(meeting);
             setFormData({
                 title: meeting.title,
-                date: new Date(meeting.date).toISOString().split('T')[0],
+                date: toDateInput(meeting.date),
                 time: meeting.time,
                 venue: meeting.venue,
                 meetingType: meeting.meetingType,
-                agenda: meeting.agenda,
-                departmentId: meeting.departmentId,
+                agenda: meeting.agenda || '',
+                departmentId: meeting.departmentId || '',
                 meetingStatus: meeting.meetingStatus,
-                pastorIds: []
             });
         } else {
             setEditMeeting(null);
@@ -93,11 +104,10 @@ export default function Meetings() {
                 date: '',
                 time: '',
                 venue: '',
-                meetingType: 'REVIEW',
+                meetingType: 'IN_PERSON',
                 agenda: '',
-                departmentId: isSuperAdmin ? '' : user?.departmentId || '',
-                meetingStatus: 'PENDING_APPROVAL',
-                pastorIds: []
+                departmentId: isLeader ? user?.departmentId || '' : '',
+                meetingStatus: 'SCHEDULED',
             });
         }
         setOpen(true);
@@ -110,22 +120,33 @@ export default function Meetings() {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        const date = new Date(`${formData.date}T${formData.time || '00:00'}:00`).toISOString();
+        const common = {
+            title: formData.title,
+            date,
+            time: formData.time,
+            venue: formData.venue,
+            meetingType: formData.meetingType,
+            agenda: formData.agenda || '',
+        };
         if (editMeeting) {
-            handleAction({ ...formData, id: editMeeting.id }, 'PATCH', editMeeting.id);
+            handleAction({ ...common, meetingStatus: formData.meetingStatus, id: editMeeting.id }, 'PATCH', editMeeting.id);
         } else {
-            if (formData.pastorIds.length !== 2) {
-                alert("Exactly 2 Pastors must authorize this Strategic Briefing.");
+            if (!formData.departmentId) {
+                alert(isLeader
+                    ? 'Your account is not linked to a department, so you cannot schedule a briefing.'
+                    : 'Choose the department this briefing is for.');
                 return;
             }
-            handleAction(formData, 'POST');
+            handleAction({ ...common, departmentId: formData.departmentId }, 'POST');
         }
     };
 
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'SCHEDULED': return 'primary';
-            case 'ONGOING': return 'warning';
-            case 'COMPLETED': return 'success';
+            case 'PENDING_APPROVAL': return 'warning';
+            case 'CONCLUDED': return 'success';
             case 'CANCELLED': return 'error';
             default: return 'default';
         }
@@ -142,14 +163,16 @@ export default function Meetings() {
                         Coordinating departmental syncs and executive reviews.
                     </Typography>
                 </div>
-                <Button
-                    variant="contained"
-                    startIcon={<Plus size={20} />}
-                    onClick={() => handleOpen()}
-                    sx={{ width: { xs: '100%', sm: 'auto' }, borderRadius: 3, px: 3, py: 1.5, fontWeight: '900', boxShadow: '0 0 20px var(--primary-glow)' }}
-                >
-                    SCHEDULE BRIEFING
-                </Button>
+                {canSchedule && (
+                    <Button
+                        variant="contained"
+                        startIcon={<Plus size={20} />}
+                        onClick={() => handleOpen()}
+                        sx={{ width: { xs: '100%', sm: 'auto' }, borderRadius: 3, px: 3, py: 1.5, fontWeight: '900', boxShadow: '0 0 20px var(--primary-glow)' }}
+                    >
+                        SCHEDULE BRIEFING
+                    </Button>
+                )}
             </Box>
 
             <Grid container spacing={3} mb={6}>
@@ -170,7 +193,7 @@ export default function Meetings() {
                                 </Box>
                                 <Typography variant="h6" fontWeight="800" gutterBottom noWrap>{meeting.title}</Typography>
                                 <Typography variant="caption" color="textSecondary" sx={{ mb: 3, display: 'block' }}>
-                                    {meeting.department?.name} • {meeting.meetingType}
+                                    {meeting.department?.name || '\u2014'} {'\u2022'} {typeLabel(meeting.meetingType)}
                                 </Typography>
 
                                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -201,11 +224,11 @@ export default function Meetings() {
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {meetings?.map((meeting: any) => (
+                        {pagedMeetings.map((meeting: any) => (
                             <TableRow key={meeting.id} hover>
                                 <TableCell>
                                     <Typography fontWeight="700">{meeting.title}</Typography>
-                                    <Typography variant="caption" color="textSecondary">{meeting.meetingType}</Typography>
+                                    <Typography variant="caption" color="textSecondary">{meeting.department?.name || '\u2014'} {'\u2022'} {typeLabel(meeting.meetingType)}</Typography>
                                 </TableCell>
                                 <TableCell>
                                     <Typography variant="body2" fontWeight="500">{new Date(meeting.date).toDateString()}</Typography>
@@ -215,8 +238,8 @@ export default function Meetings() {
                                     <Chip label={meeting.meetingStatus} color={getStatusColor(meeting.meetingStatus) as any} size="small" sx={{ fontWeight: 'bold' }} />
                                 </TableCell>
                                 <TableCell align="right">
-                                    <IconButton onClick={() => handleOpen(meeting)} size="small" color="primary"><Edit size={18} /></IconButton>
-                                    <IconButton onClick={() => handleAction({ id: meeting.id }, 'DELETE', meeting.id)} size="small" color="error"><Trash2 size={18} /></IconButton>
+                                    {canEdit(meeting) && <IconButton onClick={() => handleOpen(meeting)} size="small" color="primary"><Edit size={18} /></IconButton>}
+                                    {canDelete(meeting) && <IconButton onClick={() => confirmDelete(meeting)} size="small" color="error"><Trash2 size={18} /></IconButton>}
                                 </TableCell>
                             </TableRow>
                         ))}
@@ -224,16 +247,23 @@ export default function Meetings() {
                 </Table>
             </TableContainer>
 
+            {pagedMeetings.length === 0 && (
+                <Box sx={{ py: 8, mt: 2, textAlign: 'center', border: '1px dashed var(--glass-border)', borderRadius: 2 }}>
+                    <Typography variant="subtitle2" fontWeight="900" sx={{ opacity: 0.6 }}>NO BRIEFINGS SCHEDULED</Typography>
+                    <Typography variant="caption" sx={{ display: 'block', mt: 1, opacity: 0.5 }}>Scheduled meetings will appear here.</Typography>
+                </Box>
+            )}
+
             {/* Mobile Cards - Shown only on small screens */}
             <Box sx={{ display: { xs: 'flex', md: 'none' }, flexDirection: 'column', gap: 2 }}>
-                {meetings?.map((meeting: any) => (
+                {pagedMeetings.map((meeting: any) => (
                     <Card key={meeting.id} sx={{ borderRadius: 3, border: '1px solid var(--glass-border)' }}>
                         <CardContent sx={{ p: 2 }}>
                             <Box display="flex" justifyContent="space-between" mb={2}>
                                 <Chip label={meeting.meetingStatus} color={getStatusColor(meeting.meetingStatus) as any} size="small" />
                                 <Box>
-                                    <IconButton onClick={() => handleOpen(meeting)} size="small" color="primary"><Edit size={18} /></IconButton>
-                                    <IconButton onClick={() => handleAction({ id: meeting.id }, 'DELETE', meeting.id)} size="small" color="error"><Trash2 size={18} /></IconButton>
+                                    {canEdit(meeting) && <IconButton onClick={() => handleOpen(meeting)} size="small" color="primary"><Edit size={18} /></IconButton>}
+                                    {canDelete(meeting) && <IconButton onClick={() => confirmDelete(meeting)} size="small" color="error"><Trash2 size={18} /></IconButton>}
                                 </Box>
                             </Box>
                             <Typography variant="subtitle1" fontWeight="800" sx={{ mb: 1 }}>{meeting.title}</Typography>
@@ -336,10 +366,9 @@ export default function Meetings() {
                                 onChange={(e) => setFormData({ ...formData, meetingType: e.target.value })}
                                 SelectProps={{ inputProps: { tabIndex: -1 } }}
                             >
-                                <MenuItem value="REVIEW">Executive Review</MenuItem>
-                                <MenuItem value="SYNC">Department Sync</MenuItem>
-                                <MenuItem value="PLANNING">Strategic Planning</MenuItem>
-                                <MenuItem value="URGENT">Crisis Management</MenuItem>
+                                <MenuItem value="IN_PERSON">In Person</MenuItem>
+                                <MenuItem value="VIRTUAL">Virtual</MenuItem>
+                                <MenuItem value="HYBRID">Hybrid</MenuItem>
                             </TextField>
                             <TextField
                                 label="Agenda Objectives"
@@ -349,7 +378,7 @@ export default function Meetings() {
                                 value={formData.agenda}
                                 onChange={(e) => setFormData({ ...formData, agenda: e.target.value })}
                             />
-                            {isSuperAdmin && (
+                            {isExecutive && !editMeeting && (
                                 <TextField
                                     label="Assigned Department"
                                     select
@@ -365,36 +394,20 @@ export default function Meetings() {
                                 </TextField>
                             )}
 
-                            {!editMeeting && (
-                                <FormControl fullWidth required>
-                                    <InputLabel id="pastors-label" sx={{ fontWeight: 700 }}>Choose 2 Authorizing Pastors</InputLabel>
-                                    <Select
-                                        labelId="pastors-label"
-                                        id="pastors-select"
-                                        multiple
-                                        label="Choose 2 Authorizing Pastors"
-                                        value={formData.pastorIds}
-                                        onChange={(e) => {
-                                            const values = e.target.value as string[];
-                                            if (values.length <= 2) setFormData({ ...formData, pastorIds: values });
-                                        }}
-                                        renderValue={(sel: any) => (
-                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                                {pastors?.filter((p: any) => (sel as string[]).includes(p.id)).map((p: any) => (
-                                                    <Chip key={p.id} label={p.name} size="small" />
-                                                ))}
-                                            </Box>
-                                        )}
-                                    >
-                                        {pastors?.length === 0 && <MenuItem disabled>No Pastors found</MenuItem>}
-                                        {pastors?.map((p: any) => (
-                                            <MenuItem key={p.id} value={p.id}>
-                                                <Checkbox checked={formData.pastorIds.includes(p.id)} />
-                                                <ListItemText primary={p.name} secondary={p.role.replace('_', ' ')} />
-                                            </MenuItem>
-                                        ))}
-                                    </Select>
-                                </FormControl>
+                            {editMeeting && (
+                                <TextField
+                                    label="Status"
+                                    select
+                                    fullWidth
+                                    value={formData.meetingStatus}
+                                    onChange={(e) => setFormData({ ...formData, meetingStatus: e.target.value })}
+                                    SelectProps={{ inputProps: { tabIndex: -1 } }}
+                                >
+                                    <MenuItem value="SCHEDULED">Scheduled</MenuItem>
+                                    <MenuItem value="CONCLUDED">Concluded</MenuItem>
+                                    <MenuItem value="CANCELLED">Cancelled</MenuItem>
+                                    {formData.meetingStatus === 'PENDING_APPROVAL' && <MenuItem value="PENDING_APPROVAL">Pending Approval</MenuItem>}
+                                </TextField>
                             )}
                         </Box>
                     </DialogContent>

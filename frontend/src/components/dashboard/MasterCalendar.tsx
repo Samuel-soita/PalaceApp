@@ -1,5 +1,5 @@
-import { Box, Typography, Paper, Chip } from '@mui/material';
-import { Calendar, MapPin, Clock } from 'lucide-react';
+import { Box, Typography, Chip } from '@mui/material';
+import { MapPin, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface Event {
@@ -35,7 +35,7 @@ export const MasterCalendar = ({ events }: { events: Event[] }) => {
                         <Box mt={1.5} display="flex" justifyContent="space-between" alignItems="center">
                             <Box display="flex" gap={1}>
                                 <Chip label={event.eventType} size="small" variant="filled" color="primary" sx={{ fontWeight: 900, fontSize: '0.6rem', height: 20, borderRadius: 0 }} />
-                                <Chip label={event.department.name} size="small" variant="outlined" sx={{ border: '1px solid rgba(255,255,255,0.1)', fontWeight: 800, fontSize: '0.6rem', height: 20, borderRadius: 0 }} />
+                                <Chip label={event.department?.name || 'General'} size="small" variant="outlined" sx={{ border: '1px solid rgba(255,255,255,0.1)', fontWeight: 800, fontSize: '0.6rem', height: 20, borderRadius: 0 }} />
                             </Box>
                             <Typography variant="caption" sx={{ 
                                 fontSize: '0.6rem !important', 

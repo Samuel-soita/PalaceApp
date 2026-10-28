@@ -16,30 +16,25 @@ export interface ApiFirstMutationConfig {
     pickRecord?: (data: any) => any;
 }
 
+const RECORD_KEYS = [
+    'devotion', 'announcement', 'event', 'project', 'plan', 'message', 'meeting',
+    'repair', 'report', 'appointment', 'partnership', 'child', 'supportRequest',
+];
+
 function defaultPickRecord(data: any) {
     if (!data || typeof data !== 'object') return data;
-    return (
-        data.devotion
-        ?? data.announcement
-        ?? data.event
-        ?? data.project
-        ?? data.plan
-        ?? data.message
-        ?? data.meeting
-        ?? data.repair
-        ?? data.report
-        ?? data.appointment
-        ?? data.partnership
-        ?? data.child
-        ?? data.supportRequest
-        ?? data
-    );
+    for (const key of RECORD_KEYS) {
+        const value = data[key];
+        if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+    }
+    return data.id ? data : undefined;
 }
 
 async function persistSyncedRecord(table: keyof typeof db, record: any, fallbackId?: string) {
     const finalId = record?.id || fallbackId;
     if (!finalId) return;
-    await (db as any)[table].put({ ...record, id: finalId, syncStatus: 'SYNCED' });
+    const existing = await (db as any)[table].get(finalId);
+    await (db as any)[table].put({ ...(existing || {}), ...record, id: finalId, syncStatus: 'SYNCED' });
 }
 
 async function callApi(method: ApiFirstMethod, url: string, payload?: Record<string, any>) {

@@ -3,7 +3,6 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './index.css'
 import { BrowserRouter } from 'react-router-dom'
-import { QueryClientProvider } from '@tanstack/react-query'
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
 import { queryClient } from './lib/query-client'
@@ -16,7 +15,7 @@ import { initPwaInstallCapture } from './lib/pwa-install'
 
 initPwaInstallCapture()
 
-if (import.meta.env.DEV || (window as any).Cypress) {
+if (import.meta.env.DEV) {
     import('./scripts/simulate-stress');
 }
 
@@ -63,7 +62,18 @@ setUpdateSWCallback(updateSW);
 
 const persister = createSyncStoragePersister({
   storage: window.localStorage,
+  throttleTime: 3000,
 });
+
+// Dashboard sync and chat are mirrored in Dexie; serialising them into localStorage blocks the main thread.
+const NON_PERSISTED_QUERIES = new Set(['dashboard-sync', 'messages']);
+const persistOptions = {
+  persister,
+  dehydrateOptions: {
+    shouldDehydrateQuery: (query: { queryKey: readonly unknown[]; state: { status: string } }) =>
+      query.state.status === 'success' && !NON_PERSISTED_QUERIES.has(String(query.queryKey[0])),
+  },
+};
 
 // Dark Holographic Theme with Strict Square Geometry
 const theme = createTheme({
@@ -119,7 +129,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
         <ThemeProvider theme={theme}>
             <CssBaseline />
-            <PersistQueryClientProvider client={queryClient} persistOptions={{ persister }}>
+            <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
                 <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
                     <AuthProvider>
                         <App />

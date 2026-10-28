@@ -1,17 +1,18 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../lib/api-client';
+import { canAccessPath } from '../lib/route-access';
 import {
     Typography, Grid, Card, CardContent, Box, Avatar, Chip, Button,
-    Skeleton, Snackbar, Alert, Modal, Backdrop, Fade, IconButton,
-    Divider, Tooltip, Select, MenuItem, FormControl, InputLabel, Paper
+    Skeleton, Snackbar, Alert, Modal, Fade, IconButton,
+    Tooltip, Select, MenuItem, FormControl, Paper
 } from '@mui/material';
 import {
-    Calendar, TrendingUp, AlertCircle, Briefcase,
-    MessageSquare, Coins, UserCheck, XCircle, CheckCircle, Trash2,
-    Eye, Shield, Target, Bell, Filter, ChevronRight, Users, Droplet, Baby, Star, RefreshCw, Wrench, FileText
+    Calendar, AlertCircle, Briefcase,
+    MessageSquare, UserCheck, XCircle, CheckCircle, Trash2,
+    Eye, Shield, Target, Bell, Filter, Users, Droplet, Baby, Star, RefreshCw, Wrench, FileText
 } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { BroadcastTrack } from '../components/dashboard/BroadcastTrack';
@@ -32,6 +33,7 @@ import DepartmentReportModal from '../components/modals/DepartmentReportModal';
 import { useLocalFirstDashboard } from '../hooks/useLocalFirstDashboard';
 import SyncIndicator from '../components/SyncIndicator';
 
+const EMPTY_LIST: any[] = [];
 
 // ─── Component ─────────────────────────────────────────────────────────────
 
@@ -42,10 +44,13 @@ export default function AdminDashboard() {
     // Permission-based flags
     const canViewStats = hasPermission(PERMISSIONS.VIEW_GLOBAL_STATS);
     const canManageUsers = hasPermission(PERMISSIONS.MANAGE_USERS);
-    const canApproveSpiritual = hasPermission(PERMISSIONS.APPROVE_BAPTISM);
     const canViewPersonnel = hasPermission(PERMISSIONS.VIEW_PERSONNEL);
 
     const role = authUser?.role ?? '';
+    const canDecideRemovals = ['SUPER_ADMIN', 'WATUA'].includes(role);
+    const canTogglePartner = ['SUPER_ADMIN', 'WATUA', 'SECRETARY'].includes(role);
+    const canMarkPaid = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(role);
+    const canApproveRenewal = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY'].includes(role);
     const queryClient = useQueryClient();
 
     const [verificationModalOpen, setVerificationModalOpen] = useState(false);
@@ -86,11 +91,10 @@ export default function AdminDashboard() {
     // ─── Data Queries (Tactical Mirror) ──────────────────────────────────────
     const { data: syncData, isLoading: isSyncLoading } = useLocalFirstDashboard();
 
-    const projects = syncData?.projects || [];
-    const events = syncData?.events || [];
-    const plans = syncData?.plans || [];
-    const meetings = syncData?.meetings || [];
-    const budgets = syncData?.budgets || [];
+    const projects: any[] = syncData?.projects ?? EMPTY_LIST;
+    const events: any[] = syncData?.events ?? EMPTY_LIST;
+    const plans: any[] = syncData?.plans ?? EMPTY_LIST;
+    const meetings: any[] = syncData?.meetings ?? EMPTY_LIST;
     const announcements = syncData?.announcements || [];
     const departments = syncData?.departments || [];
     const pendingUsers = syncData?.pendingUsers || [];
@@ -109,8 +113,9 @@ export default function AdminDashboard() {
     const pendingAppointments = appointments.filter((a: any) => a.status === 'PENDING').length;
 
     // ─── Department filter logic ─────────────────────────────────────────────
-    const filterByDept = (arr: any[]) =>
-        deptFilter === 'ALL' ? arr : arr.filter((x: any) => x.departmentId === deptFilter || x.department?.id === deptFilter);
+    const filterByDept = useCallback((arr: any[]) =>
+        deptFilter === 'ALL' ? arr : arr.filter((x: any) => x.departmentId === deptFilter || x.department?.id === deptFilter),
+    [deptFilter]);
 
     const timelineItems = useMemo(() => {
         const base = [
@@ -120,7 +125,7 @@ export default function AdminDashboard() {
             ...filterByDept(meetings).map(m => ({ ...m, type: 'MEETING' })),
         ];
         return base.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    }, [projects, events, plans, meetings, deptFilter]);
+    }, [projects, events, plans, meetings, filterByDept]);
 
     // ─── Member Verification ─────────────────────────────────────────────────
     const verifyMutation = useMutation(
@@ -134,7 +139,7 @@ export default function AdminDashboard() {
                     severity: status === 'ACTIVE' ? 'success' : 'error'
                 });
             },
-            onError: () => setToast({ open: true, message: 'Failed to update user status.', severity: 'error' })
+            onError: (err: any) => setToast({ open: true, message: err.response?.data?.error || 'Failed to update user status.', severity: 'error' })
         }
     );
 
@@ -167,7 +172,7 @@ export default function AdminDashboard() {
                 queryClient.invalidateQueries(['dashboard-sync']);
                 setToast({ open: true, message: 'Partnership status updated successfully.', severity: 'success' });
             },
-            onError: () => setToast({ open: true, message: 'Failed to update partnership status.', severity: 'error' })
+            onError: (err: any) => setToast({ open: true, message: err.response?.data?.error || 'Failed to update partnership status.', severity: 'error' })
         }
     );
 
@@ -233,7 +238,7 @@ export default function AdminDashboard() {
     const stats = isRestrictedRole ? [] : [
         ...(isOperationsExec ? [
             { title: 'Upcoming Events', value: filterByDept(events).filter((e: any) => new Date(e.date) >= new Date()).length, icon: Calendar, color: 'blue' },
-            { title: 'Active Projects', value: filterByDept(projects).filter((p: any) => p.status === 'IN_PROGRESS').length, icon: Briefcase, color: 'purple' },
+            { title: 'Active Projects', value: filterByDept(projects).filter((p: any) => p.status === 'ACTIVE').length, icon: Briefcase, color: 'purple' },
             { title: 'Strategic Plans', value: filterByDept(plans).length, icon: Target, color: 'pink' },
             { title: 'Meetings', value: filterByDept(meetings).length, icon: MessageSquare, color: 'cyan' },
             { title: 'Announcements', value: announcements.filter((a: any) => new Date(a.createdAt) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).length, icon: Bell, color: 'orange' }
@@ -325,7 +330,7 @@ export default function AdminDashboard() {
                                 { label: 'Broadcast', icon: AlertCircle, color: 'orange', onClick: () => setAnnouncementModalOpen(true) },
                                 { label: 'New Project', icon: Briefcase, color: 'purple', onClick: () => setProjectModalOpen(true) },
                                 { label: 'New Plan', icon: Target, color: 'pink', onClick: () => setPlanModalOpen(true) },
-                                { label: 'New Event', icon: Calendar, color: 'blue', onClick: () => setEventModalOpen(true) },
+                                ...(role !== 'SYSTEM_ADMIN' ? [{ label: 'New Event', icon: Calendar, color: 'blue', onClick: () => setEventModalOpen(true) }] : []),
                                 { label: 'Submit Report', icon: FileText, color: 'green', onClick: () => setReportModalOpen(true) },
                                 { label: 'Schedule', icon: Calendar, color: 'blue', href: '/calendar' },
                             ] : []),
@@ -335,7 +340,7 @@ export default function AdminDashboard() {
                             { label: 'Appoints', icon: MessageSquare, color: 'cyan', onClick: () => setAppointmentManagerOpen(true), badge: pendingAppointments },
                             { label: 'Health Ops', icon: RefreshCw, color: 'green', href: '/health' },
                             ...(canViewPersonnel && isOperationsExec ? [{ label: 'Departments', icon: Users, color: 'purple', href: '/departments' }] : []),
-                        ].map((action, i) => (
+                        ].filter((action: any) => !action.href || canAccessPath(role, action.href)).map((action, i) => (
                             <Grid item xs={6} sm={4} md={2} key={i}>
                                 <Button
                                     fullWidth
@@ -579,10 +584,11 @@ export default function AdminDashboard() {
                                                 </Box>
 
                                                 <Box display="flex" alignItems="center" gap={1}>
-                                                    {/* Partnership Toggle */}
+                                                    {canTogglePartner && (
                                                     <Tooltip title={u.isPartner ? "Partner Status: Active" : "Promote to Partner"}>
                                                         <IconButton
                                                             size="small"
+                                                            disabled={partnershipMutation.isLoading}
                                                             onClick={() => partnershipMutation.mutate({ id: u.id, currentStatus: u.isPartner })}
                                                             sx={{
                                                                 color: u.isPartner ? 'orange' : 'rgba(255,255,255,0.1)',
@@ -595,6 +601,7 @@ export default function AdminDashboard() {
                                                             <Star size={17} fill={u.isPartner ? "orange" : "none"} />
                                                         </IconButton>
                                                     </Tooltip>
+                                                    )}
 
                                                     {/* Status Badge */}
                                                     <Chip
@@ -612,10 +619,10 @@ export default function AdminDashboard() {
                                                     />
 
                                                     {/* Payment Checkbox (Custom toggle for small space) */}
-                                                    {!u.deletionRequested && (
+                                                    {!u.deletionRequested && canMarkPaid && (
                                                         <Tooltip title={u.isCardPaid ? "Payment Verified" : "Verify Payment First"}>
                                                             <Box
-                                                                onClick={() => markPaidMutation.mutate({ id: u.id, isPaid: !u.isCardPaid })}
+                                                                onClick={() => { if (!markPaidMutation.isLoading) markPaidMutation.mutate({ id: u.id, isPaid: !u.isCardPaid }); }}
                                                                 sx={{
                                                                     cursor: 'pointer',
                                                                     display: 'flex',
@@ -638,7 +645,7 @@ export default function AdminDashboard() {
                                                     )}
 
                                                     <Box display="flex" gap={0.5}>
-                                                        {u.isCardReplacementRequested ? (
+                                                        {u.isCardReplacementRequested ? (canApproveRenewal && (
                                                             <Tooltip title="Approve Renewal">
                                                                 <IconButton
                                                                     size="small"
@@ -652,8 +659,9 @@ export default function AdminDashboard() {
                                                                     <CheckCircle size={17} />
                                                                 </IconButton>
                                                             </Tooltip>
-                                                        ) : (
+                                                        )) : (
                                                             <>
+                                                                {(!u.deletionRequested || canDecideRemovals) && (
                                                                 <Tooltip title={u.deletionRequested ? "Confirm Deletion" : (u.status === 'ACTIVE' ? "Already Verified" : (u.isCardPaid ? "Activate" : "Payment Required"))}>
                                                                     <span>
                                                                         <IconButton
@@ -667,6 +675,7 @@ export default function AdminDashboard() {
                                                                         </IconButton>
                                                                     </span>
                                                                 </Tooltip>
+                                                                )}
                                                                 {role === 'WATUA' && (
                                                                     <Tooltip title="PERMANENT PURGE (Watua Only)">
                                                                         <IconButton 
@@ -683,11 +692,13 @@ export default function AdminDashboard() {
                                                                         </IconButton>
                                                                     </Tooltip>
                                                                 )}
+                                                                {canDecideRemovals && (
                                                                 <Tooltip title={u.deletionRequested ? "Reject Deletion Request" : "Reject Registration"}>
-                                                                    <IconButton size="small" color="info" disabled={verifyMutation.isLoading} onClick={() => verifyMutation.mutate({ id: u.id, status: 'REJECTED', name: u.name })} sx={{ border: '1px solid rgba(0,188,212,0.25)' }}>
+                                                                    <IconButton size="small" color="info" disabled={verifyMutation.isLoading} onClick={() => { if (window.confirm(u.deletionRequested ? `Reject ${u.name}'s deletion request?` : `Reject ${u.name}'s registration?`)) verifyMutation.mutate({ id: u.id, status: 'REJECTED', name: u.name }); }} sx={{ border: '1px solid rgba(0,188,212,0.25)' }}>
                                                                         <XCircle size={17} />
                                                                     </IconButton>
                                                                 </Tooltip>
+                                                                )}
                                                             </>
                                                         )}
                                                     </Box>

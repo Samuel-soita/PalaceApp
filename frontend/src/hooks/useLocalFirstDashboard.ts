@@ -121,7 +121,7 @@ export function useLocalFirstDashboard(departmentId?: string) {
             allPartnerships: (localData.allPartnerships?.length ?? 0) > 0
                 ? localData.allPartnerships
                 : mergedData.allPartnerships,
-            isPartner: localData.isPartner ?? mergedData.isPartner,
+            isPartner: !!(localData.isPartner || mergedData.isPartner),
         }),
         isOffline,
     } : mergedData;

@@ -1,4 +1,4 @@
-import { db, LocalRole, LocalPermission } from './db';
+import { db } from './db';
 import { DeviceService } from './DeviceService';
 import api from './api-client';
 import { isOnlineSessionActive } from './auth-session';
@@ -53,13 +53,25 @@ const uuidFallback = () => {
     }
 };
 
+const SYNC_FRESH_MS = 60_000;
+let inFlightSync: Promise<boolean> | null = null;
+let lastSyncAt = 0;
+
 export const PermissionService = {
     /**
      * Synchronizes the local permission matrix with the backend "Source of Truth".
      * Gracefully falls back to cached Dexie data if offline.
      */
-    async syncWithCloud() {
+    async syncWithCloud({ force = false }: { force?: boolean } = {}): Promise<boolean> {
         if (!isOnlineSessionActive()) return false;
+        // App boot and the Watua dashboard both trigger a sync; share one request.
+        if (inFlightSync) return inFlightSync;
+        if (!force && Date.now() - lastSyncAt < SYNC_FRESH_MS) return true;
+        inFlightSync = this.runCloudSync().finally(() => { inFlightSync = null; });
+        return inFlightSync;
+    },
+
+    async runCloudSync(): Promise<boolean> {
         console.log('🔄 Permission Engine: Synchronizing with Cloud Kernel...');
         try {
             // 1. Fetch live data from backend
@@ -119,6 +131,7 @@ export const PermissionService = {
             });
 
             console.log('✅ Permission Engine: Cloud synchronization successful.');
+            lastSyncAt = Date.now();
             return true;
         } catch (err) {
             console.warn('⚠️ Permission Engine: Synchronization failed (Offline Mode). Using local cache.', err);

@@ -10,6 +10,7 @@ import { db } from '../../lib/db';
 import api from '../../lib/api-client';
 import { useAuth } from '../../contexts/AuthContext';
 import { useOfflineMutation } from '../../hooks/useOfflineMutation';
+import { canBypassPastorAuthorization, canOverrideApproval, canSignApproval, isAwaitingApproval, pastorAuthorizationBlocked } from '../../utils/approval-rules';
 
 interface EventFormModalProps {
     open: boolean;
@@ -75,7 +76,7 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
 
     const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
 
-    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
+    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
     const mutation = useOfflineMutation({
         entity: 'EVENT',
@@ -87,10 +88,15 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
         }
     });
 
+    const canSign = !!event && canSignApproval(event, user);
+    const showApprovalActions = !!event && isAwaitingApproval(event.approvalStatus) && (canSign || canOverrideApproval(user?.role));
+
     const approveMutation = useMutation(
         async (status: 'APPROVED' | 'REJECTED') => {
             if (status === 'APPROVED') {
-                return await api.post(`/events/${event.id}/approve`);
+                return canSign
+                    ? await api.post(`/events/${event.id}/approve`)
+                    : await api.patch(`/events/${event.id}/status`, { approvalStatus: 'APPROVED' });
             } else {
                 return await api.patch(`/events/${event.id}/status`, { approvalStatus: 'REJECTED' });
             }
@@ -114,7 +120,7 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!event && formData.pastorIds.length !== 2) {
+        if (!event && pastorAuthorizationBlocked(user?.role, formData.pastorIds)) {
             alert("Exactly 2 Pastors must authorize this Event.");
             return;
         }
@@ -148,9 +154,9 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
         // Construct payload (status and date/time are now correctly handled by schema)
         const { pastorIds, ...restFormData } = formData;
         const cleanPayload = { 
-            ...(event ? restFormData : formData), 
+            ...(event ? { ...restFormData, id: event.id } : { ...restFormData, pastorIds }),
             date: isoDate, 
-            attachmentUrl 
+            attachmentUrl: attachmentUrl || null
         };
 
         mutation.mutate(cleanPayload);
@@ -158,7 +164,7 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
         setSelectedFile(null);
     };
 
-    const isLocked = event?.status === 'APPROVED' && user?.role === 'DEPARTMENT_LEADER';
+    const isLocked = event?.approvalStatus === 'APPROVED' && user?.role === 'DEPARTMENT_LEADER';
 
     return (
         <Dialog 
@@ -177,11 +183,11 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
         >
             <form onSubmit={handleSubmit}>
                 <DialogTitle sx={{ fontWeight: 950, fontSize: '1.5rem', letterSpacing: -1 }}>
-                    {event ? (event.status === 'APPROVED' ? 'VIEW EVENT (LOCKED)' : 'EDIT EVENT') : 'INITIATE EVENT'}
+                    {event ? (isLocked ? 'VIEW EVENT (LOCKED)' : 'EDIT EVENT') : 'INITIATE EVENT'}
                 </DialogTitle>
                 <DialogContent>
                     {/* 👨‍⚖️ COMMAND APPROVAL OVERRIDE */}
-                    {event && event.approvalStatus !== 'APPROVED' && (event.targetPastorId === user?.id || ['WATUA', 'BISHOP'].includes(user?.role || '')) && (
+                    {showApprovalActions && (
                         <Box sx={{ mb: 4, p: 3, bgcolor: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: 0, textAlign: 'center' }}>
                             <Typography variant="subtitle2" fontWeight="950" color="orange" mb={1}>
                                 ACTION REQUIRED: EVENT CLEARANCE
@@ -367,7 +373,7 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
                         )}
 
                         {!event && (
-                            <FormControl fullWidth required>
+                            <FormControl fullWidth required={!canBypassPastorAuthorization(user?.role)}>
                                 <InputLabel id="event-pastors-label" sx={{ fontWeight: 700 }}>CHOOSE 2 AUTHORIZING PASTORS</InputLabel>
                                 <Select
                                     labelId="event-pastors-label"
@@ -422,7 +428,7 @@ export default function EventFormModal({ open, onClose, event, onSuccess, defaul
                     >
                         {uploading ? 'UPLOADING...' : (event ? 'SAVE CHANGES' : 'DEPLOY EVENT')}
                     </Button>
-                    {event?.status === 'APPROVED' && (
+                    {isLocked && (
                         <Typography variant="caption" color="error" fontWeight="950" sx={{ mt: 1, display: 'block', textAlign: 'center', width: '100%' }}>
                             MISSION CLEARED BY COMMAND. EDITING RESTRICTED.
                         </Typography>

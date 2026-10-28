@@ -22,14 +22,10 @@ export class FeatureFlagService {
             return context.role === requiredRole;
         }
 
-        // Department-based scoping: DEPT:YOUTH
-        if (flag.scope.startsWith('DEPT:') && context?.departmentId) {
-            const requiredDeptName = flag.scope.split(':')[1];
-            // We'd need to resolve dept name or use ID. For simplicity, let's assume we use ID in scope like DEPT_ID:uuid
-            if (flag.scope.startsWith('DEPT_ID:')) {
-                const requiredDeptId = flag.scope.split(':')[1];
-                return context.departmentId === requiredDeptId;
-            }
+        // Department-based scoping by ID: DEPT_ID:<uuid>
+        if (flag.scope.startsWith('DEPT_ID:') && context?.departmentId) {
+            const requiredDeptId = flag.scope.split(':')[1];
+            return context.departmentId === requiredDeptId;
         }
 
         return false;

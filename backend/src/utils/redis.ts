@@ -9,6 +9,14 @@ const MAX_FAILURES = 3;
 // This ensures that even if Redis fails, we still have a functional (though not shared) cache layer.
 const memoryCache = new Map<string, { value: string, expiry: number }>();
 
+// Entries are otherwise only dropped when read again, and generation-keyed live caches never are.
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, item] of memoryCache) {
+        if (item.expiry <= now) memoryCache.delete(key);
+    }
+}, 60_000).unref();
+
 const dummyRedis = {
     status: 'ready',
     on: () => {},
@@ -129,7 +137,6 @@ export async function getOrSetCache<T>(key: string, fetchFn: () => Promise<T>, t
 
         // If a fetch is already in flight for this key, join it
         if (pendingPromises.has(key)) {
-            console.log(`[Single-Flight] Joining in-flight request for: ${key}`);
             return pendingPromises.get(key);
         }
 
@@ -214,6 +221,18 @@ export async function invalidateCache(pattern: string) {
     } catch (error) {
         console.error(`[Cache Invalidation Error] ${pattern}:`, error);
     }
+}
+
+// Bumped synchronously on every successful mutation so the very next read of a live list misses the cache,
+// even before the async key deletion below has reached Redis.
+let liveGeneration = 0;
+const LIVE_NAMESPACES = ['dashboard:sync', 'announcements', 'events', 'plans', 'projects', 'budgets', 'meetings', 'departments'] as const;
+
+export const liveCacheKey = (namespace: typeof LIVE_NAMESPACES[number], suffix: string) => `${namespace}:g${liveGeneration}:${suffix}`;
+
+export function invalidateLiveCaches() {
+    liveGeneration++;
+    void Promise.all(LIVE_NAMESPACES.map((ns) => invalidateCache(`${ns}:*`)));
 }
 
 export default redis;

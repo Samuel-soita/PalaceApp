@@ -1,87 +1,89 @@
-describe('Frontend Architectural Simulations (UI State Map verification)', () => {
-  const API_URL = Cypress.env('apiUrl') || 'http://localhost:4000';
+import { authResponse, stubApi, visitAs } from '../support/session';
 
-  beforeEach(() => {
-    cy.clearLocalStorage();
-    cy.clearCookies();
-  });
-
-  context('1. Role & Attack Simulations', () => {
-    it('Simulation A: Standard Member is mathematically blocked from Executive interfaces', () => {
-      // Stub login for MEMBER
-      cy.intercept('POST', '**/auth/login', {
-        statusCode: 200,
-        body: {
-          token: 'mock-member-jwt',
-          user: { id: 'u1', name: 'Standard Member', role: 'MEMBER' }
-        }
-      }).as('memberLogin');
-
-      cy.visit('/login');
-      // The Membership field doesn't have a name prop, target by type
-      cy.get('input[type="text"]').type('063/001/2026');
-      cy.get('button[type="submit"]').click();
-
-      cy.wait('@memberLogin');
-      
-      // Simulate frontend routing attack
-      cy.visit('/departments');
-      
-      cy.contains(/unauthorized|access denied|clearance|not found/i).should('exist');
+describe('Authentication and role routing', () => {
+    beforeEach(() => {
+        cy.clearLocalStorage();
+        cy.clearCookies();
+        stubApi();
     });
 
-    it('Simulation B: WATUA has absolute access to kernel interfaces', () => {
-      // Stub the Watua trigger endpoint
-      cy.intercept('POST', '**/auth/watua-access', {
-        statusCode: 200,
-        body: {
-          token: 'mock-watua-jwt',
-          user: { id: 'w1', name: 'System Architect', role: 'WATUA' }
-        }
-      }).as('watuaLogin');
+    it('signs a member in with card number and ID, then lands on the member portal', () => {
+        cy.intercept('POST', '/api/auth/login', { statusCode: 200, body: authResponse('MEMBER') }).as('login');
 
-      cy.visit('/login');
-      // Watua is triggered via a keyboard sequence 'watua' typing anywhere
-      cy.get('body').type('watua');
+        cy.visit('/login');
+        cy.contains('label', 'Membership Card Number').parent().find('input').type('101/001/2026');
+        cy.contains('label', 'National ID Number').parent().find('input').type('12345678');
+        cy.contains('button', 'Sign In').click();
 
-      cy.wait('@watuaLogin');
-      
-      cy.visit('/watua');
-      
-      cy.contains(/diagnostic|intervention|watua/i).should('exist');
-    });
-  });
-
-  context('2. Failure & Resilience Simulations', () => {
-    it('Simulation C: 500 Internal Server Error triggers graceful ErrorBoundary Fallback', () => {
-      // Inject directly into the app window iframe, not the cypress runner window
-      cy.visit('/');
-      cy.window().then((win) => {
-        win.localStorage.setItem('token', 'mock-jwt');
-        win.localStorage.setItem('user', JSON.stringify({ id: 'u1', role: 'MEMBER' }));
-      });
-
-      // Intercept the dashboard fetch and force a 500 crash
-      cy.intercept('GET', '**/dashboard/**', {
-        statusCode: 500,
-        body: { error: 'Internal Server Error', message: 'Something went wrong on the mission server.' }
-      }).as('serverCrash');
-
-      cy.visit('/');
-      // Wait for React Query to fail completely or error boundary to catch it
-      cy.contains(/went wrong|failed to load|error|unauthorized/i).should('exist');
+        cy.wait('@login').its('request.body').should('deep.equal', {
+            membershipNumber: '101/001/2026',
+            idNumber: '12345678',
+        });
+        cy.location('pathname').should('eq', '/');
+        cy.contains('WELCOME,').should('be.visible');
     });
 
-    it('Simulation D: Offline Network Disconnect halts destructive actions', () => {
-      cy.visit('/');
-      cy.window().then((win) => {
-        win.localStorage.setItem('token', 'mock-jwt');
-        win.localStorage.setItem('user', JSON.stringify({ id: 'u1', role: 'MEMBER' }));
-      });
+    it('shows the server error when credentials are rejected', () => {
+        cy.intercept('POST', '/api/auth/login', { statusCode: 401, body: { error: 'Invalid membership number or ID.' } }).as('login');
 
-      cy.intercept('POST', '**/workflows/**', { forceNetworkError: true }).as('offlineMutation');
+        cy.visit('/login');
+        cy.contains('label', 'Membership Card Number').parent().find('input').type('999/001/2026');
+        cy.contains('label', 'National ID Number').parent().find('input').type('00000000');
+        cy.contains('button', 'Sign In').click();
 
-      cy.visit('/support');
+        cy.wait('@login');
+        cy.contains('Invalid membership number or ID.').should('be.visible');
+        cy.location('pathname').should('eq', '/login');
     });
-  });
+
+    it('keeps a member out of Bishop-only routes', () => {
+        visitAs('MEMBER', '/departments');
+        cy.location('pathname').should('eq', '/');
+    });
+
+    it('requires the system access key for the WATUA sequence', () => {
+        cy.intercept('POST', '/api/auth/watua-access', { statusCode: 200, body: authResponse('WATUA') }).as('watuaAccess');
+
+        cy.visit('/login');
+        cy.window().then((win) => {
+            cy.stub(win, 'prompt').returns('cypress-access-key').as('accessPrompt');
+        });
+        cy.contains('Welcome Back').should('be.visible');
+        cy.get('body').type('watua');
+
+        cy.get('@accessPrompt').should('have.been.calledOnce');
+        cy.wait('@watuaAccess').its('request.body').should('deep.equal', { accessKey: 'cypress-access-key' });
+        cy.location('pathname').should('eq', '/watua');
+    });
+
+    it('does not call the server when the access key prompt is cancelled', () => {
+        cy.intercept('POST', '/api/auth/watua-access', cy.spy().as('watuaAccess'));
+
+        cy.visit('/login');
+        cy.window().then((win) => {
+            cy.stub(win, 'prompt').returns(null).as('accessPrompt');
+        });
+        cy.contains('Welcome Back').should('be.visible');
+        cy.get('body').type('watua');
+
+        cy.get('@accessPrompt').should('have.been.calledOnce');
+        cy.get('@watuaAccess').should('not.have.been.called');
+        cy.location('pathname').should('eq', '/login');
+    });
+});
+
+describe('Resilience', () => {
+    beforeEach(() => {
+        cy.clearLocalStorage();
+        stubApi();
+    });
+
+    it('keeps the member portal usable when the dashboard API fails', () => {
+        cy.intercept('GET', '/api/dashboard/**', { statusCode: 500, body: { error: 'Internal Server Error' } }).as('dashboard');
+
+        visitAs('MEMBER', '/');
+        cy.wait('@dashboard');
+        cy.contains('WELCOME,').should('be.visible');
+        cy.location('pathname').should('eq', '/');
+    });
 });

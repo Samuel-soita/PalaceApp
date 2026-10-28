@@ -1,9 +1,8 @@
-import React from 'react';
 import { 
     Box, Typography, Card, CardContent, Button, Stack, Chip, 
-    Avatar, Tooltip, Alert, LinearProgress
+    Avatar, Alert, LinearProgress
 } from '@mui/material';
-import { FileText, Download, TrendingUp, Calendar, User, Info } from 'lucide-react';
+import { FileText, Download, User, Info } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../../lib/api-client';
 
@@ -64,10 +63,10 @@ export default function MissionReportsViewer({ departmentId, limit = 5 }: Missio
                             <Box display="flex" alignItems="center" gap={1}>
                                 <Info size={12} color="var(--cyan)" />
                                 <Typography variant="caption" fontWeight="900" sx={{ fontSize: '0.65rem' }}>
-                                    {report.fileName || 'MISSION_REPORT.PDF'}
+                                    {report.fileUrl ? (report.fileName || 'MISSION_REPORT.PDF') : 'NO ATTACHMENT'}
                                 </Typography>
                             </Box>
-                            <Button 
+                            {report.fileUrl && <Button 
                                 size="small" 
                                 onClick={async () => {
                                     try {
@@ -82,8 +81,13 @@ export default function MissionReportsViewer({ departmentId, limit = 5 }: Missio
                                         link.click();
                                         link.remove();
                                         window.URL.revokeObjectURL(url);
-                                    } catch (err) {
-                                        console.error('Download failed', err);
+                                    } catch (err: any) {
+                                        const status = err?.response?.status;
+                                        alert(status === 404
+                                            ? 'This report file is no longer available on the server.'
+                                            : status === 403
+                                                ? 'You do not have access to this report file.'
+                                                : 'Download failed. Please try again.');
                                     }
                                 }}
                                 startIcon={<Download size={14} />}
@@ -93,7 +97,7 @@ export default function MissionReportsViewer({ departmentId, limit = 5 }: Missio
                                 }}
                             >
                                 DOWNLOAD PDF
-                            </Button>
+                            </Button>}
                         </Box>
 
                         <Box mt={1.5} display="flex" alignItems="center" gap={1}>

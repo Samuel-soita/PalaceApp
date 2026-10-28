@@ -1,6 +1,20 @@
 import prisma from './prisma.js';
 import { logAction } from './audit.service.js';
 
+const TRASH_COLLECTIONS: Record<string, { model: string; select: Record<string, any> }> = {
+    USER: { model: 'user', select: { name: true } },
+    DEPARTMENT: { model: 'department', select: { name: true } },
+    PROJECT: { model: 'project', select: { title: true } },
+    EVENT: { model: 'event', select: { title: true } },
+    PLAN: { model: 'plan', select: { title: true } },
+    ANNOUNCEMENT: { model: 'announcement', select: { title: true } },
+    MEETING: { model: 'meeting', select: { title: true } },
+    BUDGET: { model: 'budget', select: { title: true } },
+    CHILD: { model: 'child', select: { name: true } },
+    BAPTISM: { model: 'baptism', select: { user: { select: { name: true } } } },
+    PARTNERSHIP: { model: 'partnership', select: { user: { select: { name: true } } } },
+};
+
 export class RecoveryService {
     /**
      * Soft-deletes an entity by setting deletedAt and other metadata.
@@ -49,7 +63,8 @@ export class RecoveryService {
         actorId: string
     ) {
         const entityType = modelName.toUpperCase();
-        const modelKey = modelName.toLowerCase();
+        const modelKey = TRASH_COLLECTIONS[entityType]?.model;
+        if (!modelKey) throw new Error(`${entityType} cannot be restored.`);
 
         const beforeState = await (prisma as any)[modelKey].findUnique({ where: { id } });
         if (!beforeState) throw new Error(`${entityType} not found.`);
@@ -83,30 +98,23 @@ export class RecoveryService {
      * WATUA / SUPER_ADMIN only.
      */
     static async getTrashBin() {
-        const collections = ['user', 'department', 'project', 'baptism', 'partnership'];
         const results: any[] = [];
 
-        for (const col of collections) {
-            const selectOptions: any = {
-                id: true,
-                deletedAt: true,
-                deletedBy: true,
-                deletedReason: true,
-            };
-
-            // Add model-specific identifier
-            if (col === 'user' || col === 'department') selectOptions.name = true;
-            if (col === 'project') selectOptions.title = true;
-
-            const items = await (prisma as any)[col].findMany({
+        for (const [type, { model, select }] of Object.entries(TRASH_COLLECTIONS)) {
+            const items = await (prisma as any)[model].findMany({
                 where: { deletedAt: { not: null } },
-                select: selectOptions
+                select: { id: true, deletedAt: true, deletedBy: true, deletedReason: true, ...select },
+                orderBy: { deletedAt: 'desc' },
+                take: 200,
             });
-            
-            results.push(...items.map((item: any) => ({ 
-                ...item, 
-                type: col.toUpperCase(),
-                displayName: item.name || item.title || item.id 
+
+            results.push(...items.map((item: any) => ({
+                id: item.id,
+                deletedAt: item.deletedAt,
+                deletedBy: item.deletedBy,
+                deletedReason: item.deletedReason,
+                type,
+                displayName: item.name || item.title || item.user?.name || item.id
             })));
         }
 

@@ -1,5 +1,18 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { RecoveryService } from '../../utils/recovery.service.js';
+import { invalidateCache } from '../../utils/redis.js';
+
+const CACHE_PATTERNS: Record<string, string[]> = {
+    USER: ['users:*'],
+    DEPARTMENT: ['departments:*'],
+    PROJECT: ['projects:*'],
+    EVENT: ['events:*'],
+    PLAN: ['plans:*'],
+    ANNOUNCEMENT: ['announcements:*'],
+    MEETING: ['meetings:*'],
+    BUDGET: ['budgets:*'],
+    CHILD: ['children:list:*'],
+};
 
 /**
  * GET /recovery/trash
@@ -24,6 +37,7 @@ export const restoreItem = async (req: any, res: Response) => {
     const { type, id } = req.params;
     try {
         const restored = await RecoveryService.restore(type, id, req.user.id);
+        await Promise.all((CACHE_PATTERNS[type.toUpperCase()] || []).map((pattern) => invalidateCache(pattern)));
         res.json({ message: `${type.toUpperCase()} restored successfully`, data: restored });
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Failed to restore item' });

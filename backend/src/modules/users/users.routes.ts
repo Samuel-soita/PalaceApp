@@ -23,7 +23,7 @@ import {
 import { authenticate, authorize, moduleGuard } from '../../middleware/auth.middleware.js';
 import { mutationLimiter } from '../../middleware/rate-limiting.middleware.js';
 import { validate } from '../../middleware/validate.middleware.js';
-import { UserUpdateSchema, UserRegistrationSchema } from '../../schemas/UserSchema.js';
+import { UserBioRepairSchema } from '../../schemas/UserSchema.js';
 
 const router = Router();
 
@@ -54,7 +54,7 @@ router.post('/technical/restore/:id', highPrivilege, mutationLimiter, restoreEnt
 router.get('/technical/flags', watuaOnly, getFeatureFlags);
 router.patch('/technical/flags', watuaOnly, mutationLimiter, updateFeatureFlag);
 router.post('/technical/intervention/:id', authorize(['WATUA', 'SUPER_ADMIN', 'SECRETARY']), mutationLimiter, executeIntervention);
-router.patch('/technical/bio/:id', watuaOnly, mutationLimiter, validate(UserUpdateSchema), updateUserBioTechnical);
+router.patch('/technical/bio/:id', watuaOnly, mutationLimiter, validate(UserBioRepairSchema), updateUserBioTechnical);
 router.delete('/technical/purge/:id', watuaOnly, mutationLimiter, purgeUser);
 
 // 👨‍🏫 PASTORAL CORE & WATUA DUAL-AUTH

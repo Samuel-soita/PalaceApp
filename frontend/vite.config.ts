@@ -54,8 +54,24 @@ export default defineConfig({
             '@': path.resolve(__dirname, './src'),
         },
     },
+    build: {
+        rollupOptions: {
+            output: {
+                // Only packages the entry already needs belong here; anything used solely by lazy pages
+                // must stay out so it keeps loading on demand.
+                manualChunks(id) {
+                    if (id.includes('commonjsHelpers')) return 'vendor-react';
+                    if (!id.includes('node_modules')) return undefined;
+                    if (/[\\/]node_modules[\\/](react|react-dom|react-is|scheduler|prop-types|use-sync-external-store|hoist-non-react-statics|react-router|react-router-dom|@remix-run)[\\/]/.test(id)) return 'vendor-react';
+                    if (/[\\/]node_modules[\\/](@emotion|stylis|@mui[\\/](system|utils|styled-engine|private-theming)|@popperjs|react-transition-group)[\\/]/.test(id)) return 'vendor-mui-core';
+                    if (/[\\/]node_modules[\\/](dexie|dexie-react-hooks|@tanstack|axios|socket\.io-client|socket\.io-parser|engine\.io-client|engine\.io-parser)[\\/]/.test(id)) return 'vendor-data';
+                    return undefined;
+                },
+            },
+        },
+    },
     server: {
-        port: 3000,
+        port: 5173,
         proxy: {
             '/api': {
                 target: 'http://localhost:4000',

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createReport, getReports, downloadReport, deleteReport } from './reports.controller.js';
+import { createReport, getReports, downloadReport } from './reports.controller.js';
 import { authenticate, authorize } from '../../middleware/auth.middleware.js';
 import { validate } from '../../middleware/validate.middleware.js';
 import { CreateReportSchema } from '../../schemas/ReportSchema.js';

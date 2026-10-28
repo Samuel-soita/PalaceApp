@@ -7,10 +7,11 @@
   "scripts": {
     "dev": "npx prisma@5.22.0 generate --schema ./prisma/schema.prisma && tsx watch src/index.ts",
     "build": "node scripts/render-migrate.cjs && npx prisma@5.22.0 generate && rm -rf dist .tsbuildinfo && NODE_OPTIONS='--max-old-space-size=450' npx tsc && (ls dist/index.js || find dist -name index.js)",
-    "lint": "eslint . --ext .ts",
+    "lint": "eslint . --ext .ts --max-warnings 0",
     "type-check": "tsc --noEmit",
     "start": "node dist/index.js",
     "start:prod": "pm2 start ecosystem.config.cjs",
+    "departments:merge": "tsx src/scripts/dedupe-departments.ts",
     "test": "vitest",
     "test:coverage": "vitest run --coverage"
   },

@@ -32,7 +32,6 @@ export async function seedPermissions() {
 
     // 3. Map Default Permissions
     const allPermissions = await prisma.permission.findMany();
-    const allPermIds = allPermissions.map(p => p.id);
 
     const roleMap: Record<string, string[]> = {
         'WATUA': permissionEntries, // Everything

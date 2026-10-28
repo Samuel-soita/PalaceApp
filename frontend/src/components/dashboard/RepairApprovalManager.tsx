@@ -1,9 +1,8 @@
-import React from 'react';
 import { 
     Box, Typography, Card, CardContent, Button, Stack, Chip, 
-    Avatar, Divider, IconButton, Tooltip, Alert
+    Avatar, Tooltip, Alert
 } from '@mui/material';
-import { Wrench, CheckCircle2, CloudLightning, ShieldCheck, UserCheck } from 'lucide-react';
+import { Wrench, CheckCircle2 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api-client';
 import { useAuth } from '../../contexts/AuthContext';
@@ -26,7 +25,8 @@ export default function RepairApprovalManager() {
         onSuccess: () => {
             queryClient.invalidateQueries(['repairs-pending']);
             queryClient.invalidateQueries(['dashboard-sync']);
-        }
+        },
+        onError: (err: any) => alert(err.response?.data?.error || 'Could not sign this repair request.')
     });
 
     // Filter repairs that need THIS user's role approval
@@ -39,9 +39,7 @@ export default function RepairApprovalManager() {
             return !alreadySigned;
         }
         if (user?.role === 'SYSTEM_ADMIN' && r.status === 'PENDING_ADMIN') return true;
-        if (user?.role === 'SUPER_ADMIN' || user?.role === 'WATUA') {
-             if (r.status === 'PENDING_BISHOP') return true;
-        }
+        if (user?.role === 'SUPER_ADMIN' && r.status === 'PENDING_BISHOP') return true;
         return false;
     }) || [];
 

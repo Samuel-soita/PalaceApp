@@ -3,14 +3,14 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../lib/db';
 import {
     Typography, Grid, Card, CardContent, Box, Button, TextField, Dialog, DialogTitle,
-    DialogContent, DialogActions, MenuItem, LinearProgress, Chip, IconButton, Avatar, Paper,
+    DialogContent, DialogActions, MenuItem, LinearProgress, IconButton, Paper,
     FormControl, InputLabel, Select, Checkbox, ListItemText
 } from '@mui/material';
-import { Bell, Plus, Edit, Trash2, Megaphone, ShieldAlert, Clock, User, Filter } from 'lucide-react';
+import { Plus, Edit, Trash2, Megaphone, ShieldAlert } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
 import { isUserManagingDepartment } from '../utils/auth-options';
-import { pastorAuthorizationBlocked } from '../utils/approval-rules';
+import { canBypassPastorAuthorization, pastorAuthorizationBlocked } from '../utils/approval-rules';
 import { paginate, paginationMeta } from '../utils/pagination';
 import { executeApiFirstMutation } from '../lib/api-first-mutation';
 
@@ -55,7 +55,7 @@ export default function Announcements() {
 
     const handleAction = async (payload: any, method: 'POST' | 'PUT' | 'DELETE', id?: string) => {
         const actionId = id || payload.id;
-        const { author, department, createdAt, syncStatus, ...apiPayload } = payload;
+        const { author, department, createdAt, syncStatus, id: _id, ...apiPayload } = payload;
 
         try {
             await executeApiFirstMutation({
@@ -118,16 +118,21 @@ export default function Announcements() {
     };
 
     const handleSubmit = () => {
-        if (pastorAuthorizationBlocked(user?.role, formData.pastorIds)) {
+        if (formData.title.trim().length < 3 || formData.content.trim().length < 10) {
+            alert('Title needs at least 3 characters and content at least 10.');
+            return;
+        }
+        if (!editAnn && pastorAuthorizationBlocked(user?.role, formData.pastorIds)) {
             alert('Exactly 2 Pastors must authorize this Broadcast before it is deployed.');
             return;
         }
-        const payload = { ...formData };
-        if (!payload.departmentId && departments.length > 0) {
-            payload.departmentId = departments[0].id;
+        const { pastorIds, ...fields } = formData;
+        const departmentId = fields.departmentId || null;
+        if (editAnn) {
+            handleAction({ ...fields, departmentId, id: editAnn.id }, 'PUT', editAnn.id);
+        } else {
+            handleAction({ ...fields, departmentId, isGlobal: !departmentId, pastorIds }, 'POST');
         }
-        if (editAnn) handleAction({ ...payload, id: editAnn.id }, 'PUT', editAnn.id);
-        else handleAction(payload, 'POST');
     };
 
     const [syncError, setSyncError] = useState<string | null>(null);
@@ -181,10 +186,12 @@ export default function Announcements() {
                                             <Typography variant="caption" fontWeight="950" sx={{ letterSpacing: 1, fontSize: '0.65rem' }}>{ann.priority === 'HIGH' ? 'CRITICAL_ALERT' : 'STANDARD_INTEL'}</Typography>
                                         </div>
                                         <Box>
-                                            {(isGlobalAdmin || (ann.departmentId && isUserManagingDepartment(user, ann.departmentId))) && (
+                                            {isLeader && (ann.status !== 'PUBLISHED' || user?.role === 'SUPER_ADMIN') && (isGlobalAdmin || user?.role === 'PASTOR' || (ann.departmentId && isUserManagingDepartment(user, ann.departmentId))) && (
                                                 <>
-                                                    <IconButton size="small" onClick={() => handleOpen(ann)} className="tactical-border" sx={{ mr: 1 }}><Edit size={14} /></IconButton>
-                                                    <IconButton size="small" color="error" onClick={() => handleAction({ id: ann.id }, 'DELETE', ann.id)} className="tactical-border"><Trash2 size={14} /></IconButton>
+                                                    <IconButton size="small" aria-label="edit broadcast" onClick={() => handleOpen(ann)} className="tactical-border" sx={{ mr: 1 }}><Edit size={14} /></IconButton>
+                                                    {user?.role !== 'SECRETARY' && (
+                                                        <IconButton size="small" aria-label="delete broadcast" color="error" onClick={() => { if (window.confirm('Delete this broadcast?')) handleAction({ id: ann.id }, 'DELETE', ann.id); }} className="tactical-border"><Trash2 size={14} /></IconButton>
+                                                    )}
                                                 </>
                                             )}
                                         </Box>
@@ -282,14 +289,14 @@ export default function Announcements() {
                                 onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
                             >
                                 {isGlobalAdmin && <MenuItem value="">GLOBAL COMMAND</MenuItem>}
-                                {(isGlobalAdmin ? departments : userDepartments)?.map((dept: any) => (
+                                {(isGlobalAdmin && user?.role !== 'SECRETARY' ? departments : userDepartments)?.map((dept: any) => (
                                     <MenuItem key={dept.id} value={dept.id}>{dept.name}</MenuItem>
                                 ))}
                             </TextField>
                         )}
 
                         {!editAnn && (
-                            <FormControl fullWidth required error={formData.pastorIds.length > 0 && formData.pastorIds.length !== 2}>
+                            <FormControl fullWidth required={!canBypassPastorAuthorization(user?.role)} error={!canBypassPastorAuthorization(user?.role) && formData.pastorIds.length > 0 && formData.pastorIds.length !== 2}>
                                 <InputLabel id="pastors-label">Select 2 Authorizing Pastors</InputLabel>
                                 <Select
                                     labelId="pastors-label"

@@ -39,8 +39,24 @@ export const emitNotification = (userId: string, data: any) => {
     }
 };
 
-export const broadcastSync = (moduleName: string) => {
-    if (io) {
-        io.emit('sync-update', { module: moduleName, timestamp: Date.now() });
-    }
+// Coalesce bursts (e.g. a controller broadcast plus the realtime middleware) into one event per module.
+const BROADCAST_WINDOW_MS = 300;
+const pendingModules = new Set<string>();
+let broadcastTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Tells every connected client that a data module changed. Carries no record data:
+ * clients re-pull through their own auth-scoped /sync endpoints.
+ */
+export const broadcastSync = (...moduleNames: string[]) => {
+    if (!io) return;
+    moduleNames.forEach(m => pendingModules.add(m));
+    if (broadcastTimer) return;
+    broadcastTimer = setTimeout(() => {
+        const modules = [...pendingModules];
+        pendingModules.clear();
+        broadcastTimer = null;
+        const timestamp = Date.now();
+        for (const module of modules) io.emit('sync-update', { module, timestamp });
+    }, BROADCAST_WINDOW_MS);
 };

@@ -143,10 +143,10 @@ export const DepartmentAccounts = ({ departmentId }: { departmentId: string }) =
                                     <TableCell>
                                         {tx.status === 'PENDING' && (
                                             <Box display="flex" gap={1}>
-                                                <IconButton size="small" color="success" onClick={() => approveTxMutation.mutate({ id: tx.id, status: 'APPROVED' })}>
+                                                <IconButton size="small" color="success" disabled={approveTxMutation.isLoading} onClick={() => approveTxMutation.mutate({ id: tx.id, status: 'APPROVED' })}>
                                                     <CheckCircle2 size={18} />
                                                 </IconButton>
-                                                <IconButton size="small" color="error" onClick={() => approveTxMutation.mutate({ id: tx.id, status: 'REJECTED' })}>
+                                                <IconButton size="small" color="error" disabled={approveTxMutation.isLoading} onClick={() => approveTxMutation.mutate({ id: tx.id, status: 'REJECTED' })}>
                                                     <XCircle size={18} />
                                                 </IconButton>
                                             </Box>
@@ -176,8 +176,8 @@ export const DepartmentAccounts = ({ departmentId }: { departmentId: string }) =
                             </Box>
                             {isHighLevel && tx.status === 'PENDING' && (
                                 <Box display="flex" gap={1}>
-                                    <Button size="small" variant="contained" color="success" fullWidth onClick={() => approveTxMutation.mutate({ id: tx.id, status: 'APPROVED' })}>Approve</Button>
-                                    <Button size="small" variant="outlined" color="error" fullWidth onClick={() => approveTxMutation.mutate({ id: tx.id, status: 'REJECTED' })}>Reject</Button>
+                                    <Button size="small" variant="contained" color="success" fullWidth disabled={approveTxMutation.isLoading} onClick={() => approveTxMutation.mutate({ id: tx.id, status: 'APPROVED' })}>Approve</Button>
+                                    <Button size="small" variant="outlined" color="error" fullWidth disabled={approveTxMutation.isLoading} onClick={() => approveTxMutation.mutate({ id: tx.id, status: 'REJECTED' })}>Reject</Button>
                                 </Box>
                             )}
                         </CardContent>
@@ -229,7 +229,7 @@ export const DepartmentAccounts = ({ departmentId }: { departmentId: string }) =
                     <Button 
                         variant="contained" 
                         onClick={() => createTxMutation.mutate({ ...formData, amount: Number(formData.amount), departmentId })}
-                        disabled={!formData.amount || !formData.description}
+                        disabled={!formData.amount || !formData.description || createTxMutation.isLoading}
                     >
                         Submit Request
                     </Button>

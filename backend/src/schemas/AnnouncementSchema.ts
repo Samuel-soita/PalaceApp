@@ -26,6 +26,7 @@ export const UpdateAnnouncementSchema = z.object({
         isGlobal: z.boolean().optional(),
         isMajor: z.boolean().optional(),
         status: z.enum(['PENDING', 'PUBLISHED', 'ARCHIVED', 'REJECTED']).optional(),
+        pastorIds: z.array(z.string().uuid()).optional(),
         eventDate: z.string().datetime().optional().nullable(),
         eventTime: z.string().optional().nullable(),
         location: z.string().optional().nullable()

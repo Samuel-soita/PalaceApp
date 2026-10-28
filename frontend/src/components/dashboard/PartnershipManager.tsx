@@ -1,16 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { 
     Modal, Fade, Box, Typography, Card, CardContent, Grid, 
-    Avatar, Chip, IconButton, Button, Stack, Divider, 
+    Avatar, Chip, IconButton, Button, Stack, 
     TextField, InputAdornment, LinearProgress, MenuItem, Alert
 } from '@mui/material';
-import { XCircle, Star, TrendingUp, DollarSign, Search, CheckCircle, RefreshCcw, Pencil, Edit3 } from 'lucide-react';
+import { XCircle, Star, Search, RefreshCcw, Pencil } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../lib/api-client';
 import { db } from '../../lib/db';
 import { requestSyncSoon } from '../../lib/pwa-sync';
+import { hasPastorModule } from '../../utils/pastor-modules';
 
 interface PartnershipManagerProps {
     open: boolean;
@@ -21,7 +22,7 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
     const queryClient = useQueryClient();
     const { user } = useAuth();
     const canReconcileLedger = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(user?.role || '')
-        || ((user?.role === 'PASTOR' || user?.role === 'ASSOCIATE_PASTOR') && user?.canManagePartnerships);
+        || ((user?.role === 'PASTOR' || user?.role === 'ASSOCIATE_PASTOR') && (!!user?.canManagePartnerships || hasPastorModule(user, 'PartnershipManagement')));
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedPartner, setSelectedPartner] = useState<any>(null);
     const [paymentAmount, setPaymentAmount] = useState<string>('');
@@ -296,8 +297,9 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
                                                             <Typography variant="caption" sx={{ opacity: 0.5 }}>COMMITMENT</Typography>
                                                             <Typography variant="subtitle2" fontWeight={1000}>{p.amount} KES</Typography>
                                                         </Box>
-                                                        <IconButton 
+                                                        {canReconcileLedger && <IconButton 
                                                             size="small" 
+                                                            aria-label="edit commitment"
                                                             onClick={() => {
                                                                 setEditingPartner(p);
                                                                 setNewCommitmentAmount(p.amount.toString());
@@ -306,7 +308,7 @@ export default function PartnershipManager({ open, onClose }: PartnershipManager
                                                             sx={{ color: 'orange', opacity: 0.6, minWidth: 44, minHeight: 44, '&:hover': { opacity: 1 } }}
                                                         >
                                                             <Pencil size={14} />
-                                                        </IconButton>
+                                                        </IconButton>}
                                                     </Box>
                                                 </Grid>
                                                 <Grid item xs={6} sm={2}>

@@ -1,124 +1,180 @@
-import { prisma } from '../utils/prisma.js';
+import 'dotenv/config';
+import { rawPrisma as db } from '../utils/prisma.js';
+import { DEFAULT_DEPARTMENTS, cleanDepartmentName, departmentKey } from '../utils/department-names.js';
 
 /**
- * 2.4.0 Kernel Tool: Deduplicate Departments
- * Corrects historic misspelled departments by migrating users/events and deleting the duplicate records.
+ * Merge duplicate departments ("Media & ICT" vs "Media and ICT", "Treasury  DEpartment " vs
+ * "Treasury  DEpartment", ...) into a single canonical record.
+ *
+ *   npm run departments:merge            -> dry run, prints the plan only
+ *   npm run departments:merge -- --apply -> performs the merge
+ *
+ * Duplicates are soft-deleted (deletedReason = MERGED_INTO:<id>) after every reference has been
+ * moved, so nothing is destroyed. Account balances of duplicates are added to the canonical account.
  */
-async function dedupeAndPrune() {
-    console.log('[System Kernel] Initializing Department Deduplication Engine...');
 
-    try {
-        const allDepts = await prisma.department.findMany();
-        
-        // 1. Establish Canonical Maps
-        const canonicalNames = ['Pastoral', 'Ushering & Protocol', 'Media and ICT', 'Youth', 'Children'];
-        const mappedDepts: Record<string, any> = {};
+const APPLY = process.argv.includes('--apply');
 
-        // 2. Identify & Map Existing Entities
-        for (const dept of allDepts) {
-            const nameLower = dept.name.toLowerCase();
-            if (nameLower.includes('media') || nameLower.includes('ict')) {
-                mappedDepts['Media and ICT'] = mappedDepts['Media and ICT'] || [];
-                mappedDepts['Media and ICT'].push(dept);
-            } else if (nameLower.includes('pastoral') || nameLower.includes('pastor')) {
-                mappedDepts['Pastoral'] = mappedDepts['Pastoral'] || [];
-                mappedDepts['Pastoral'].push(dept);
-            } else if (nameLower.includes('usher') || nameLower.includes('protocol')) {
-                mappedDepts['Ushering & Protocol'] = mappedDepts['Ushering & Protocol'] || [];
-                mappedDepts['Ushering & Protocol'].push(dept);
-            }
-        }
+const DEPT_FK_MODELS = [
+    'user', 'child', 'event', 'meeting', 'announcement', 'project',
+    'plan', 'message', 'budget', 'departmentReport', 'technicalRepair',
+] as const;
 
-        // 3. For every canonical cluster, select the FIRST as canonical, migrate rest -> First
-        for (const [canonicalName, records] of Object.entries(mappedDepts)) {
-            const arr = records as any[];
-            if (arr.length <= 1) {
-                // If there's 1, just rename it to be safe
-                if (arr.length === 1 && arr[0].name !== canonicalName) {
-                    await prisma.department.update({
-                        where: { id: arr[0].id },
-                        data: { name: canonicalName }
-                    });
-                    console.log(`[Dedupe] Standardized '${arr[0].name}' to Canonical: ${canonicalName}`);
-                }
-                continue;
-            }
+const defaultByKey = new Map(DEFAULT_DEPARTMENTS.map(n => [departmentKey(n), n]));
 
-            console.log(`[Dedupe] Conflict Detected in ${canonicalName}. Merging ${arr.length} duplicates...`);
-            
-            // Sort to prioritize exact match, otherwise just grab the first
-            arr.sort((a, b) => a.name === canonicalName ? -1 : 1);
-            const primaryDept = arr[0];
+type Dept = Awaited<ReturnType<typeof db.department.findMany>>[number];
 
-            for (let i = 1; i < arr.length; i++) {
-                const duplicateId = arr[i].id;
-                console.log(`    -> Migrating data from '${arr[i].name}' (${duplicateId}) to Canonical...`);
-
-                await prisma.$transaction(async (tx) => {
-                    // Update Users
-                    await tx.user.updateMany({ where: { departmentId: duplicateId }, data: { departmentId: primaryDept.id } });
-                    // Update Projects
-                    await tx.project.updateMany({ where: { departmentId: duplicateId }, data: { departmentId: primaryDept.id } });
-                    // Update Events
-                    await tx.event.updateMany({ where: { departmentId: duplicateId }, data: { departmentId: primaryDept.id } });
-                    // Update Meetings
-                    await tx.meeting.updateMany({ where: { departmentId: duplicateId }, data: { departmentId: primaryDept.id } });
-                    // Update Plans, Announcements, Budgets, Children, Messages
-                    await tx.plan.updateMany({ where: { departmentId: duplicateId }, data: { departmentId: primaryDept.id } });
-                    await tx.announcement.updateMany({ where: { departmentId: duplicateId }, data: { departmentId: primaryDept.id } });
-                    await tx.budget.updateMany({ where: { departmentId: duplicateId }, data: { departmentId: primaryDept.id } });
-                    await tx.child.updateMany({ where: { departmentId: duplicateId }, data: { departmentId: primaryDept.id } });
-                    await tx.message.updateMany({ where: { departmentId: duplicateId }, data: { departmentId: primaryDept.id } });
-                    
-                    // Update Financial Accounts
-                    // We can't merge account balances perfectly, so we'll just link the current account to the new dept 
-                    // Or ignore if the primary already has an account context.
-                    const existingPrimaryAccount = await tx.account.findUnique({ where: { departmentId: primaryDept.id }});
-                    if (!existingPrimaryAccount) {
-                        await tx.account.updateMany({ where: { departmentId: duplicateId }, data: { departmentId: primaryDept.id } });
-                    }
-                    
-                    // Final Destruction
-                    await tx.department.delete({ where: { id: duplicateId } });
-                });
-            }
-            
-            // Rename primary to exact canonical case
-            if (primaryDept.name !== canonicalName) {
-                await prisma.department.update({ where: { id: primaryDept.id }, data: { name: canonicalName } });
-            }
-        }
-
-        // 4. Eliminate Secretariat
-        const secretariatDepts = allDepts.filter(d => d.name.toLowerCase().includes('secretariat'));
-        for (const secDept of secretariatDepts) {
-            console.log(`[Dedupe] Eradicating Secretariat Department: ID ${secDept.id}`);
-            await prisma.$transaction(async (tx) => {
-                await tx.user.updateMany({ where: { departmentId: secDept.id }, data: { departmentId: null } });
-                await tx.project.deleteMany({ where: { departmentId: secDept.id } });
-                await tx.event.deleteMany({ where: { departmentId: secDept.id } });
-                await tx.meeting.deleteMany({ where: { departmentId: secDept.id } });
-                
-                // Eradicate other dependencies mapped to Secretariat
-                await tx.plan.deleteMany({ where: { departmentId: secDept.id } });
-                await tx.announcement.deleteMany({ where: { departmentId: secDept.id } });
-                await tx.budget.deleteMany({ where: { departmentId: secDept.id } });
-                await tx.child.deleteMany({ where: { departmentId: secDept.id } });
-                await tx.message.deleteMany({ where: { departmentId: secDept.id } });
-                
-                await tx.account.deleteMany({ where: { departmentId: secDept.id } });
-                
-                await tx.department.delete({ where: { id: secDept.id } });
-            });
-        }
-
-        console.log('[System Kernel] Deduplication Engine Completed Successfully.');
-
-    } catch (error) {
-        console.error('[Dedupe ERROR]', error);
-    } finally {
-        await prisma.$disconnect();
+async function referenceCounts(id: string) {
+    const counts: Record<string, number> = {};
+    for (const model of DEPT_FK_MODELS) {
+        counts[model] = await (db as any)[model].count({ where: { departmentId: id } });
     }
+    const [managers] = await db.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*)::bigint AS n FROM "_DeptManagers" WHERE "A" = ${id}`;
+    const [tagged] = await db.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*)::bigint AS n FROM "Message" WHERE ${id} = ANY("taggedDepartmentIds")`;
+    counts.managers = Number(managers.n);
+    counts.taggedMessages = Number(tagged.n);
+    return counts;
 }
 
-dedupeAndPrune();
+const total = (c: Record<string, number>) => Object.values(c).reduce((a, b) => a + b, 0);
+
+function pickCanonical(group: { dept: Dept; refs: number }[]) {
+    const defaultName = defaultByKey.get(departmentKey(group[0].dept.name));
+    return [...group].sort((a, b) => {
+        const aDeleted = a.dept.deletedAt ? 1 : 0;
+        const bDeleted = b.dept.deletedAt ? 1 : 0;
+        if (aDeleted !== bDeleted) return aDeleted - bDeleted;
+        const aExact = a.dept.name === defaultName ? 0 : 1;
+        const bExact = b.dept.name === defaultName ? 0 : 1;
+        if (aExact !== bExact) return aExact - bExact;
+        if (a.refs !== b.refs) return b.refs - a.refs;
+        return a.dept.createdAt.getTime() - b.dept.createdAt.getTime();
+    })[0];
+}
+
+async function mergeInto(keep: Dept, dup: Dept) {
+    await db.$transaction(async (tx) => {
+        for (const model of DEPT_FK_MODELS) {
+            await (tx as any)[model].updateMany({ where: { departmentId: dup.id }, data: { departmentId: keep.id } });
+        }
+
+        await tx.$executeRaw`
+            INSERT INTO "_DeptManagers" ("A", "B")
+            SELECT ${keep.id}, "B" FROM "_DeptManagers" WHERE "A" = ${dup.id}
+            ON CONFLICT DO NOTHING`;
+        await tx.$executeRaw`DELETE FROM "_DeptManagers" WHERE "A" = ${dup.id}`;
+
+        await tx.$executeRaw`
+            UPDATE "Message"
+            SET "taggedDepartmentIds" = ARRAY(
+                SELECT DISTINCT unnest(array_replace("taggedDepartmentIds", ${dup.id}, ${keep.id}))
+            )
+            WHERE ${dup.id} = ANY("taggedDepartmentIds")`;
+
+        const dupAccount = await tx.account.findUnique({ where: { departmentId: dup.id } });
+        if (dupAccount) {
+            const keepAccount = await tx.account.findUnique({ where: { departmentId: keep.id } });
+            if (!keepAccount) {
+                await tx.account.update({ where: { id: dupAccount.id }, data: { departmentId: keep.id } });
+            } else {
+                await tx.transaction.updateMany({ where: { accountId: dupAccount.id }, data: { accountId: keepAccount.id } });
+                await tx.account.update({
+                    where: { id: keepAccount.id },
+                    data: {
+                        balance: { increment: dupAccount.balance },
+                        totalIncome: { increment: dupAccount.totalIncome },
+                        totalExpenditure: { increment: dupAccount.totalExpenditure },
+                        version: { increment: 1 },
+                    },
+                });
+                await tx.account.update({
+                    where: { id: dupAccount.id },
+                    data: { balance: 0, totalIncome: 0, totalExpenditure: 0, deletedAt: new Date(), version: { increment: 1 } },
+                });
+            }
+        }
+
+        if (!keep.leaderId && dup.leaderId) {
+            await tx.department.update({ where: { id: keep.id }, data: { leaderId: dup.leaderId } });
+        }
+
+        await tx.department.update({
+            where: { id: dup.id },
+            data: {
+                name: `${dup.name.trim()} [merged ${dup.id.slice(0, 8)}]`,
+                deletedAt: dup.deletedAt ?? new Date(),
+                deletedReason: `MERGED_INTO:${keep.id}`,
+                version: { increment: 1 },
+            },
+        });
+    }, { timeout: 120000, maxWait: 20000 });
+}
+
+async function main() {
+    console.log(APPLY ? '=== APPLY MODE: changes will be written ===' : '=== DRY RUN (pass --apply to merge) ===');
+
+    const all = await db.department.findMany({ orderBy: { createdAt: 'asc' } });
+    const live = all.filter(d => !(d.deletedReason ?? '').startsWith('MERGED_INTO:'));
+
+    const groups = new Map<string, Dept[]>();
+    for (const d of live) {
+        const key = departmentKey(d.name);
+        groups.set(key, [...(groups.get(key) ?? []), d]);
+    }
+
+    let mergedGroups = 0;
+    const renames: { dept: Dept; to: string }[] = [];
+
+    for (const [key, depts] of groups) {
+        const targetName = defaultByKey.get(key) ?? cleanDepartmentName(depts[0].name);
+
+        if (depts.length === 1) {
+            if (depts[0].name !== targetName && !depts[0].deletedAt) renames.push({ dept: depts[0], to: targetName });
+            continue;
+        }
+
+        mergedGroups++;
+        const scored = [];
+        for (const dept of depts) {
+            const counts = await referenceCounts(dept.id);
+            const account = await db.account.findUnique({ where: { departmentId: dept.id } });
+            scored.push({ dept, counts, refs: total(counts), account });
+        }
+        const keep = pickCanonical(scored);
+
+        console.log(`\nDuplicate group "${targetName}" (${depts.length} records)`);
+        for (const s of scored) {
+            const tag = s === keep ? 'KEEP ' : 'MERGE';
+            const nonZero = Object.entries(s.counts).filter(([, n]) => n > 0).map(([k, n]) => `${k}=${n}`).join(', ') || 'no references';
+            const acct = s.account ? ` | account balance=${s.account.balance}` : '';
+            const del = s.dept.deletedAt ? ' (soft-deleted)' : '';
+            console.log(`  ${tag} ${JSON.stringify(s.dept.name)} ${s.dept.id}${del}: ${nonZero}${acct}`);
+        }
+        if (keep.dept.name !== targetName) console.log(`  -> canonical record will be renamed to ${JSON.stringify(targetName)}`);
+
+        if (APPLY) {
+            for (const s of scored) {
+                if (s !== keep) await mergeInto(keep.dept, s.dept);
+            }
+            if (keep.dept.name !== targetName) {
+                await db.department.update({ where: { id: keep.dept.id }, data: { name: targetName, version: { increment: 1 } } });
+            }
+            console.log('  merged.');
+        }
+    }
+
+    for (const r of renames) {
+        console.log(`\nRename ${JSON.stringify(r.dept.name)} -> ${JSON.stringify(r.to)}`);
+        if (APPLY) await db.department.update({ where: { id: r.dept.id }, data: { name: r.to, version: { increment: 1 } } });
+    }
+
+    console.log(`\n${mergedGroups} duplicate group(s), ${renames.length} rename(s). ${APPLY ? 'Done.' : 'Nothing was changed.'}`);
+    if (APPLY && mergedGroups > 0) console.log('Department lists are cached for up to 5 minutes; restart the API to see changes immediately.');
+}
+
+main()
+    .catch((err) => {
+        console.error('[departments:merge] FAILED:', err);
+        process.exitCode = 1;
+    })
+    .finally(() => db.$disconnect());

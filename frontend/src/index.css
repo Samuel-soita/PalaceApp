@@ -15,6 +15,32 @@
     --secondary-glow: hsla(280, 80%, 70%, 0.5);
     --cyan: hsl(188, 86%, 58%);
     --cyan-glow: hsla(188, 86%, 58%, 0.5);
+    --info: hsl(199, 89%, 62%);
+    --success: hsl(142, 69%, 58%);
+    --warning: hsl(36, 100%, 55%);
+    --error: hsl(0, 84%, 63%);
+
+    /* Named accents referenced by dashboard tiles and icons */
+    --green: #22c55e;
+    --orange: #ff9800;
+    --purple: #a78bfa;
+    --pink: #f472b6;
+    --blue: #60a5fa;
+    --red: #ef4444;
+    --soft-red: #f87171;
+    --yellow: #facc15;
+    --text-secondary: #94a3b8;
+    --glass-bg: hsl(230, 25%, 12%);
+    --bg-deep: #0a0c13;
+    --primary-hover: hsl(217, 91%, 55%);
+    --cyan-hover: hsl(188, 86%, 48%);
+    --primary-rgb: 79, 139, 255;
+    --cyan-rgb: 56, 214, 240;
+    --green-rgb: 34, 197, 94;
+    --orange-rgb: 255, 152, 0;
+    --purple-rgb: 167, 139, 250;
+    --pink-rgb: 244, 114, 182;
+    --blue-rgb: 96, 165, 250;
 
     /* Glassmorphism Foundations - Increased Opacity for Contrast */
     --glass-base: hsla(230, 25%, 15%, 0.6);
@@ -132,7 +158,7 @@
 }
 
 /* MUI Global Component Glass Tweaks */
-.MuiCard-root, .MuiPaper-root:not(.MuiDialog-paper):not(.MuiMenu-paper) {
+.MuiCard-root, .MuiPaper-root:not(.MuiDialog-paper):not(.MuiMenu-paper):not(.MuiAlert-root) {
   background: transparent !important;
   box-shadow: none !important;
   border-radius: 0px !important;
@@ -191,6 +217,64 @@ body {
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Phones and touch devices: live blur over a fixed gradient repaints the whole page every scroll frame
+   on mid-range Android GPUs, so trade it for near-opaque surfaces. */
+@media (max-width: 900px), (hover: none) {
+  :root {
+    --glass-base: hsla(230, 25%, 13%, 0.94);
+  }
+
+  body {
+    background-attachment: scroll;
+  }
+
+  *, *::before, *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .MuiPaper-root.MuiAppBar-root:not(.MuiDialog-paper):not(.MuiMenu-paper),
+  .MuiPaper-root.floating-surface:not(.MuiDialog-paper):not(.MuiMenu-paper) {
+    background: hsla(230, 25%, 9%, 0.97) !important;
+  }
+
+  .holographic-card {
+    transform: none;
+    isolation: isolate;
+    box-shadow: 0 4px 16px 0 hsla(0, 0%, 0%, 0.45), inset 0 1px 0 0 var(--glass-highlight);
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+  }
+
+  .MuiTextField-root .MuiInputBase-root fieldset {
+    transition: border-color 0.15s ease;
+  }
+}
+
+/* Touch screens keep :hover after a tap, which would leave cards lifted and glowing. */
+@media (hover: none) {
+  .holographic-card:hover {
+    transform: none;
+    border-color: var(--glass-border);
+    background: var(--glass-base);
+    box-shadow: 0 4px 16px 0 hsla(0, 0%, 0%, 0.45), inset 0 1px 0 0 var(--glass-highlight);
+  }
+
+  .holographic-card:hover::before {
+    opacity: 0;
+  }
+
+  .holographic-card:active {
+    border-color: var(--cyan);
+  }
+}
+
+@media (pointer: coarse) {
+  .MuiIconButton-sizeSmall {
+    min-width: 36px;
+    min-height: 36px;
+  }
 }
 
 @media (max-width: 600px) {

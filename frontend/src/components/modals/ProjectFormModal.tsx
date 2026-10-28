@@ -9,6 +9,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../lib/db';
 import api from '../../lib/api-client';
 import { useAuth } from '../../contexts/AuthContext';
+import { canBypassPastorAuthorization, canOverrideApproval, canSignApproval, isAwaitingApproval, pastorAuthorizationBlocked } from '../../utils/approval-rules';
 
 interface ProjectFormModalProps {
     open: boolean;
@@ -29,7 +30,7 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
         isMajor: false,
         departmentId: defaultDepartmentId || user?.departmentId || '',
         pastorIds: [] as string[],
-        category: 'GENERAL' as 'INFRASTRUCTURE' | 'OUTREACH' | 'TECH' | 'YOUTH' | 'GENERAL',
+        category: 'GENERAL' as 'INFRASTRUCTURE' | 'OUTREACH' | 'TECH' | 'YOUTH' | 'GENERAL' | 'NEW_PROJECT',
         deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
         budgetSource: 'DEPARTMENT'
     });
@@ -68,7 +69,7 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
 
     const departments = useLiveQuery(() => db.departments.toArray(), []) || [];
 
-    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
+    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
     const mutation = useMutation(
         (data: any) => project 
@@ -82,10 +83,15 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
         }
     );
 
+    const canSign = !!project && canSignApproval(project, user);
+    const showApprovalActions = !!project && isAwaitingApproval(project.approvalStatus) && (canSign || canOverrideApproval(user?.role));
+
     const approveMutation = useMutation(
         async (status: 'APPROVED' | 'REJECTED') => {
             if (status === 'APPROVED') {
-                return await api.post(`/projects/${project.id}/approve`);
+                return canSign
+                    ? await api.post(`/projects/${project.id}/approve`)
+                    : await api.patch(`/projects/${project.id}/status`, { approvalStatus: 'APPROVED' });
             } else {
                 return await api.patch(`/projects/${project.id}/status`, { approvalStatus: 'REJECTED' });
             }
@@ -106,13 +112,18 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
             return;
         }
 
+        if (!project && pastorAuthorizationBlocked(user?.role, formData.pastorIds)) {
+            alert('You must select exactly 2 Pastors to authorize this project.');
+            return;
+        }
+
         const { pastorIds, ...cleanPayload } = formData;
         const finalPayload = project ? cleanPayload : { ...cleanPayload, pastorIds };
         
         mutation.mutate(finalPayload);
     };
 
-    const isLocked = project?.status === 'APPROVED' && user?.role === 'DEPARTMENT_LEADER';
+    const isLocked = project?.approvalStatus === 'APPROVED' && user?.role === 'DEPARTMENT_LEADER';
 
     return (
         <Dialog 
@@ -131,11 +142,11 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
         >
             <form onSubmit={handleSubmit}>
                 <DialogTitle sx={{ fontWeight: '950', fontSize: '1.5rem', letterSpacing: -1 }}>
-                    {project ? (project.status === 'APPROVED' ? 'VIEW PROJECT (LOCKED)' : 'EDIT PROJECT') : 'INITIATE PROJECT'}
+                    {project ? (isLocked ? 'VIEW PROJECT (LOCKED)' : 'EDIT PROJECT') : 'INITIATE PROJECT'}
                 </DialogTitle>
                 <DialogContent>
                     {/* 👨‍⚖️ COMMAND APPROVAL OVERRIDE */}
-                    {project && project.approvalStatus !== 'APPROVED' && (project.targetPastorId === user?.id || ['WATUA', 'BISHOP'].includes(user?.role || '')) && (
+                    {showApprovalActions && (
                         <Box sx={{ mb: 4, p: 3, bgcolor: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: 0, textAlign: 'center' }}>
                             <Typography variant="subtitle2" fontWeight="950" color="orange" mb={1}>
                                 ACTION REQUIRED: PROJECT CLEARANCE
@@ -228,6 +239,7 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                                 <MenuItem value="TECH">Technical</MenuItem>
                                 <MenuItem value="YOUTH">Youth Development</MenuItem>
                                 <MenuItem value="GENERAL">General Project</MenuItem>
+                                {formData.category === 'NEW_PROJECT' && <MenuItem value="NEW_PROJECT">Uncategorised</MenuItem>}
                             </TextField>
                             <TextField
                                 label="Status"
@@ -287,7 +299,7 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                             />
                         </Box>
 
-                        {user?.role === 'SUPER_ADMIN' && (
+                        {(user?.role === 'SUPER_ADMIN' || !user?.departmentId) && (
                             <TextField
                                 label="Department"
                                 select
@@ -303,7 +315,7 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                         )}
                         
                         {!project && (
-                            <FormControl fullWidth required>
+                            <FormControl fullWidth required={!canBypassPastorAuthorization(user?.role)}>
                                 <InputLabel id="pastors-label" sx={{ fontWeight: 700 }}>CHOOSE 2 AUTHORIZING PASTORS</InputLabel>
                                 <Select
                                     labelId="pastors-label"
@@ -359,7 +371,7 @@ export default function ProjectFormModal({ open, onClose, project, onSuccess, de
                         {project ? 'SAVE CHANGES' : 'DEPLOY PROJECT'}
                     </Button>
                 </DialogActions>
-                {project?.status === 'APPROVED' && (
+                {isLocked && (
                     <Box sx={{ pb: 3, px: 4, textAlign: 'center' }}>
                         <Typography variant="caption" color="error" fontWeight="950">
                             MISSION CLEARED BY COMMAND. EDITING RESTRICTED.

@@ -1,11 +1,11 @@
 import { Response } from 'express';
 import prisma from '../../utils/prisma.js';
 import { logAudit } from '../../utils/audit.js';
-import { getOrSetCache } from '../../utils/redis.js';
-import redis from '../../utils/redis.js';
+import { getOrSetCache, invalidateCache, liveCacheKey } from '../../utils/redis.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
-import { canAutoPublishContent, bishopRoleApproved } from '../../utils/approval-utils.js';
+import { canAutoPublishContent } from '../../utils/approval-utils.js';
+import { assertAwaitingApproval, assertCanSetApprovalStatus, assertPastorSelection, createApprovalChain, notifyApprovers, publishLinkedAnnouncement, recordApproval } from '../../utils/approval-chain.js';
 import { isGlobalOperator } from '../../utils/department-accounts.js';
 
 /**
@@ -49,7 +49,7 @@ export const getProjects = catchAsync(async (req: AuthRequest, res: Response) =>
         }
     }
 
-    const cacheKey = `projects:v2:${user.role}:${user.departmentId || 'none'}:${departmentId || 'all'}:${isMajor || 'any'}:${page}:${limit}`;
+    const cacheKey = liveCacheKey('projects', `v2:${user.role}:${user.id}:${departmentId || 'all'}:${isMajor || 'any'}:${page}:${limit}`);
 
     const result = await getOrSetCache(cacheKey, async () => {
         const [data, total] = await Promise.all([
@@ -129,6 +129,12 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
     }
 
     const autoApprove = canAutoPublishContent(user.role);
+    assertPastorSelection(autoApprove, pastorIds, 'You must select exactly 2 Pastors to authorize this project.');
+    const approvalNotice = {
+        title: '📋 Project Clearance Required',
+        message: `Project "${title}" requires your strategic authorization.`
+    };
+    let approverIds: string[] = [];
 
     const project = await prisma.$transaction(async (tx) => {
         const newProject = await tx.project.create({
@@ -144,6 +150,7 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
                 progress: 0,
                 approvalStatus: autoApprove ? 'APPROVED' : 'PENDING_APPROVAL',
                 category: category || 'NEW_PROJECT',
+                createdById: user.id,
             } as any,
         });
 
@@ -159,45 +166,20 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
                 eventDate: deadline ? new Date(deadline) : new Date(),
                 location: 'CHURCH GROUNDS',
                 authorId: user.id,
-                departmentId: targetDeptId
+                departmentId: targetDeptId,
+                projectId: newProject.id
             } as any
         });
 
-        if (autoApprove) {
-            return newProject;
-        }
-
-        // 👨‍⚖️ Initializing Approval Chain
-        const approvalData: any[] = (pastorIds || []).map((pid: string) => ({
-            projectId: newProject.id,
-            userId: pid,
-            role: 'PASTOR'
-        }));
-
-        const bishop = await tx.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
-        if (bishop) {
-            approvalData.push({
-                projectId: newProject.id,
-                userId: bishop.id,
-                role: 'BISHOP'
-            });
-        }
-
-        if (approvalData.length > 0) {
-            await tx.projectApproval.createMany({ data: approvalData });
-            
-            const notifications = approvalData.map((app: any) => ({
-                userId: app.userId,
-                title: '📋 Project Clearance Required',
-                message: `Project "${title}" requires your strategic authorization.`
-            }));
-            await tx.notification.createMany({ data: notifications });
+        if (!autoApprove) {
+            approverIds = await createApprovalChain(tx, 'project', newProject.id, pastorIds, approvalNotice);
         }
 
         return newProject;
     });
 
     await logAudit(user.id, 'CREATE', 'PROJECT', project.id, { title, budget }, req.ip, req.get('user-agent'));
+    notifyApprovers(approverIds, approvalNotice);
     await invalidateProjectCache();
 
     res.status(201).json(project);
@@ -214,37 +196,29 @@ export const approveProject = catchAsync(async (req: AuthRequest, res: Response)
         where: { id, deletedAt: null } 
     });
     if (!project) throw new AppError('Project not found', 404);
+    assertAwaitingApproval(project.approvalStatus);
 
-    const existing = await prisma.projectApproval.findUnique({
-        where: { projectId_userId: { projectId: id, userId: user.id } }
-    });
-    if (existing) throw new AppError('You have already signed off on this project.', 400);
-
-    // Recording approval in a transaction to ensure integrity
-    await prisma.$transaction(async (tx) => {
-        await tx.projectApproval.create({
-            data: {
-                projectId: id,
-                userId: user.id,
-                role: user.role === 'SUPER_ADMIN' ? 'BISHOP' : (['PASTOR', 'ASSOCIATE_PASTOR'].includes(user.role) ? 'PASTOR' : user.role)
-            }
-        });
-
-        const allApprovals = await tx.projectApproval.findMany({ where: { projectId: id } });
-        const bishopApproved = bishopRoleApproved(allApprovals);
-        const pastorCount = allApprovals.filter((a: any) => a.role === 'PASTOR').length;
-
-        if (bishopApproved && pastorCount >= 2) {
+    const { approvals, quorumMet } = await prisma.$transaction(async (tx) => {
+        const result = await recordApproval(tx, 'project', id, user);
+        if (result.quorumMet) {
             await tx.project.update({
                 where: { id },
                 data: { approvalStatus: 'APPROVED' }
             });
-            await logAudit(user.id, 'PUBLISH', 'PROJECT', id, { title: project.title }, req.ip, req.get('user-agent'));
+            await publishLinkedAnnouncement(tx, 'project', project);
         }
+        return result;
     });
 
+    if (quorumMet) {
+        await logAudit(user.id, 'PUBLISH', 'PROJECT', id, { title: project.title }, req.ip, req.get('user-agent'));
+    }
     await invalidateProjectCache();
-    res.json({ message: 'Approval recorded successfully.' });
+    res.json({
+        message: quorumMet ? 'Project approved.' : 'Approval recorded successfully.',
+        totalApprovals: approvals.filter((a) => a.approved).length,
+        approvalStatus: quorumMet ? 'APPROVED' : project.approvalStatus
+    });
 });
 
 /**
@@ -258,11 +232,15 @@ export const updateProjectStatus = catchAsync(async (req: AuthRequest, res: Resp
     if (!['APPROVED', 'REJECTED'].includes(approvalStatus)) {
         throw new AppError('Invalid approval status', 400);
     }
+    await assertCanSetApprovalStatus(prisma, 'project', id, user, approvalStatus);
 
     const project = await prisma.project.update({
         where: { id },
         data: { approvalStatus }
     });
+    if (approvalStatus === 'APPROVED') {
+        await publishLinkedAnnouncement(prisma, 'project', project);
+    }
 
     await logAudit(user.id, 'FORCE_APPROVE', 'PROJECT', id, { title: project.title, approvalStatus }, req.ip, req.get('user-agent'));
     await invalidateProjectCache();
@@ -275,7 +253,7 @@ export const updateProjectStatus = catchAsync(async (req: AuthRequest, res: Resp
  */
 export const updateProject = catchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
-    const { budget, progress, deadline, ...rest } = req.body;
+    const { budget, progress, deadline, pastorIds: _pastorIds, approvalStatus: _approvalStatus, departmentId, ...rest } = req.body;
     const user = req.user!;
 
     const existingProject = await prisma.project.findFirst({ where: { id, deletedAt: null } });
@@ -299,13 +277,14 @@ export const updateProject = catchAsync(async (req: AuthRequest, res: Response) 
         }
     }
 
-    // Sanitizing payload and handling numeric/date fields
     const { pastorIds, ...cleanRest } = req.body;
-    
+    const canMoveDepartment = isGlobalOperator(user.role) && departmentId && departmentId !== existingProject.departmentId;
+
     const project = await prisma.project.update({
         where: { id: id },
         data: {
             ...rest,
+            ...(canMoveDepartment && { departmentId }),
             ...(budget !== undefined && { budget: Number(budget) }),
             ...(progress !== undefined && { progress: Number(progress) }),
             ...(deadline !== undefined && { deadline: deadline ? new Date(deadline) : null }),
@@ -392,6 +371,6 @@ export const addProjectUpdate = catchAsync(async (req: AuthRequest, res: Respons
  * ⚡ Cache Invalidation Helper
  */
 async function invalidateProjectCache() {
-    const keys = await redis.keys('projects:*');
-    if (keys.length > 0) await redis.del(...keys);
+    await invalidateCache('projects:*');
+    void invalidateCache('announcements:*');
 }

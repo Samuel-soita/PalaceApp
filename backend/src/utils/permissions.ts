@@ -62,7 +62,7 @@ export function evaluateAccess(
     userPermissions: string[],
     permissionCode: string,
     overrides: { permissionCode: string, granted: boolean }[] = [],
-    context?: PermissionContext
+    _context?: PermissionContext
 ): boolean {
     if (userRole === 'WATUA' || userRole === 'SUPER_ADMIN') return true;
 

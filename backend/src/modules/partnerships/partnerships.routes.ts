@@ -5,7 +5,7 @@ import {
     deletePartnership,
     updatePartnership
 } from './partnerships.controller.js';
-import { authenticate, authorize, moduleGuard } from '../../middleware/auth.middleware.js';
+import { authenticate, authorize } from '../../middleware/auth.middleware.js';
 import { validate } from '../../middleware/validate.middleware.js';
 import { z } from 'zod';
 
@@ -22,9 +22,12 @@ const LedgerTransactionSchema = z.object({
     })
 });
 
-router.get('/all', authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA', 'PASTOR']), moduleGuard('PartnershipManagement'), getAllPartnerships);
-router.post('/:id/ledger', authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA', 'PASTOR', 'ASSOCIATE_PASTOR']), moduleGuard('PartnershipManagement'), validate(LedgerTransactionSchema), addLedgerTransaction);
-router.patch('/:id', authorize(['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'PASTOR']), updatePartnership);
+// Pastors are scoped in the controllers (PartnershipManagement module or legacy canManagePartnerships flag).
+const PARTNERSHIP_STAFF: Parameters<typeof authorize>[0] = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA', 'PASTOR', 'ASSOCIATE_PASTOR'];
+
+router.get('/all', authorize(PARTNERSHIP_STAFF), getAllPartnerships);
+router.post('/:id/ledger', authorize(PARTNERSHIP_STAFF), validate(LedgerTransactionSchema), addLedgerTransaction);
+router.patch('/:id', authorize(PARTNERSHIP_STAFF), updatePartnership);
 router.delete('/:id', authorize(['SUPER_ADMIN', 'WATUA']), deletePartnership);
 
 export default router;

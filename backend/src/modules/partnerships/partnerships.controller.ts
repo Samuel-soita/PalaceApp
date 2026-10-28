@@ -1,16 +1,23 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import prisma from '../../utils/prisma.js';
 import { logAction } from '../../utils/audit.service.js';
 import { NotificationEngine } from '../../utils/NotificationEngine.js';
+import { pastorHasModule } from '../../utils/pastor-module-keys.js';
+
+/** Pastors manage partnerships via the legacy flag or the PartnershipManagement module. */
+function isPartnershipPastor(user: { role: string; canManagePartnerships?: boolean; pastorModules?: string[] }) {
+    if (user.role !== 'PASTOR' && user.role !== 'ASSOCIATE_PASTOR') return false;
+    return !!user.canManagePartnerships || pastorHasModule(user.pastorModules, 'PartnershipManagement');
+}
 
 export const getAllPartnerships = async (req: any, res: Response) => {
-    const { id: userId, role, canManagePartnerships } = req.user;
+    const { id: userId, role } = req.user;
 
     // 1. Administrators (Bishop, Secretary, System Admin, Watua) have global access
     const isAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(role);
     
     // 2. Assigned Pastor has global access for reconciliation
-    const isAssigned = (role === 'PASTOR' || role === 'ASSOCIATE_PASTOR') && canManagePartnerships;
+    const isAssigned = isPartnershipPastor(req.user);
 
     try {
         const whereClause = (isAdmin || isAssigned) ? {} : { userId };
@@ -36,10 +43,10 @@ export const addLedgerTransaction = async (req: any, res: Response) => {
     const { id: partnershipId } = req.params;
     const { amount, paymentMethod, referenceCode, transactionType = 'CREDIT' } = req.body;
     const actorId = req.user.id;
-    const { role, canManagePartnerships } = req.user;
+    const { role } = req.user;
 
     const isGlobalReconciler = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(role);
-    const isAssignedPastor = (role === 'PASTOR' || role === 'ASSOCIATE_PASTOR') && canManagePartnerships;
+    const isAssignedPastor = isPartnershipPastor(req.user);
     if (!isGlobalReconciler && !isAssignedPastor) {
         return res.status(403).json({ error: 'You are not authorized to reconcile partnership ledgers.' });
     }
@@ -200,7 +207,12 @@ export const updatePartnership = async (req: any, res: Response) => {
     const { amount } = req.body;
     const actorId = req.user.id;
 
-    if (!amount || amount <= 0) {
+    const isGlobalReconciler = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(req.user.role);
+    if (!isGlobalReconciler && !isPartnershipPastor(req.user)) {
+        return res.status(403).json({ error: 'You are not authorized to revise partnership commitments.' });
+    }
+
+    if (!amount || Number(amount) <= 0) {
         return res.status(400).json({ error: 'Partnership amount must be positive.' });
     }
 

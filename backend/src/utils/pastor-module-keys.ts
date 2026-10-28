@@ -2,9 +2,10 @@
 export const PASTOR_MODULE_ALIASES: Record<string, string[]> = {
     EventOversight: ['EventOversight', 'Event Oversight'],
     PartnershipManagement: ['PartnershipManagement', 'Partnership Management'],
-    ChildDedication: ['ChildDedication', 'Child Dedication Registry'],
+    ChildDedication: ['ChildDedication', 'Child Dedication Registry', 'ChildDedicationRegistry'],
     DevotionPublishing: ['DevotionPublishing'],
     ProjectOversight: ['ProjectOversight', 'Project Oversight'],
+    MemberRegistration: ['MemberRegistration'],
 };
 
 export const CANONICAL_PASTOR_MODULES = Object.keys(PASTOR_MODULE_ALIASES);

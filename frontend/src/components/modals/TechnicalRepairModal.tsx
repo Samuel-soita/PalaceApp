@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { 
     Modal, Backdrop, Fade, Box, Typography, TextField, Button, 
     Stack, Avatar, InputAdornment, MenuItem 
 } from '@mui/material';
-import { Settings, Wrench, DollarSign } from 'lucide-react';
+import { Settings, DollarSign } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import api from '../../lib/api-client';
 import { db } from '../../lib/db';
 import { executeApiFirstMutation } from '../../lib/api-first-mutation';
 
@@ -38,7 +37,7 @@ export default function TechnicalRepairModal({ open, onClose, departmentId, onSu
                     estimatedCost: data.estimatedCost,
                     requesterId: 'ME',
                     departmentId: data.departmentId || 'GLOBAL',
-                    status: 'PENDING_APPROVAL',
+                    status: 'PENDING_PASTOR_1',
                     syncStatus: 'PENDING',
                     deviceId: localStorage.getItem('device_id') || 'UNKNOWN',
                     lastModifiedBy: 'ME',
@@ -57,7 +56,8 @@ export default function TechnicalRepairModal({ open, onClose, departmentId, onSu
             setProblemDescription('');
             setEstimatedCost(0);
             setBudgetSource('DEPARTMENT');
-        }
+        },
+        onError: (err: any) => alert(err.response?.data?.error || 'Could not submit the repair request.')
     });
 
     const handleSubmit = () => {
@@ -70,7 +70,7 @@ export default function TechnicalRepairModal({ open, onClose, departmentId, onSu
             onClose={onClose}
             closeAfterTransition
             BackdropComponent={Backdrop}
-            BackdropProps={{ timeout: 500, sx: { backdropFilter: 'blur(10px)', bgcolor: 'rgba(0,0,0,0.85)' } }}
+            BackdropProps={{ timeout: 200, sx: { backdropFilter: 'blur(10px)', bgcolor: 'rgba(0,0,0,0.85)' } }}
         >
             <Fade in={open}>
                 <Box sx={{ 

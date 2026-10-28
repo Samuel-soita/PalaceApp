@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { LocalAuthService } from '../lib/LocalAuthService';
-import { db } from '../lib/db';
-import { expireSessionIfNeeded, isOnlineSessionActive, isTokenExpired, resetSessionState } from '../lib/auth-session';
+import { db, prepareLocalDataForUser } from '../lib/db';
+import { expireSessionIfNeeded, isTokenExpired, resetSessionState } from '../lib/auth-session';
 import { startSyncDaemon, stopSyncDaemon } from '../lib/pwa-sync';
 import api from '../lib/api-client';
 
@@ -26,7 +26,7 @@ interface AuthUser {
 interface AuthContextType {
     user: AuthUser | null;
     token: string | null;
-    login: (data: { user: AuthUser; token: string; pin?: string }) => void;
+    login: (data: { user: AuthUser; token: string; pin?: string }) => Promise<void>;
     loginOffline: (userId: string, pin: string) => Promise<boolean>;
     logout: () => void;
     updateUser: (data: Partial<AuthUser>) => void;
@@ -118,6 +118,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const login = async (data: any) => {
         resetSessionState();
+        try {
+            await prepareLocalDataForUser(data.user.id);
+        } catch (err) {
+            console.warn('[Auth] Could not reset local data for new account', err);
+        }
         setUser(data.user);
         setToken(data.token);
         localStorage.setItem('token', data.token);

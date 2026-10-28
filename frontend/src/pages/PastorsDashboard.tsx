@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
     Container, Grid, Typography, Box, Card, CardContent, Button, Avatar, Chip,
-    IconButton, LinearProgress, Modal, Backdrop, Fade, Stack, Divider,
+    LinearProgress, Modal, Backdrop, Fade, Stack, Divider,
     Snackbar, Alert, Badge
 } from '@mui/material';
 import {
-    Bell, Calendar, UserPlus, Baby, Heart, BookOpen, Quote, Star,
-    ArrowRight, Droplet, CheckCircle2, Clock, Sparkles, Megaphone,
-    ThumbsUp, Smile, Send, Shield, ChevronRight, TrendingUp, Zap, Wrench, FileText
+    Bell, Calendar, Baby, Heart, BookOpen, Star,
+    Droplet, Sparkles, Megaphone,
+    ThumbsUp, Smile, Shield, ChevronRight, Zap, Wrench, FileText
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -29,9 +29,9 @@ import RepairApprovalManager from '../components/dashboard/RepairApprovalManager
 import MissionReportsViewer from '../components/dashboard/MissionReportsViewer';
 import DepartmentReportModal from '../components/modals/DepartmentReportModal';
 import { OperationalTimeline } from '../components/dashboard/OperationalTimeline';
-import { BroadcastTrack } from '../components/dashboard/BroadcastTrack';
 import { useLocalFirstDashboard } from '../hooks/useLocalFirstDashboard';
 import IntelDetailModal from '../components/modals/IntelDetailModal';
+import PendingApprovalsPanel from '../components/dashboard/PendingApprovalsPanel';
 
 export default function PastorsDashboard() {
     const { user, updateUser } = useAuth();
@@ -39,6 +39,7 @@ export default function PastorsDashboard() {
 
     // 👨‍⚖️ Module Scoping Helper (bishop + 2 pastors approval still required on create)
     const hasModule = (key: Parameters<typeof hasPastorModule>[1]) => hasPastorModule(user, key);
+    const canPublishIntel = user?.role === 'PASTOR' || user?.role === 'SUPER_ADMIN';
 
     // Pastoral Tool States
     const [baptismsOpen, setBaptismsOpen] = useState(false);
@@ -49,7 +50,6 @@ export default function PastorsDashboard() {
 
     // Personal Family States
     const [baptismModalOpen, setBaptismModalOpen] = useState(false);
-    const [calendarModalOpen, setCalendarModalOpen] = useState(false);
     const [enrollModalOpen, setEnrollModalOpen] = useState(false);
     const [appointmentModalOpen, setAppointmentModalOpen] = useState(false);
     const [enrollAmount, setEnrollAmount] = useState<number>(700);
@@ -79,7 +79,12 @@ export default function PastorsDashboard() {
     // Legacy support for direct interaction, but display will favor syncData
     const devotion = syncData?.devotion;
 
-    const { data: myDevotions, isLoading: isMyDevotionsLoading } = useQuery(['my-devotions'], async () => {
+    const baptismActionStatus = user?.role === 'PASTOR' ? 'PENDING_PASTOR_APPROVAL' : user?.role === 'SUPER_ADMIN' ? 'BISHOP_APPROVED' : null;
+    const dedicationActionStatus = user?.role === 'PASTOR' ? 'PENDING_DEDICATION' : user?.role === 'SUPER_ADMIN' ? 'BISHOP_RITE_PENDING' : null;
+    const actionableBaptisms = baptismActionStatus ? (syncData?.baptisms || []).filter((b: any) => b.status === baptismActionStatus).length : 0;
+    const actionableDedications = dedicationActionStatus ? (syncData?.children || []).filter((c: any) => c.workflowStatus === dedicationActionStatus).length : 0;
+
+    const { data: myDevotions } = useQuery(['my-devotions'], async () => {
         const res = await api.get('/devotions/authored/me');
         return res.data?.data || [];
     });
@@ -242,74 +247,23 @@ export default function PastorsDashboard() {
                         <Chip
                             label={`YEAR: ${syncData?.ministrySettings?.themeOfYear || 'YEAR OF DIVINE ESTABLISHMENT'}`}
                             size="small"
-                            sx={{ bgcolor: 'rgba(79, 139, 255, 0.1)', color: 'var(--primary)', fontWeight: 900, borderRadius: 0 }}
+                            sx={{ bgcolor: 'rgba(79, 139, 255, 0.1)', color: 'var(--primary)', fontWeight: 900, borderRadius: 0, height: 'auto', maxWidth: '100%', '& .MuiChip-label': { whiteSpace: 'normal', py: 0.5 } }}
                         />
                         <Chip
                             label={`MONTH: ${syncData?.ministrySettings?.themeOfMonth || 'MONTH OF NEW BEGINNINGS'}`}
                             size="small"
-                            sx={{ bgcolor: 'rgba(0, 180, 216, 0.1)', color: 'var(--cyan)', fontWeight: 900, borderRadius: 0 }}
+                            sx={{ bgcolor: 'rgba(0, 180, 216, 0.1)', color: 'var(--cyan)', fontWeight: 900, borderRadius: 0, height: 'auto', maxWidth: '100%', '& .MuiChip-label': { whiteSpace: 'normal', py: 0.5 } }}
                         />
                     </Box>
                 </Box>
 
                 {/* 🛡️ APPROVAL MISSION TERMINAL (Items assigned to current user) */}
-                {(() => {
-                    const pendingApprovals = [
-                        ...(syncData?.projects || []).filter((p: any) => p.targetPastorId === user?.id && p.approvalStatus === 'PENDING').map((p: any) => ({ ...p, type: 'PROJECT' })),
-                        ...(syncData?.events || []).filter((e: any) => e.targetPastorId === user?.id && e.approvalStatus === 'PENDING').map((e: any) => ({ ...e, type: 'EVENT' })),
-                        ...(syncData?.plans || []).filter((p: any) => p.targetPastorId === user?.id && p.approvalStatus === 'PENDING').map((p: any) => ({ ...p, type: 'PLAN' })),
-                    ];
-
-                    if (pendingApprovals.length === 0) return null;
-
-                    return (
-                        <Box sx={{ mb: 6 }}>
-                            <Box display="flex" alignItems="center" gap={1.5} mb={3}>
-                                <Shield size={20} color="orange" />
-                                <Typography variant="caption" fontWeight="1000" sx={{ color: 'orange', letterSpacing: 2 }}>
-                                    CRITICAL: PENDING APPROVAL REQUESTS ({pendingApprovals.length})
-                                </Typography>
-                            </Box>
-                            <Grid container spacing={2}>
-                                {pendingApprovals.map((item) => (
-                                    <Grid item xs={12} md={4} key={item.id}>
-                                        <Card 
-                                            className="holographic-card" 
-                                            sx={{ 
-                                                border: '1px solid orange', 
-                                                bgcolor: 'rgba(255,165,0,0.05)',
-                                                animation: 'pulse-pastor-live 3s infinite'
-                                            }}
-                                        >
-                                            <CardContent sx={{ p: 2 }}>
-                                                <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-                                                    <Typography variant="caption" fontWeight="950" color="orange">{item.type}</Typography>
-                                                    <Chip label="ACTION REQUIRED" size="small" sx={{ height: 16, fontSize: '0.55rem', fontWeight: 950, bgcolor: 'orange', color: '#000' }} />
-                                                </Box>
-                                                <Typography variant="subtitle2" fontWeight="950" mb={1}>{item.title?.toUpperCase()}</Typography>
-                                                <Typography variant="caption" sx={{ opacity: 0.6, display: 'block', mb: 2 }}>
-                                                    Requested: {new Date(item.createdAt).toLocaleDateString()}
-                                                </Typography>
-                                                <Button 
-                                                    variant="outlined" 
-                                                    size="small" 
-                                                    fullWidth 
-                                                    onClick={() => handleEdit(item)}
-                                                    sx={{ 
-                                                        borderColor: 'orange', color: 'orange', fontWeight: 900, fontSize: '0.65rem',
-                                                        '&:hover': { bgcolor: 'orange', color: 'black' }
-                                                    }}
-                                                >
-                                                    REVIEW & APPROVE
-                                                </Button>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                ))}
-                            </Grid>
-                        </Box>
-                    );
-                })()}
+                <PendingApprovalsPanel
+                    projects={syncData?.projects}
+                    events={syncData?.events}
+                    plans={syncData?.plans}
+                    announcements={syncData?.announcements}
+                />
 
                 <Grid container spacing={4}>
                     {/* Left Column (6): Spiritual, Personal & Major Intelligence */}
@@ -333,21 +287,29 @@ export default function PastorsDashboard() {
                                         </Button>
                                     )}
                                 </Box>
-                                <Chip
-                                    label={devotion?.themeOfMonth?.toUpperCase() || syncData?.ministrySettings?.themeOfMonth?.toUpperCase()}
-                                    size="small" variant="outlined"
-                                    sx={{ color: 'var(--cyan)', borderColor: 'var(--cyan-glow)', fontWeight: 900, mb: 2 }}
-                                />
+                                {(devotion?.themeOfMonth || syncData?.ministrySettings?.themeOfMonth) && (
+                                    <Chip
+                                        label={String(devotion?.themeOfMonth || syncData?.ministrySettings?.themeOfMonth || '').toUpperCase()}
+                                        size="small" variant="outlined"
+                                        sx={{ color: 'var(--cyan)', borderColor: 'var(--cyan-glow)', fontWeight: 900, mb: 2 }}
+                                    />
+                                )}
 
-                                {isSyncLoading ? <LinearProgress /> : (
+                                {isSyncLoading ? <LinearProgress /> : !devotion ? (
+                                    <Box sx={{ p: 4, textAlign: 'center', border: '1px dashed rgba(0,255,255,0.3)', bgcolor: 'rgba(0,255,255,0.02)', borderRadius: 2 }}>
+                                        <Sparkles size={24} color="var(--cyan)" style={{ marginBottom: 8, opacity: 0.5 }} />
+                                        <Typography variant="subtitle2" fontWeight="950" sx={{ color: 'var(--cyan)', opacity: 0.7 }}>AWAITING TODAY&apos;S MINISTERIAL DEVOTION</Typography>
+                                        <Typography variant="caption" sx={{ display: 'block', mt: 1, opacity: 0.5 }}>No devotion has been published for today yet.</Typography>
+                                    </Box>
+                                ) : (
                                     <>
                                         <Typography variant="h4" fontWeight="950" sx={{ mb: 2, color: 'primary.main', opacity: 0.9 }}>{devotion?.title}</Typography>
                                         <Typography variant="body1" sx={{ mb: 4, lineHeight: 1.8, fontSize: '1.1rem', opacity: 0.8, fontStyle: 'italic' }}>
                                             &quot;{devotion?.content}&quot;
                                         </Typography>
                                         <Divider sx={{ mb: 3, opacity: 0.1 }} />
-                                        <Box display="flex" justifyContent="space-between" alignItems="center">
-                                            <Stack direction="row" spacing={1}>
+                                        <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1.5}>
+                                            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                                                 {[
                                                     { icon: ThumbsUp, label: 'Amen', value: 'AMEN', type: 'AMEN' },
                                                     { icon: Smile, label: 'Blessed', value: '😊', type: 'EMOJI' },
@@ -356,7 +318,7 @@ export default function PastorsDashboard() {
                                                     const count = devotion?.interactions?.filter((i: any) => i.value === btn.value).length || 0;
                                                     const isActive = devotion?.interactions?.some((i: any) => i.value === btn.value && i.userId === user?.id);
                                                     return (
-                                                        <Button key={btn.value} size="small" startIcon={<btn.icon size={16} />} onClick={() => devotionMutation.mutate({ type: btn.type, value: btn.value })}
+                                                        <Button key={btn.value} size="small" startIcon={<btn.icon size={16} />} disabled={devotionMutation.isLoading} onClick={() => devotionMutation.mutate({ type: btn.type, value: btn.value })}
                                                             sx={{ borderRadius: 20, px: 2, bgcolor: isActive ? 'rgba(0,180,216,0.2)' : 'rgba(255,255,255,0.03)', color: isActive ? 'var(--cyan)' : 'inherit', border: isActive ? '1px solid var(--cyan)' : '1px solid transparent' }}
                                                         >
                                                             {btn.label} {count > 0 && `(${count})`}
@@ -454,7 +416,7 @@ export default function PastorsDashboard() {
                                 <Stack spacing={2}>
                                     {(() => {
                                         const globalIntel = [
-                                            ...(syncData?.announcements || []).filter((a: any) => a.isGlobal).map((a: any) => ({ ...a, intelType: 'CHURCH UPDATE', icon: Megaphone, color: 'cyan' })),
+                                            ...(syncData?.announcements || []).filter((a: any) => a.isGlobal || a.isMajor).map((a: any) => ({ ...a, intelType: 'CHURCH UPDATE', icon: Megaphone, color: 'cyan' })),
                                             ...(syncData?.events || []).filter((e: any) => e.isMajor).map((e: any) => ({ ...e, intelType: 'MAJOR EVENT', icon: Calendar, color: 'primary' })),
                                             ...(syncData?.projects || []).filter((p: any) => p.isMajor).map((p: any) => ({ ...p, intelType: 'STRATEGIC PROJECT', icon: Star, color: 'cyan' })),
                                             ...(syncData?.plans || []).filter((p: any) => p.isMajor).map((p: any) => ({ ...p, intelType: 'MINISTRY PLAN', icon: BookOpen, color: 'orange' })),
@@ -585,7 +547,7 @@ export default function PastorsDashboard() {
                                                 <Droplet size={20} color="var(--cyan)" />
                                                 <Typography variant="subtitle2" fontWeight="900">Baptism Pipeline</Typography>
                                             </Box>
-                                            <Badge badgeContent={syncData?.baptisms?.length} color="error"><ChevronRight size={18} /></Badge>
+                                            <Badge badgeContent={actionableBaptisms} color="error"><ChevronRight size={18} /></Badge>
                                         </Button>
                                         {hasModule('ChildDedication') && (
                                             <Button fullWidth onClick={() => setDedicationOpen(true)} sx={{ justifyContent: 'space-between', bgcolor: 'rgba(255,255,255,0.05)', p: 2, border: '1px solid rgba(255,255,255,0.1)' }}>
@@ -593,7 +555,7 @@ export default function PastorsDashboard() {
                                                     <Baby size={20} color="orange" />
                                                     <Typography variant="subtitle2" fontWeight="900">Dedication Registry</Typography>
                                                 </Box>
-                                                <Badge badgeContent={syncData?.children?.length} color="error"><ChevronRight size={18} /></Badge>
+                                                <Badge badgeContent={actionableDedications} color="error"><ChevronRight size={18} /></Badge>
                                             </Button>
                                         )}
                                         <Button fullWidth onClick={() => setAppointmentsOpen(true)} sx={{ justifyContent: 'space-between', bgcolor: 'rgba(255,255,255,0.05)', p: 2, border: '1px solid rgba(255,255,255,0.1)' }}>
@@ -669,9 +631,9 @@ export default function PastorsDashboard() {
                                             </Button>
                                         </Grid>
                                         )}
-                                        {hasModule('DevotionPublishing') && (
+                                        {canPublishIntel && (
                                             <Grid item xs={6}>
-                                                <Button fullWidth onClick={() => setDevotionModalOpen(true)} sx={{ height: 60, display: 'flex', flexDirection: 'column', gap: 0.5, bgcolor: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--glass-border)', borderRadius: 2 }}>
+                                                <Button fullWidth onClick={() => { setEditingAnnouncement(null); setAnnouncementModalOpen(true); }} sx={{ height: 60, display: 'flex', flexDirection: 'column', gap: 0.5, bgcolor: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--glass-border)', borderRadius: 2 }}>
                                                     <Megaphone size={18} />
                                                     <Typography variant="caption" fontWeight="950" sx={{ fontSize: '0.6rem' }}>NEW INTEL</Typography>
                                                 </Button>
@@ -741,7 +703,7 @@ export default function PastorsDashboard() {
                 onClose={() => setEnrollModalOpen(false)}
                 closeAfterTransition
                 BackdropComponent={Backdrop}
-                BackdropProps={{ timeout: 500, sx: { backdropFilter: 'blur(12px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
+                BackdropProps={{ timeout: 200, sx: { backdropFilter: 'blur(12px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
             >
                 <Fade in={enrollModalOpen}>
                     <Box tabIndex={-1} sx={{ 
@@ -824,7 +786,7 @@ export default function PastorsDashboard() {
                 onClose={() => setAppointmentModalOpen(false)}
                 closeAfterTransition
                 BackdropComponent={Backdrop}
-                BackdropProps={{ timeout: 500, sx: { backdropFilter: 'blur(10px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
+                BackdropProps={{ timeout: 200, sx: { backdropFilter: 'blur(10px)', bgcolor: 'rgba(0,0,0,0.8)' } }}
             >
                 <Fade in={appointmentModalOpen}>
                     <Box sx={{

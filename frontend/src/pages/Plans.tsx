@@ -4,15 +4,14 @@ import { db } from '../lib/db';
 import {
     Box, Typography, Grid, Card, CardContent, Button, Chip,
     Dialog, DialogTitle, DialogContent, DialogActions, TextField,
-    MenuItem, IconButton, Alert, CircularProgress,
+    MenuItem, IconButton, CircularProgress,
     Select, Checkbox, ListItemText, FormControl, InputLabel
 } from '@mui/material';
-import { Plus, Edit, Trash2, Calendar, ClipboardList } from 'lucide-react';
+import { Plus, Edit, Trash2 } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
-import api from '../lib/api-client';
 import { useAuth } from '../contexts/AuthContext';
 import { isUserManagingDepartment } from '../utils/auth-options';
-import { pastorAuthorizationBlocked } from '../utils/approval-rules';
+import { canBypassPastorAuthorization, pastorAuthorizationBlocked } from '../utils/approval-rules';
 import { paginate, paginationMeta } from '../utils/pagination';
 import { executeApiFirstMutation } from '../lib/api-first-mutation';
 
@@ -132,7 +131,7 @@ export default function Plans() {
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!editingPlan && pastorAuthorizationBlocked(user?.role, formData.pastorIds)) {
-            alert('You must select exactly 2 Pastors to authorize this ChurchPlan before it takes effect.');
+            alert('You must select exactly 2 Pastors to authorize this plan before it takes effect.');
             return;
         }
 
@@ -175,6 +174,13 @@ export default function Plans() {
                 )}
             </Box>
 
+            {pagedPlans.length === 0 && (
+                <Box sx={{ py: 8, textAlign: 'center', border: '1px dashed var(--glass-border)', borderRadius: 2 }}>
+                    <Typography variant="subtitle2" fontWeight="900" sx={{ opacity: 0.6 }}>NO PLANS YET</Typography>
+                    <Typography variant="caption" sx={{ display: 'block', mt: 1, opacity: 0.5 }}>Approved department plans will appear here.</Typography>
+                </Box>
+            )}
+
             <Grid container spacing={3}>
                 {pagedPlans?.map((plan: any) => (
                     <Grid item xs={12} md={6} key={plan.id}>
@@ -199,9 +205,11 @@ export default function Plans() {
                                             <IconButton size="small" onClick={() => handleOpen(plan)} sx={{ color: 'primary.main' }}>
                                                 <Edit size={16} />
                                             </IconButton>
-                                            <IconButton size="small" onClick={() => handleDelete(plan.id)} sx={{ color: 'error.main' }}>
-                                                <Trash2 size={16} />
-                                            </IconButton>
+                                            {user?.role !== 'SECRETARY' && (
+                                                <IconButton size="small" aria-label="delete plan" onClick={() => handleDelete(plan.id)} sx={{ color: 'error.main' }}>
+                                                    <Trash2 size={16} />
+                                                </IconButton>
+                                            )}
                                         </Box>
                                     )}
                                 </Box>
@@ -265,7 +273,7 @@ export default function Plans() {
                         <Box display="flex" flexDirection="column" gap={3} mt={1}>
                             <TextField
                                 fullWidth
-                                label="ChurchPlan Title"
+                                label="Plan Title"
                                 required
                                 value={formData.title}
                                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
@@ -273,20 +281,21 @@ export default function Plans() {
                             <TextField
                                 fullWidth
                                 select
-                                label="ChurchPlan Type"
+                                label="Plan Type"
                                 value={formData.type}
                                 onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
                             >
-                                <MenuItem value="MONTHLY">Monthly ChurchPlan</MenuItem>
-                                <MenuItem value="YEARLY">Yearly ChurchPlan</MenuItem>
+                                <MenuItem value="MONTHLY">Monthly Plan</MenuItem>
+                                <MenuItem value="YEARLY">Yearly Plan</MenuItem>
                             </TextField>
                             <TextField
                                 fullWidth
                                 multiline
                                 rows={4}
-                                label="ChurchPlan Description"
+                                label="Plan Description"
                                 placeholder="Detail the objectives, events, and targets for this period..."
                                 required
+                                inputProps={{ minLength: 10 }}
                                 value={formData.description}
                                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                             />
@@ -306,7 +315,7 @@ export default function Plans() {
                             )}
                             
                             {!editingPlan && (
-                                <FormControl fullWidth required error={formData.pastorIds.length > 0 && formData.pastorIds.length !== 2}>
+                                <FormControl fullWidth required={!canBypassPastorAuthorization(user?.role)} error={!canBypassPastorAuthorization(user?.role) && formData.pastorIds.length > 0 && formData.pastorIds.length !== 2}>
                                     <InputLabel id="pastors-label">Select 2 Authorizing Pastors</InputLabel>
                                     <Select
                                         labelId="pastors-label"

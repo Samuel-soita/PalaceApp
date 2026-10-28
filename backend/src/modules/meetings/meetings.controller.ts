@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
-import { getOrSetCache } from '../../utils/redis.js';
-import redis from '../../utils/redis.js';
+import { getOrSetCache, invalidateCache, liveCacheKey } from '../../utils/redis.js';
 import { catchAsync, AppError } from '../../utils/errors.js';
 import { logAudit } from '../../utils/audit.js';
 import { broadcastSync } from '../../utils/socket.js';
@@ -13,7 +12,9 @@ export const createMeeting = catchAsync(async (req: any, res: Response) => {
     const data = req.body;
     
     // Validate Meeting Organizer rules
-    if (user.role === 'DEPARTMENT_LEADER' && user.departmentId !== data.departmentId) {
+    const leadsTarget = user.departmentId === data.departmentId
+        || user.managedDepartments?.some((d: any) => d.id === data.departmentId);
+    if (user.role === 'DEPARTMENT_LEADER' && !leadsTarget) {
          throw new AppError('Department Leaders can only convene meetings for their own department', 403);
     }
 
@@ -26,7 +27,7 @@ export const createMeeting = catchAsync(async (req: any, res: Response) => {
                 time: data.time,
                 venue: data.venue,
                 meetingType: data.meetingType,
-                agenda: data.agenda,
+                agenda: data.agenda ?? '',
                 organizerId: user.id,
                 followUpPersonId: data.followUpPersonId,
                 followUpDeadline: data.followUpDeadline ? new Date(data.followUpDeadline) : null,
@@ -43,8 +44,7 @@ export const createMeeting = catchAsync(async (req: any, res: Response) => {
     await logAudit(user.id, 'MEETING_CREATED', 'MEETING', meeting.id, { title: meeting.title });
 
     // Invalidate Cache
-    const keys = await redis.keys('meetings:*');
-    if (keys.length > 0) await redis.del(...keys);
+    await invalidateCache('meetings:*');
     broadcastSync('meetings');
 
     res.status(201).json(meeting);
@@ -80,7 +80,7 @@ export const getMeetings = catchAsync(async (req: Request, res: Response) => {
         }
     }
 
-    const cacheKey = `meetings:${user.role}:${user.departmentId || 'none'}:${departmentId || 'all'}:${page}:${limit}`;
+    const cacheKey = liveCacheKey('meetings', `${user.role}:${user.departmentId || 'none'}:${departmentId || 'all'}:${page}:${limit}`);
 
     const result = await getOrSetCache(cacheKey, async () => {
         const [data, total] = await Promise.all([
@@ -145,6 +145,7 @@ export const updateMeeting = catchAsync(async (req: Request, res: Response) => {
     const updateData: any = { ...data };
     if (updateData.date) updateData.date = new Date(updateData.date);
     if (updateData.followUpDeadline) updateData.followUpDeadline = new Date(updateData.followUpDeadline);
+    if (updateData.attendance !== undefined && updateData.attendance !== null) updateData.attendance = String(updateData.attendance);
 
     const updatedMeeting = await prisma.meeting.update({
         where: { id },
@@ -154,8 +155,7 @@ export const updateMeeting = catchAsync(async (req: Request, res: Response) => {
     await logAudit(user.id, 'MEETING_UPDATED', 'MEETING', id, { fields: Object.keys(updateData) });
 
     // Invalidate Cache
-    const keys = await redis.keys('meetings:*');
-    if (keys.length > 0) await redis.del(...keys);
+    await invalidateCache('meetings:*');
     broadcastSync('meetings');
 
     res.json(updatedMeeting);
@@ -190,8 +190,7 @@ export const deleteMeeting = catchAsync(async (req: Request, res: Response) => {
     await logAudit(user.id, 'MEETING_DELETED', 'MEETING', req.params.id);
 
     // Invalidate Cache
-    const keys = await redis.keys('meetings:*');
-    if (keys.length > 0) await redis.del(...keys);
+    await invalidateCache('meetings:*');
     broadcastSync('meetings');
 
     res.json({ message: 'Meeting deleted successfully' });

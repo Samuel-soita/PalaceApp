@@ -1,9 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
-import axios from 'axios';
+import { describe, it } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
-const BASE_URL = 'http://localhost:4000';
 
 describe('Security & Audit Validation', () => {
     it('should verify security and audit engine', async () => {

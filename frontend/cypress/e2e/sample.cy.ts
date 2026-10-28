@@ -1,7 +1,8 @@
-describe('Sample E2E Test', () => {
-  it('should load the homepage', () => {
-    cy.visit('/');
-    // Add more assertions here as the app grows
-    // cy.contains('Welcome').should('be.visible');
-  });
+describe('App shell', () => {
+    it('redirects unauthenticated visitors to the login page', () => {
+        cy.clearLocalStorage();
+        cy.visit('/');
+        cy.location('pathname').should('eq', '/login');
+        cy.contains('Welcome Back').should('be.visible');
+    });
 });

@@ -24,8 +24,7 @@ export async function generateNextMembershipNumber(role: string, targetYear: num
     });
 
     // Parse existing sequences
-    const existingSeqs = existingUsers.map(u => parseInt(u.membershipNumber.split('/')[0], 10));
-    const maxSeq = existingSeqs.length > 0 ? Math.max(...existingSeqs) : 0;
+    const existingSeqs = new Set(existingUsers.map(u => parseInt(u.membershipNumber.split('/')[0], 10)));
 
     let nextSeq: number;
 
@@ -35,7 +34,7 @@ export async function generateNextMembershipNumber(role: string, targetYear: num
         const maxLeaderSeq = leaderSeqs.length > 0 ? Math.max(...leaderSeqs) : 0;
         
         nextSeq = maxLeaderSeq + 1;
-        while (existingSeqs.includes(nextSeq)) {
+        while (existingSeqs.has(nextSeq)) {
             nextSeq++;
         }
     } else {
@@ -44,7 +43,7 @@ export async function generateNextMembershipNumber(role: string, targetYear: num
         // Members start at 101
         const maxMemberSeq = memberSeqs.length > 0 ? Math.max(...memberSeqs) : 100;
         nextSeq = maxMemberSeq + 1;
-        while (existingSeqs.includes(nextSeq)) {
+        while (existingSeqs.has(nextSeq)) {
             nextSeq++;
         }
     }

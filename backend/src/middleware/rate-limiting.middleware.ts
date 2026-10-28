@@ -1,4 +1,4 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 // Scaling for high-concurrency: 500 attempts per 15 minutes.
 // This supports the 400+ concurrent user requirement for MISSION-CRITICAL peaks.
@@ -12,9 +12,11 @@ export const authLimiter = rateLimit({
 
 // Strict limiter for critical mutations (e.g. Purge, Role Promotions)
 // 10 attempts per hour.
+// Keyed per signed-in user: members on shared church Wi-Fi share one IP.
 export const mutationLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
-    max: 10,
+    max: 120,
+    keyGenerator: (req) => (req as any).user?.id ?? ipKeyGenerator(req.ip ?? ''),
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Mutation rate limit exceeded. You have triggered internal security locks.' }

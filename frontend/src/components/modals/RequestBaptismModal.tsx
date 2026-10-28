@@ -21,6 +21,7 @@ export default function RequestBaptismModal({ open, onClose, onSuccess }: { open
             setTimeout(() => {
                 onSuccess();
                 onClose();
+                setSuccess('');
             }, 2000);
         } catch (err: any) {
             setError(err.response?.data?.error || 'Failed to submit baptism request.');

@@ -1,6 +1,5 @@
-import React from 'react';
-import { Box, Typography, Card, CardContent, Avatar, Chip, IconButton, Tooltip } from '@mui/material';
-import { Calendar, Clock, MessageSquare, ChevronRight, Bookmark } from 'lucide-react';
+import { Box, Typography, Card, CardContent, Avatar, Chip, IconButton } from '@mui/material';
+import { Calendar, Clock, ChevronRight, Bookmark } from 'lucide-react';
 
 interface Appointment {
     id: string;

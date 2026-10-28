@@ -124,6 +124,8 @@ export default function HealthDashboard() {
                                             </Avatar>
                                         </ListItemAvatar>
                                         <ListItemText
+                                            primaryTypographyProps={{ component: 'div' }}
+                                            secondaryTypographyProps={{ component: 'div' }}
                                             primary={
                                                 <Box display="flex" justifyContent="space-between">
                                                     <Typography variant="body2" fontWeight="900">{audit.actionType}</Typography>

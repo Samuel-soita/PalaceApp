@@ -7,13 +7,14 @@ import {
 } from '@mui/material';
 import { 
     LayoutDashboard, Users, Calendar, Bell, 
-    MessageCircle, ClipboardList, Briefcase, Heart, 
+    ClipboardList, Briefcase, 
     Menu as MenuIcon, X, Church, ChevronRight, Coins, LogOut,
-    Search as SearchIcon, Command, Zap, UserCheck, Baby, TrendingUp, Shield, Smartphone, DownloadCloud
+    Search as SearchIcon, Command, Zap, UserCheck, Baby, Shield, Smartphone, DownloadCloud
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { socket } from '../../utils/socket';
 import api from '../../lib/api-client';
 import { isOnlineSessionActive } from '../../lib/auth-session';
 import ProfileModal from '../modals/ProfileModal';
@@ -22,10 +23,38 @@ import SyncIndicator from '../SyncIndicator';
 import { usePWA } from '../../hooks/usePWA';
 import InstallAppModal from '../modals/InstallAppModal';
 import { db } from '../../lib/db';
+import { canAccessPath, homePathFor } from '../../lib/route-access';
 
+
+type NavItem = { name: string; href: string; icon: typeof LayoutDashboard; color?: string };
+
+function homeNavItem(role: string | undefined, departmentId?: string | null): NavItem {
+    const href = homePathFor(role, departmentId);
+    switch (role) {
+        case 'SUPER_ADMIN': return { name: 'MISSION COMMAND', href, icon: Shield };
+        case 'WATUA': return { name: 'SYSTEM TERMINAL', href, icon: Command };
+        case 'PASTOR':
+        case 'ASSOCIATE_PASTOR': return { name: 'PASTORAL PALACE', href, icon: LayoutDashboard };
+        case 'DEPARTMENT_LEADER':
+            return departmentId
+                ? { name: 'MY DEPARTMENT', href, icon: LayoutDashboard }
+                : { name: 'EXECUTIVE PALACE', href, icon: LayoutDashboard };
+        default: return { name: 'EXECUTIVE PALACE', href, icon: LayoutDashboard };
+    }
+}
+
+/** Drops links the role cannot open and any repeat of a destination already listed. */
+function uniqueAccessible<T extends NavItem>(role: string | undefined, items: T[]): T[] {
+    const seen = new Set<string>();
+    return items.filter(item => {
+        if (seen.has(item.href) || !canAccessPath(role, item.href)) return false;
+        seen.add(item.href);
+        return true;
+    });
+}
 
 // Base items for admin roles
-const adminNavItems = [
+const adminNavItems: NavItem[] = [
     { name: 'EXECUTIVE PALACE', href: '/executive', icon: LayoutDashboard },
     { name: 'Announcements', href: '/announcements', icon: Bell },
     { name: 'Events', href: '/calendar', icon: Calendar },
@@ -193,11 +222,21 @@ export default function TopNavbar() {
         </Box>
     );
 
+    const queryClient = useQueryClient();
+    const onlineSession = isOnlineSessionActive();
     const { data: notifications } = useQuery(['notifications', user?.id], async () => {
         if (!user?.id) return [];
         const res = await api.get(`/notifications/user/${user.id}`);
         return res.data;
-    }, { enabled: !!user?.id && isOnlineSessionActive(), refetchInterval: isOnlineSessionActive() ? 10000 : false });
+    }, { enabled: !!user?.id && onlineSession, refetchInterval: onlineSession ? 60000 : false, staleTime: 30000 });
+
+    // Server pushes 'notification' to the user's room (socket joined by useRealtimeSync); the 60s poll is only a fallback.
+    useEffect(() => {
+        if (!user?.id || !onlineSession) return;
+        const refresh = () => queryClient.invalidateQueries(['notifications', user.id]);
+        socket.on('notification', refresh);
+        return () => { socket.off('notification', refresh); };
+    }, [user?.id, onlineSession, queryClient]);
 
     const { data: departmentsData } = useQuery(['sidebar-departments'], async () => {
         const res = await api.get('/departments');
@@ -211,21 +250,20 @@ export default function TopNavbar() {
 
     const unreadCount = (notifications || []).filter((n: any) => !n.read).length || 0;
 
-    const isMember = user?.role === 'MEMBER';
-    const isPastor = user?.role === 'PASTOR' || user?.role === 'ASSOCIATE_PASTOR';
-    const isDeptLeader = user?.role === 'DEPARTMENT_LEADER';
-    const isHighAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'SYSTEM_ADMIN' || user?.role === 'SECRETARY' || user?.role === 'WATUA';
-    const dashboardHome = isPastor
-        ? { name: 'PASTORAL PALACE', href: '/pastor', icon: LayoutDashboard }
-        : { name: 'EXECUTIVE PALACE', href: '/executive', icon: LayoutDashboard };
-    
-    const primaryNavItems = isMember 
-        ? memberNavItems 
-        : (user?.role === 'SUPER_ADMIN' 
-            ? [{ ...dashboardHome, name: 'EXECUTIVE PALACE', href: '/executive' }, ...adminNavItems.slice(1), { name: 'MISSION COMMAND', href: '/bishop', icon: Shield }]
-            : (user?.role === 'SYSTEM_ADMIN' || user?.role === 'DEPARTMENT_LEADER'
-                ? [dashboardHome]
-                : [dashboardHome, ...adminNavItems.slice(1)]));
+    const role = user?.role;
+    const isMember = role === 'MEMBER';
+    const isDeptLeader = role === 'DEPARTMENT_LEADER';
+    const isHighAdmin = role === 'SUPER_ADMIN' || role === 'SYSTEM_ADMIN' || role === 'SECRETARY' || role === 'WATUA';
+    const dashboardHome = homeNavItem(role, user?.departmentId);
+    const executiveItem: NavItem = isDeptLeader
+        ? { name: 'MASTER OPERATIONS TRACK', href: '/executive', icon: Shield }
+        : adminNavItems[0];
+
+    const primaryNavItems = isMember
+        ? memberNavItems
+        : uniqueAccessible(role, role === 'SYSTEM_ADMIN' || isDeptLeader
+            ? [dashboardHome, executiveItem]
+            : [dashboardHome, executiveItem, ...adminNavItems.slice(1)]);
 
     // Everything shows in the drawer
     const allNavItems = isMember
@@ -234,9 +272,9 @@ export default function TopNavbar() {
               { name: 'Register Child', href: '/register-child', icon: Baby },
               { name: 'My Profile', href: '/profile', icon: UserCheck },
           ]
-        : [
-            dashboardHome,
-              ...(user?.role === 'SUPER_ADMIN' ? [{ name: 'MISSION COMMAND', href: '/bishop', icon: Shield }] : []),
+        : uniqueAccessible(role, [
+              dashboardHome,
+              executiveItem,
               ...(isHighAdmin ? [
                   { name: 'Departments', href: '/departments', icon: Users },
                   { name: 'Projects', href: '/projects', icon: Briefcase },
@@ -244,11 +282,21 @@ export default function TopNavbar() {
                   { name: 'Plans', href: '/plans', icon: ClipboardList },
                   { name: 'Announcements', href: '/announcements', icon: Bell },
                   { name: 'Support Hub', href: '/support', icon: Coins }
-              ] : (isDeptLeader ? [
-                   { name: 'MASTER OPERATIONS TRACK', href: '/executive', icon: Shield }
-               ] : [])),
+              ] : []),
               { name: 'Register Child', href: '/register-child', icon: Baby },
-          ];
+          ]);
+
+    const mainHrefs = new Set(allNavItems.map(i => i.href));
+    const consoleItems = uniqueAccessible(role, [
+        { name: 'PALACE CONTROL', href: '/bishop', icon: Shield, color: 'var(--cyan)' },
+        { name: 'PASTORAL DESK', href: '/pastor', icon: Briefcase, color: 'primary.main' },
+        { name: 'MEMBER VIEW', href: '/member-portal', icon: LayoutDashboard, color: 'success.main' },
+        { name: 'SYSTEM TERMINAL', href: '/watua', icon: Command, color: '#c175ff' },
+    ]).filter(i => !mainHrefs.has(i.href));
+
+    const sectoralDepartments: any[] = Array.from(
+        new Map((departmentsData || []).map((d: any) => [d.id, d])).values()
+    );
 
     const handleDrawerToggle = () => {
         setMobileOpen(!mobileOpen);
@@ -312,19 +360,14 @@ export default function TopNavbar() {
             </List>
 
             {/* COMMAND CONSOLE - Universal Dashboard Access for Bishop and Watua */}
-            {(user?.role === 'SUPER_ADMIN' || user?.role === 'WATUA') && (
+            {(user?.role === 'SUPER_ADMIN' || user?.role === 'WATUA') && consoleItems.length > 0 && (
                 <>
                     <Divider sx={{ my: 1, borderColor: 'rgba(255,255,255,0.05)' }} />
                     <Typography variant="caption" sx={{ px: 3, py: 1, display: 'block', color: 'orange', fontWeight: 950, letterSpacing: 2 }}>
                         COMMAND CONSOLE
                     </Typography>
                     <List sx={{ px: 2 }} disablePadding>
-                        {[
-                            { name: 'PALACE CONTROL', href: '/bishop', icon: Shield, color: 'var(--cyan)' },
-                            { name: 'PASTORAL DESK', href: '/pastor', icon: Briefcase, color: 'primary.main' },
-                            { name: 'MEMBER VIEW', href: '/member-portal', icon: LayoutDashboard, color: 'success.main' },
-                            ...(user?.role === 'WATUA' ? [{ name: 'SYSTEM TERMINAL', href: '/watua', icon: Command, color: '#c175ff' }] : []),
-                        ].map((item) => {
+                        {consoleItems.map((item) => {
                             const isActive = location.pathname === item.href;
                             return (
                                 <ListItem key={item.name} disablePadding sx={{ mb: 0.5 }}>
@@ -356,14 +399,14 @@ export default function TopNavbar() {
             )}
 
             {/* SECTORAL COMMAND OVERRIDE - For Bishop and Watua */}
-            {(user?.role === 'SUPER_ADMIN' || user?.role === 'WATUA') && departmentsData && departmentsData.length > 0 && (
+            {(user?.role === 'SUPER_ADMIN' || user?.role === 'WATUA') && sectoralDepartments.length > 0 && (
                 <>
                     <Divider sx={{ my: 1, borderColor: 'rgba(255,255,255,0.05)' }} />
                     <Typography variant="caption" sx={{ px: 3, py: 1, display: 'block', color: 'var(--cyan)', fontWeight: 900, letterSpacing: 2 }}>
                         SECTORAL COMMAND
                     </Typography>
                     <List sx={{ px: 2 }} disablePadding>
-                        {departmentsData.map((dept: any) => {
+                        {sectoralDepartments.map((dept: any) => {
                             const href = `/department/${dept.id}`;
                             const isActive = location.pathname === href;
                             return (
@@ -531,7 +574,7 @@ export default function TopNavbar() {
                         <Box sx={{ flexGrow: 0, ml: 'auto', display: 'flex', alignItems: 'center', gap: 2 }}>
                             
                             {/* 🛰️ SYNC TELEMETRY */}
-                            <Box sx={{ display: { xs: 'none', lg: 'block' }, mr: 1 }}>
+                            <Box sx={{ mr: 1 }}>
                                 <SyncIndicator />
                             </Box>
 

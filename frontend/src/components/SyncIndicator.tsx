@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Box, Typography, Chip, Tooltip, IconButton, CircularProgress } from '@mui/material';
-import { CloudOff, RefreshCw, AlertCircle, CheckCircle2, WifiOff } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Box, Typography, Chip, Tooltip } from '@mui/material';
+import { RefreshCw, AlertCircle, CheckCircle2, WifiOff } from 'lucide-react';
 
 /**
  * 🛰️ SYNC INDICATOR - v2.4.0

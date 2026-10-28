@@ -1,20 +1,19 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../lib/db';
-import api from '../lib/api-client';
 import {
     Typography, Grid, Card, CardContent, Box, Button, TextField, Dialog, DialogTitle,
-    DialogContent, DialogActions, MenuItem, LinearProgress, Chip, IconButton, Tooltip,
+    DialogContent, DialogActions, MenuItem, LinearProgress, Chip, IconButton, 
     Divider, Select, Checkbox, ListItemText, FormControl, InputLabel
 } from '@mui/material';
 import {
-    Calendar as CalendarIcon, MapPin, Plus, Edit, Trash2,
-    Clock, Tag, AlertCircle
-} from 'lucide-react';
+    MapPin, Plus, Edit, Trash2,
+    Clock} from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
 import { isUserManagingDepartment } from '../utils/auth-options';
-import { pastorAuthorizationBlocked } from '../utils/approval-rules';
+import { canBypassPastorAuthorization, pastorAuthorizationBlocked } from '../utils/approval-rules';
+import { hasPastorModule } from '../utils/pastor-modules';
 import { paginate, paginationMeta } from '../utils/pagination';
 import { executeApiFirstMutation } from '../lib/api-first-mutation';
 
@@ -52,7 +51,11 @@ export default function Events() {
     });
 
     const isGlobalAdmin = ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY', 'WATUA'].includes(user?.role || '');
-    const isAuthorized = isGlobalAdmin || ['DEPARTMENT_LEADER', 'PASTOR'].includes(user?.role || '');
+    const isPastoral = user?.role === 'PASTOR' || user?.role === 'ASSOCIATE_PASTOR';
+    const hasEventModule = !isPastoral || hasPastorModule(user, 'EventOversight');
+    const isAuthorized = hasEventModule && ['SUPER_ADMIN', 'DEPARTMENT_LEADER', 'PASTOR'].includes(user?.role || '');
+    const canManageEvents = hasEventModule && ['SUPER_ADMIN', 'WATUA', 'SYSTEM_ADMIN', 'ASSOCIATE_PASTOR', 'DEPARTMENT_LEADER', 'PASTOR'].includes(user?.role || '');
+    const needsPastors = !canBypassPastorAuthorization(user?.role);
 
     const [page, setPage] = useState(1);
     const limit = 12;
@@ -71,11 +74,11 @@ export default function Events() {
     const userDepartments = departments?.filter((d: any) => isUserManagingDepartment(user, d.id)) || [];
     const showDepartmentSelect = isGlobalAdmin || userDepartments.length > 1;
 
-    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR', 'BISHOP', 'SUPER_ADMIN'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
+    const pastors = useLiveQuery(() => db.users.filter(u => ['PASTOR', 'ASSOCIATE_PASTOR'].includes(u.role) && u.status === 'ACTIVE').toArray(), []) || [];
 
     const handleAction = async (payload: any, method: 'POST' | 'PATCH' | 'DELETE', id?: string) => {
         const actionId = id || payload.id;
-        const { department, syncStatus, version, ...apiPayload } = payload;
+        const { department, syncStatus, version, id: _id, ...apiPayload } = payload;
         if (method === 'PATCH' && (apiPayload as any).pastorIds) {
             delete (apiPayload as any).pastorIds;
         }
@@ -218,6 +221,13 @@ export default function Events() {
                 )}
             </Box>
 
+            {pagedEvents.length === 0 && (
+                <Box sx={{ py: 8, textAlign: 'center', border: '1px dashed var(--glass-border)', borderRadius: 2 }}>
+                    <Typography variant="subtitle2" fontWeight="900" sx={{ opacity: 0.6 }}>NO EVENTS SCHEDULED</Typography>
+                    <Typography variant="caption" sx={{ display: 'block', mt: 1, opacity: 0.5 }}>Approved events will appear here.</Typography>
+                </Box>
+            )}
+
             <Grid container spacing={3}>
                 {pagedEvents?.map((event: ChurchEvent) => (
                     <Grid item xs={12} md={6} lg={4} key={event.id}>
@@ -230,7 +240,7 @@ export default function Events() {
                                         color={getEventTypeColor(event.eventType) as any}
                                         sx={{ fontWeight: '900', px: 1 }}
                                     />
-                                    {(isGlobalAdmin || isUserManagingDepartment(user, event.departmentId)) && (
+                                    {canManageEvents && (isGlobalAdmin || isPastoral || isUserManagingDepartment(user, event.departmentId)) && (
                                         <Box display="flex" gap={1}>
                                             <IconButton size="small" onClick={() => handleOpen(event)} sx={{ color: 'primary.main' }}>
                                                 <Edit size={16} />
@@ -403,16 +413,14 @@ export default function Events() {
                                     onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                                 >
                                     <MenuItem value="PLANNED">Planned</MenuItem>
-                                    <MenuItem value="IN_PROGRESS">In Progress</MenuItem>
                                     <MenuItem value="ACTIVE">Active</MenuItem>
-                                    <MenuItem value="ON_HOLD">On Hold</MenuItem>
                                     <MenuItem value="COMPLETED">Completed</MenuItem>
                                     <MenuItem value="CANCELLED">Cancelled</MenuItem>
                                 </TextField>
                             </Box>
                             
                             {!editEvent && (
-                            <FormControl fullWidth required error={formData.pastorIds.length > 0 && formData.pastorIds.length !== 2}>
+                            <FormControl fullWidth required={needsPastors} error={needsPastors && formData.pastorIds.length > 0 && formData.pastorIds.length !== 2}>
                                 <InputLabel id="pastors-label">Select 2 Authorizing Pastors</InputLabel>
                                     <Select
                                         labelId="pastors-label"

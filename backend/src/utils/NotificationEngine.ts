@@ -59,7 +59,7 @@ export class NotificationEngine {
                 } else {
                     await this.queueExternalDelivery(users, payload, deliveryChannel);
                 }
-                broadcastSync('notifications');
+                for (const u of users) emitNotification(u.id, { title: payload.title, message: payload.message });
                 return;
             }
 
@@ -79,8 +79,8 @@ export class NotificationEngine {
                     emitNotification(payload.userId, alert);
                 } else {
                     if (user) await this.queueExternalDelivery([user], payload, deliveryChannel);
+                    emitNotification(payload.userId, { id: alert.id });
                 }
-                broadcastSync('notifications');
                 return;
             }
 

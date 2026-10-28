@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
     Dialog, DialogTitle, DialogContent, Box, Typography, Card, 
     CardContent, Avatar, Chip, Button, IconButton,
@@ -11,6 +11,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../lib/db';
+import api from '../../lib/api-client';
 import { executeApiFirstMutation } from '../../lib/api-first-mutation';
 
 export default function AppointmentManager({ open, onClose }: { open: boolean, onClose: () => void }) {
@@ -22,6 +23,16 @@ export default function AppointmentManager({ open, onClose }: { open: boolean, o
     const [adminNotes, setAdminNotes] = useState('');
 
     const appointments = useLiveQuery(() => db.appointments.toArray(), []) || [];
+
+    useEffect(() => {
+        if (!open || !navigator.onLine || !authUser) return;
+        if (!['SUPER_ADMIN', 'WATUA', 'SYSTEM_ADMIN', 'SECRETARY', 'PASTOR', 'ASSOCIATE_PASTOR'].includes(authUser.role)) return;
+        api.get('/appointments/all')
+            .then(async ({ data }) => {
+                if (Array.isArray(data)) await db.appointments.bulkPut(data.map((a: any) => ({ ...a, syncStatus: 'SYNCED' })));
+            })
+            .catch(() => undefined);
+    }, [open, authUser]);
 
     const updateStatusMutation = useMutation(
         async (payload: { id: string; status: string; approvedDate?: string; approvedTime?: string; adminNotes?: string }) => {
@@ -52,6 +63,7 @@ export default function AppointmentManager({ open, onClose }: { open: boolean, o
                 setApprovedTime('');
                 setAdminNotes('');
             },
+            onError: (err: any) => alert(err.response?.data?.error || 'Failed to update the appointment.'),
         }
     );
 
@@ -61,8 +73,8 @@ export default function AppointmentManager({ open, onClose }: { open: boolean, o
         
         if (role === 'WATUA' || role === 'SYSTEM_ADMIN' || role === 'SECRETARY' || role === 'SUPER_ADMIN') return true;
         if (appointment.targetId === authUser.id) return true;
-        if (role === 'PASTOR' && appointment.targetRole === 'PASTOR') return true;
-        if (role === 'ASSOCIATE_PASTOR' && appointment.targetRole === 'ASSOCIATE_PASTOR') return true;
+        if (role === 'PASTOR' && appointment.targetRole === 'PASTOR' && !appointment.targetId) return true;
+        if (role === 'ASSOCIATE_PASTOR' && appointment.targetRole === 'ASSOCIATE_PASTOR' && !appointment.targetId) return true;
 
         return false;
     };
@@ -88,7 +100,7 @@ export default function AppointmentManager({ open, onClose }: { open: boolean, o
                     <Calendar size={24} color="var(--primary)" />
                     <Typography variant="h6" fontWeight="950" className="glow-text">APPOINTMENT SACRAMENT OVERSIGHT</Typography>
                 </Box>
-                <IconButton onClick={onClose} size="small" sx={{ color: 'text.secondary' }}>
+                <IconButton aria-label="close" onClick={onClose} size="small" sx={{ color: 'text.secondary' }}>
                     <X size={22} />
                 </IconButton>
             </DialogTitle>

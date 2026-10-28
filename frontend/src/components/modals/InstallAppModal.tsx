@@ -1,9 +1,8 @@
-import React from 'react';
 import { 
     Dialog, DialogContent, Box, Typography, 
-    Button, IconButton, Divider, useMediaQuery, useTheme 
+    Button, IconButton
 } from '@mui/material';
-import { X, Smartphone, Download, Share2, PlusSquare, ChevronRight, Globe, Shield } from 'lucide-react';
+import { X, Smartphone, Download, Share2, PlusSquare, Globe, Shield } from 'lucide-react';
 import { usePWA } from '../../hooks/usePWA';
 
 interface InstallAppModalProps {
@@ -13,14 +12,11 @@ interface InstallAppModalProps {
 
 export default function InstallAppModal({ open, onClose }: InstallAppModalProps) {
     const { canInstall, triggerInstall } = usePWA();
-    const theme = useTheme();
-    const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
     
     // Detect OS
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
                   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    
-    const isAndroid = /Android/.test(navigator.userAgent);
+
 
     return (
         <Dialog 

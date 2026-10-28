@@ -72,7 +72,7 @@ export const getAllAppointments = async (req: any, res: Response) => {
             where = {
                 OR: [
                     { targetId: userId },
-                    { targetRole: role }
+                    { targetRole: role === 'SUPER_ADMIN' ? { in: ['BISHOP', 'SUPER_ADMIN'] } : role }
                 ]
             };
         } else if (role !== 'WATUA' && role !== 'SYSTEM_ADMIN' && role !== 'SECRETARY') {
@@ -108,6 +108,17 @@ export const updateAppointmentStatus = async (req: any, res: Response) => {
     }
 
     try {
+        const existing = await (prisma as any).appointment.findUnique({ where: { id } });
+        if (!existing) return res.status(404).json({ error: 'Appointment not found.' });
+
+        const { role, id: actorId } = req.user;
+        const mayDecide = ['WATUA', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'SECRETARY'].includes(role)
+            || existing.targetId === actorId
+            || (['PASTOR', 'ASSOCIATE_PASTOR'].includes(role) && existing.targetRole === role && !existing.targetId);
+        if (!mayDecide) {
+            return res.status(403).json({ error: 'Only the requested official or church administration can schedule this appointment.' });
+        }
+
         const updateData: any = { status };
         if (status === 'APPROVED') {
             if (!approvedDate || !approvedTime) {
@@ -130,6 +141,18 @@ export const updateAppointmentStatus = async (req: any, res: Response) => {
         });
 
         await logAudit(req.user.id, 'UPDATE_APPOINTMENT_STATUS', 'APPOINTMENT', id, { status, approvedTime });
+
+        if (status !== 'COMPLETED') {
+            await prisma.notification.create({
+                data: {
+                    userId: existing.memberId,
+                    title: status === 'APPROVED' ? 'Appointment Scheduled' : 'Appointment Declined',
+                    message: status === 'APPROVED'
+                        ? `Your appointment is scheduled for ${new Date(approvedDate).toLocaleDateString('en-KE')} at ${approvedTime}.${adminNotes ? ` Note: ${adminNotes}` : ''}`
+                        : `Your appointment request was declined.${adminNotes ? ` Note: ${adminNotes}` : ''}`,
+                },
+            });
+        }
 
         res.json({ message: `Appointment ${status.toLowerCase()} successfully.`, appointment });
     } catch (error) {

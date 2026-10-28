@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../lib/api-client';
@@ -12,7 +12,7 @@ export default function Login() {
     const [loading, setLoading] = useState(false);
 
     // Watua secret trigger
-    const [watuaBuffer, setWatuaBuffer] = useState('');
+    const watuaBufferRef = useRef('');
     const [watuaActivating, setWatuaActivating] = useState(false);
 
     const { login } = useAuth();
@@ -27,32 +27,35 @@ export default function Login() {
     }, []);
 
     // Listen for the secret 'watua' keyboard sequence
-    useEffect(() => {
+    // Layout effect so the listener is live as soon as the form is on screen.
+    useLayoutEffect(() => {
         const handleKeyDown = async (e: KeyboardEvent) => {
             // Ignore if typing inside an input
             if ((e.target as HTMLElement).tagName === 'INPUT') return;
             const char = e.key.toLowerCase();
             if (!/^[a-z]$/.test(char)) return;
 
-            const newBuffer = (watuaBuffer + char).slice(-5);
-            setWatuaBuffer(newBuffer);
+            const newBuffer = (watuaBufferRef.current + char).slice(-5);
+            watuaBufferRef.current = newBuffer;
 
             if (newBuffer === 'watua') {
-                setWatuaBuffer('');
+                watuaBufferRef.current = '';
+                const accessKey = window.prompt('Enter the system access key');
+                if (!accessKey) return;
                 setWatuaActivating(true);
                 try {
-                    const res = await api.post('/auth/watua-access');
-                    login(res.data);
+                    const res = await api.post('/auth/watua-access', { accessKey });
+                    await login(res.data);
                     navigate('/watua');
-                } catch {
+                } catch (err: any) {
                     setWatuaActivating(false);
-                    setError('System Intervention module unavailable.');
+                    setError(err.response?.data?.error || 'System Intervention module unavailable.');
                 }
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [watuaBuffer, login, navigate]);
+    }, [login, navigate]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -61,7 +64,7 @@ export default function Login() {
         try {
             const res = await api.post('/auth/login', { membershipNumber, idNumber });
             const data = res.data;
-            login(data);
+            await login(data);
 
             if (data.user.role === 'WATUA') return navigate('/watua');
             if (data.user.role === 'SUPER_ADMIN') return navigate('/bishop');

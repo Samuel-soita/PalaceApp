@@ -6,11 +6,23 @@ export const socket = io(SOCKET_URL, {
     autoConnect: false,
 });
 
+let currentUserId: string | null = null;
+
+// Rooms are server-side state and are lost on every reconnect, so re-join each time.
+socket.on('connect', () => {
+    if (currentUserId) socket.emit('join-room', `user-${currentUserId}`);
+});
+
 export const connectSocket = (userId: string) => {
-    socket.connect();
-    socket.emit('join-room', `user-${userId}`);
+    currentUserId = userId;
+    if (socket.connected) {
+        socket.emit('join-room', `user-${userId}`);
+    } else {
+        socket.connect();
+    }
 };
 
 export const disconnectSocket = () => {
+    currentUserId = null;
     socket.disconnect();
 };

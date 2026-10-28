@@ -6,7 +6,7 @@ const router = Router();
 
 router.post('/', authenticate, appointmentsController.createAppointment);
 router.get('/me', authenticate, appointmentsController.getMyAppointments);
-router.get('/all', authenticate, authorize(['WATUA', 'SUPER_ADMIN', 'PASTOR', 'SYSTEM_ADMIN']), appointmentsController.getAllAppointments);
-router.patch('/:id/status', authenticate, authorize(['WATUA', 'SUPER_ADMIN', 'PASTOR']), appointmentsController.updateAppointmentStatus);
+router.get('/all', authenticate, authorize(['WATUA', 'SUPER_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'SYSTEM_ADMIN', 'SECRETARY']), appointmentsController.getAllAppointments);
+router.patch('/:id/status', authenticate, authorize(['WATUA', 'SUPER_ADMIN', 'PASTOR', 'ASSOCIATE_PASTOR', 'SYSTEM_ADMIN', 'SECRETARY']), appointmentsController.updateAppointmentStatus);
 
 export default router;

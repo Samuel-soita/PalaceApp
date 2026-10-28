@@ -38,6 +38,8 @@ import prisma from './utils/prisma.js';
 
 import { createServer } from 'http';
 import { initSocket } from './utils/socket.js';
+import { realtimeBroadcast } from './middleware/realtime.middleware.js';
+import { credentialRedaction } from './middleware/credential-redaction.middleware.js';
 import { BackgroundJobWorker } from './utils/JobWorker.js';
 import { TelemetryEngine } from './utils/health.service.js';
 
@@ -48,7 +50,6 @@ dotenv.config();
 const app = express();
 app.set('trust proxy', 1); // Trust Render Proxy for rate-limiting
 const httpServer = createServer(app);
-const port = process.env.PORT || 4000;
 
 app.use(compression({
     level: 6, // Balanced speed/ratio
@@ -72,7 +73,7 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Idempotency-Key', 'X-Device-Id', 'X-Client-Version', 'X-Platform']
 }));
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 
 // --- EMERGENCY DIAGNOSTIC: Root & Heartbeat (Defined BEFORE clustering) ---
 console.log('[System] Diagnostic Heartbeat Engine: Primed');
@@ -102,6 +103,8 @@ const limiter = rateLimit({
 
 // Apply to all routes
 app.use(limiter);
+app.use(realtimeBroadcast);
+app.use(credentialRedaction);
 
 // Skip redundant loginRateLimiter at the root if it's already in authRoutes
 // app.use('/auth/login', loginRateLimiter);
@@ -147,7 +150,7 @@ if (useCluster && cluster.isPrimary) {
     for (let i = 0; i < workerCount; i++) {
         cluster.fork();
     }
-    cluster.on('exit', (worker, code, signal) => {
+    cluster.on('exit', (worker) => {
         console.log(`[master]: Worker ${worker.process.pid} died. Respawning...`);
         cluster.fork();
     });
@@ -189,7 +192,7 @@ if (useCluster && cluster.isPrimary) {
     initSocket(httpServer);
 
     // --- SOPHISTICATED GLOBAL ERROR HANDLER ---
-    app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
         TelemetryEngine.incrementError();
 
         const origin = req.headers.origin;

@@ -1,13 +1,11 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { 
     Box, Typography, Grid, Card, CardContent, Button, TextField, 
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-    Dialog, DialogTitle, DialogContent, DialogActions, Stack, Chip,
-    LinearProgress, Divider, Avatar, Badge
-} from '@mui/material';
+    Dialog, DialogTitle, DialogContent, DialogActions, Stack, Chip} from '@mui/material';
 import { 
-    Coins, ArrowUpRight, ArrowDownRight, Clock, CheckCircle2, 
-    AlertCircle, Shield, Plus, Send, Landmark, History
+    CheckCircle2, 
+    Plus, Send, Landmark, History
 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api-client';
@@ -39,7 +37,8 @@ export default function FinancialLedger({ account, transactions, departmentId }:
                 setIncomeOpen(false);
                 setAmount('');
                 setDescription('');
-            }
+            },
+            onError: (err: any) => alert(err.response?.data?.error || 'Failed to record income.')
         }
     );
 
@@ -51,14 +50,16 @@ export default function FinancialLedger({ account, transactions, departmentId }:
                 setWithdrawOpen(false);
                 setAmount('');
                 setDescription('');
-            }
+            },
+            onError: (err: any) => alert(err.response?.data?.error || 'Failed to request withdrawal.')
         }
     );
 
     const approveMutation = useMutation(
         async (transactionId: string) => api.post(`/finance/${transactionId}/approve`),
         {
-            onSuccess: () => queryClient.invalidateQueries(['dashboard-sync'])
+            onSuccess: () => queryClient.invalidateQueries(['dashboard-sync']),
+            onError: (err: any) => alert(err.response?.data?.error || 'Failed to record signature.')
         }
     );
 
@@ -207,6 +208,7 @@ export default function FinancialLedger({ account, transactions, departmentId }:
                                                     <Button 
                                                         size="small" 
                                                         variant="contained" 
+                                                        disabled={approveMutation.isLoading}
                                                         onClick={() => {
                                                             if (!navigator.onLine) {
                                                                 alert("NETWORK CRITICAL: Approvals cannot be cached locally. Please reconnect to sign missions.");
@@ -250,6 +252,7 @@ export default function FinancialLedger({ account, transactions, departmentId }:
                                                 fullWidth
                                                 size="small"
                                                 variant="contained"
+                                                disabled={approveMutation.isLoading}
                                                 onClick={() => {
                                                     if (!navigator.onLine) {
                                                         alert('NETWORK CRITICAL: Approvals require an online connection.');
@@ -283,6 +286,7 @@ export default function FinancialLedger({ account, transactions, departmentId }:
                     <Button onClick={() => setIncomeOpen(false)} sx={{ color: 'rgba(255,255,255,0.4)', fontWeight: 800 }}>CANCEL</Button>
                     <Button 
                         variant="contained" 
+                        disabled={incomeMutation.isLoading}
                         onClick={() => {
                             if (!navigator.onLine) {
                                 alert("NETWORK CRITICAL: Financial mutations cannot be cached locally. Please reconnect to record income.");
@@ -311,6 +315,7 @@ export default function FinancialLedger({ account, transactions, departmentId }:
                     <Button onClick={() => setWithdrawOpen(false)} sx={{ color: 'rgba(255,255,255,0.4)', fontWeight: 800 }}>CANCEL</Button>
                     <Button 
                         variant="contained" 
+                        disabled={withdrawMutation.isLoading}
                         onClick={() => {
                             if (!navigator.onLine) {
                                 alert("NETWORK CRITICAL: Fund withdrawals cannot be cached locally. Please reconnect to request funds.");

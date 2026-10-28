@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Slide, Paper, IconButton } from '@mui/material';
-import { WifiOff, Wifi, Cloud, CheckCircle, RefreshCw, AlertCircle } from 'lucide-react';
+import { Box, Typography, Slide, Paper } from '@mui/material';
+import { WifiOff, CheckCircle, RefreshCw, AlertCircle } from 'lucide-react';
 
 /**
  * 🎨 HOLOGRAPHIC OFFLINE STATUS UI
@@ -61,6 +61,7 @@ export const OfflineStatus: React.FC = () => {
         <Slide direction="down" in={showStatus || syncState.pendingCount > 0 || syncState.failedCount > 0}>
             <Paper 
                 elevation={0}
+                className="floating-surface"
                 sx={{
                     position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%) !important',
                     zIndex: 10000, px: 3, py: 1.5,

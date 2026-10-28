@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-    Dialog, DialogTitle, DialogContent, DialogActions, 
+    Dialog, DialogContent, DialogActions, 
     Button, TextField, Box, Typography, IconButton, CircularProgress
 } from '@mui/material';
 import { X, Globe } from 'lucide-react';

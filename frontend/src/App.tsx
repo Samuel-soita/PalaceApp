@@ -1,10 +1,13 @@
 import { Suspense, lazy, useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import RouteErrorBoundary from './components/RouteErrorBoundary';
+import { useRealtimeSync } from './hooks/useRealtimeSync';
 import { useAuth } from './contexts/AuthContext';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import { GlobalSkeleton } from './components/layout/GlobalSkeleton';
 import ProfileModal from './components/modals/ProfileModal';
 import ConflictResolutionModal from './components/ConflictResolutionModal';
+import { ROUTE_ROLES, hasRole, homePathFor } from './lib/route-access';
 
 // Lazy load components
 const Login = lazy(() => import('./pages/Login'));
@@ -45,79 +48,43 @@ const LoadingFallback = () => (
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
     const { token, loading } = useAuth();
+    const location = useLocation();
     if (loading) return <LoadingFallback />;
     if (!token) return <Navigate to="/login" />;
     return (
-        <Suspense fallback={<GlobalSkeleton />}>
-            {children}
-        </Suspense>
+        <RouteErrorBoundary key={location.pathname}>
+            <Suspense fallback={<GlobalSkeleton />}>
+                {children}
+            </Suspense>
+        </RouteErrorBoundary>
     );
 }
 
 function RootRedirect() {
     const { user } = useAuth();
-    
-    if (user?.role === 'SUPER_ADMIN') {
-        return <Navigate to="/bishop" replace />;
-    }
-
-    if (user?.role === 'WATUA') {
-        return <Navigate to="/watua" replace />;
-    }
-
-    if (user?.role === 'SYSTEM_ADMIN' || user?.role === 'SECRETARY') {
-        return <Navigate to="/executive" replace />;
-    }
-
-    if (user?.role === 'MEMBER' || user?.role === 'USER') {
-        return <MemberPortal />;
-    }
-
-    if (user?.role === 'PASTOR' || user?.role === 'ASSOCIATE_PASTOR') {
-        return <Navigate to="/pastor" replace />;
-    }
-
-    if (user?.role === 'DEPARTMENT_LEADER') {
-        return <Navigate to={`/department/${user.departmentId}`} replace />;
-    }
-
-    // Default fallback
-    return <MemberPortal />;
+    const home = homePathFor(user?.role, user?.departmentId);
+    if (home === '/') return <MemberPortal />;
+    return <Navigate to={home} replace />;
 }
 
-function BishopGuard({ children }: { children: React.ReactNode }) {
+function RoleGuard({ roles, children, fallback = '/' }: { roles: readonly string[]; children: React.ReactNode; fallback?: string }) {
     const { user } = useAuth();
-    if (user?.role === 'SUPER_ADMIN') return <>{children}</>;
-    return <Navigate to="/" replace />;
+    if (hasRole(user?.role, roles)) return <>{children}</>;
+    return <Navigate to={fallback} replace />;
 }
 
-function ExecutiveGuard({ children }: { children: React.ReactNode }) {
-    const { user } = useAuth();
-    // Universal Override: System Ops + Bishop + Watua + Dept Leaders (Restricted View)
-    const isExecutive = ['SYSTEM_ADMIN', 'SECRETARY', 'SUPER_ADMIN', 'WATUA', 'DEPARTMENT_LEADER'].includes(user?.role || '');
-    if (isExecutive) return <>{children}</>;
-    
-    return <Navigate to="/" replace />;
-}
+const BishopGuard = ({ children }: { children: React.ReactNode }) => <RoleGuard roles={ROUTE_ROLES.bishop}>{children}</RoleGuard>;
+// System Ops + Bishop + Watua + Dept Leaders (Restricted View)
+const ExecutiveGuard = ({ children }: { children: React.ReactNode }) => <RoleGuard roles={ROUTE_ROLES.executive}>{children}</RoleGuard>;
+const PastorGuard = ({ children }: { children: React.ReactNode }) => <RoleGuard roles={ROUTE_ROLES.pastor}>{children}</RoleGuard>;
+const ContentPagesGuard = ({ children }: { children: React.ReactNode }) => <RoleGuard roles={ROUTE_ROLES.content}>{children}</RoleGuard>;
+const WatuaGuard = ({ children }: { children: React.ReactNode }) => <RoleGuard roles={ROUTE_ROLES.watua} fallback="/login">{children}</RoleGuard>;
 
-function PastorGuard({ children }: { children: React.ReactNode }) {
-    const { user } = useAuth();
-    const isPastor = ['PASTOR', 'ASSOCIATE_PASTOR', 'SUPER_ADMIN', 'WATUA'].includes(user?.role || '');
-    if (isPastor) return <>{children}</>;
-    return <Navigate to="/" replace />;
-}
-
-function ContentPagesGuard({ children }: { children: React.ReactNode }) {
-    const { user } = useAuth();
-    const canAccess = ['PASTOR', 'ASSOCIATE_PASTOR', 'SUPER_ADMIN', 'WATUA', 'SYSTEM_ADMIN', 'SECRETARY', 'DEPARTMENT_LEADER'].includes(user?.role || '');
-    if (canAccess) return <>{children}</>;
-    return <Navigate to="/" replace />;
-}
-
-function WatuaGuard({ children }: { children: React.ReactNode }) {
-    const { user } = useAuth();
-    if (user?.role === 'WATUA') return <>{children}</>;
-    return <Navigate to="/login" replace />;
+function ProfileRoute() {
+    const navigate = useNavigate();
+    // React Router stores the in-app history position in history.state.idx; 0 means this is the first in-app page.
+    const close = () => ((window.history.state?.idx ?? 0) > 0 ? navigate(-1) : navigate('/', { replace: true }));
+    return <ProfileModal open={true} onClose={close} />;
 }
 
 function LeaderGuard({ children }: { children: React.ReactNode }) {
@@ -132,6 +99,7 @@ import PublicUpdateToast from './components/PublicUpdateToast';
 
 function App() {
     const { user } = useAuth();
+    useRealtimeSync();
 
     useEffect(() => {
         const initKernel = async () => {
@@ -168,7 +136,7 @@ function App() {
                 
                 {/* WATUA ONLY */}
                 <Route path="/watua" element={<PrivateRoute><WatuaGuard><WatuaDashboard /></WatuaGuard></PrivateRoute>} />
-                <Route path="/health" element={<PrivateRoute><ExecutiveGuard><HealthDashboard /></ExecutiveGuard></PrivateRoute>} />
+                <Route path="/health" element={<PrivateRoute><RoleGuard roles={ROUTE_ROLES.health}><HealthDashboard /></RoleGuard></PrivateRoute>} />
                 
                 {/* PASTOR & ABOVE (Global Visibility) */}
                 <Route path="/announcements" element={<PrivateRoute><ContentPagesGuard><Announcements /></ContentPagesGuard></PrivateRoute>} />
@@ -184,7 +152,7 @@ function App() {
                 {/* ALL AUTHENTICATED */}
                 <Route path="/messages" element={<PrivateRoute><LeaderGuard><Messages /></LeaderGuard></PrivateRoute>} />
                 <Route path="/register-child" element={<PrivateRoute><ChildRegistration /></PrivateRoute>} />
-                <Route path="/profile" element={<PrivateRoute><ProfileModal open={true} onClose={() => window.history.back()} /></PrivateRoute>} />
+                <Route path="/profile" element={<PrivateRoute><ProfileRoute /></PrivateRoute>} />
                 
                 <Route path="/member-portal" element={<PrivateRoute><MemberPortal /></PrivateRoute>} />
                 

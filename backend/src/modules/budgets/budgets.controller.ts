@@ -1,8 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../../utils/prisma.js';
 import { logAudit } from '../../utils/audit.js';
-import { getOrSetCache } from '../../utils/redis.js';
-import redis from '../../utils/redis.js';
+import { getOrSetCache, invalidateCache, liveCacheKey } from '../../utils/redis.js';
 
 export const createBudget = async (req: any, res: Response) => {
     const { title, targetAmount, deadline, departmentId, linkedEventId } = req.body;
@@ -23,8 +22,7 @@ export const createBudget = async (req: any, res: Response) => {
         }
 
         // Invalidate Cache
-        const keys = await redis.keys('budgets:*');
-        if (keys.length > 0) await redis.del(...keys);
+        await invalidateCache('budgets:*');
 
         res.status(201).json(budget);
     } catch (error: any) {
@@ -41,7 +39,7 @@ export const getBudgets = async (req: Request, res: Response) => {
 
         const where: any = departmentId ? { departmentId: String(departmentId) } : {};
 
-        const cacheKey = `budgets:${user?.role || 'none'}:${departmentId || 'all'}:${page}:${limit}`;
+        const cacheKey = liveCacheKey('budgets', `${user?.role || 'none'}:${departmentId || 'all'}:${page}:${limit}`);
 
         const result = await getOrSetCache(cacheKey, async () => {
             const [data, total] = await Promise.all([
@@ -90,8 +88,7 @@ export const updateBudget = async (req: any, res: Response) => {
         }
 
         // Invalidate Cache
-        const keys = await redis.keys('budgets:*');
-        if (keys.length > 0) await redis.del(...keys);
+        await invalidateCache('budgets:*');
 
         res.json(budget);
     } catch (error: any) {
@@ -114,8 +111,7 @@ export const deleteBudget = async (req: any, res: Response) => {
         await prisma.budget.delete({ where: { id: req.params.id } });
 
         // Invalidate Cache
-        const keys = await redis.keys('budgets:*');
-        if (keys.length > 0) await redis.del(...keys);
+        await invalidateCache('budgets:*');
 
         res.json({ message: 'Budget deleted successfully' });
     } catch (error: any) {
@@ -173,8 +169,7 @@ export const fundBudget = async (req: any, res: Response) => {
         });
 
         // Invalidate Cache
-        const keys = await redis.keys('budgets:*');
-        if (keys.length > 0) await redis.del(...keys);
+        await invalidateCache('budgets:*');
 
         res.status(201).json({ 
             message: 'Budget funded successfully. Funds transferred to Department Account.',

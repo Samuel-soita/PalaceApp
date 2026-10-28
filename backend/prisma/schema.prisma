@@ -391,6 +391,7 @@ model Message {
   flagReason          String?
   chatType            String      @default("DEPARTMENT")
   createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @default(now()) @updatedAt
   version             Int         @default(0)
   taggedDepartmentIds String[]    @default([])
   department          Department? @relation(fields: [departmentId], references: [id])
@@ -399,6 +400,8 @@ model Message {
   receiver            User?       @relation("MessageReceiver", fields: [receiverId], references: [id])
   sender              User        @relation("MessageSender", fields: [senderId], references: [id])
   taggedUsers         User[]      @relation("MessageTags")
+
+  @@index([updatedAt])
 }
 
 model Account {

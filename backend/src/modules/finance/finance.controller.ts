@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import prisma from '../../utils/prisma.js';
-import { TelemetryEngine } from '../../utils/health.service.js';
+import { AppError } from '../../utils/errors.js';
 
 export const recordManualIncome = async (req: any, res: Response) => {
     try {
@@ -173,9 +173,24 @@ export const approveTransaction = async (req: any, res: Response) => {
             return res.status(403).json({ error: 'Only Bishop, Leaders, or Watua can sign withdrawals.' });
         }
 
+        if (transaction.type !== 'WITHDRAWAL' || transaction.status === 'APPROVED' || transaction.status === 'REJECTED') {
+            return res.status(400).json({ error: 'This transaction is not awaiting signatures.' });
+        }
+
+        if (isLeader) {
+            const deptId = transaction.account?.departmentId;
+            const managed = ((req as any).user?.managedDepartments || []).map((d: any) => d.id);
+            if (!deptId || (deptId !== (req as any).user?.departmentId && !managed.includes(deptId))) {
+                return res.status(403).json({ error: 'You can only sign withdrawals for the department you lead.' });
+            }
+        }
+
         // Prevent double signature from the same user
         const existingSign = transaction.approvals.find(a => a.userId === userId);
         if (existingSign) return res.status(400).json({ error: 'You have already signed this transaction.' });
+        if (transaction.approvals.some(a => a.role === role)) {
+            return res.status(400).json({ error: 'This signature step has already been completed.' });
+        }
 
         const result = await prisma.$transaction(async (tx) => {
             // 1. Record the approval
@@ -207,6 +222,10 @@ export const approveTransaction = async (req: any, res: Response) => {
 
             // 3. If APPROVED, deduct from account
             if (newStatus === 'APPROVED') {
+                const account = await tx.account.findUnique({ where: { id: transaction.accountId } });
+                if (!account || account.balance < transaction.amount) {
+                    throw new AppError(`Insufficient funds: balance is ${account?.balance ?? 0}, withdrawal is ${transaction.amount}.`, 400);
+                }
                 await tx.account.update({
                     where: { id: transaction.accountId },
                     data: {
@@ -224,6 +243,7 @@ export const approveTransaction = async (req: any, res: Response) => {
 
         res.json({ message: 'Signature recorded successfully.', transaction: result });
     } catch (error) {
+        if (error instanceof AppError) return res.status(error.statusCode).json({ error: error.message });
         console.error('Approve Transaction Error:', error);
         res.status(500).json({ error: 'Failed to record signature.' });
     }

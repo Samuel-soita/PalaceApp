@@ -1,14 +1,13 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { 
     Dialog, DialogTitle, DialogContent, Box, Typography, Card, 
-    CardContent, Avatar, Chip, Button, IconButton, Tooltip,
-    Divider, TextField, MenuItem, Select, FormControl, InputLabel,
+    CardContent, Avatar, Chip, Button, IconButton, 
+    Divider, TextField, 
     Grid, Alert
 } from '@mui/material';
 import { 
-    Droplet, X, CheckCircle, Clock, CreditCard, Shield, 
-    ChevronRight, Info, User
-} from 'lucide-react';
+    Droplet, X, Clock, CreditCard, Shield, 
+    Info} from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api-client';
 import { useAuth } from '../../contexts/AuthContext';
@@ -16,7 +15,7 @@ import { useAuth } from '../../contexts/AuthContext';
 const STATUS_FLOW = [
     'PENDING_PASTOR_APPROVAL',
     'ADMIN_PAYMENT_VERIFICATION',
-    'BISHOP_RITE_PENDING',
+    'BISHOP_APPROVED',
     'COMPLETED'
 ];
 
@@ -28,16 +27,22 @@ export default function BaptismManager({ open, onClose }: { open: boolean, onClo
     const [plannedTime, setPlannedTime] = useState('');
     const [baptismCardNumber, setBaptismCardNumber] = useState('');
     const [paymentReference, setPaymentReference] = useState('');
-    const [isPaid, setIsPaid] = useState(false);
 
-    const { data: baptisms = [], isLoading } = useQuery(['baptisms'], async () => {
+    const { data: allBaptisms = [] } = useQuery(['baptisms'], async () => {
         const res = await api.get('/workflows/baptism');
         return res.data;
     }, { enabled: open });
 
+    const baptisms = allBaptisms.filter((b: any) => b.status !== 'COMPLETED');
+
     const updateStatusMutation = useMutation(
-        async ({ id, status, notes, plannedDate, plannedTime, baptismCardNumber, isPaid, paymentReference }: any) => {
-            return api.patch(`/workflows/baptism/${id}/status`, { status, notes, plannedDate, plannedTime, baptismCardNumber, isPaid, paymentReference });
+        async ({ id, status, plannedDate, plannedTime, baptismCardNumber, paymentReference }: any) => {
+            // Payment is only confirmed when the admin verifies it (ADMIN_PAYMENT_VERIFICATION -> BISHOP_APPROVED).
+            const verifiesPayment = status === 'BISHOP_APPROVED';
+            return api.patch(`/workflows/baptism/${id}/status`, {
+                status, plannedDate, plannedTime,
+                ...(verifiesPayment ? { baptismCardNumber, paymentReference, isPaid: true } : {}),
+            });
         },
         {
             onSuccess: () => {
@@ -46,6 +51,7 @@ export default function BaptismManager({ open, onClose }: { open: boolean, onClo
                 setPlannedDate('');
                 setPlannedTime('');
                 setBaptismCardNumber('');
+                setPaymentReference('');
             },
             onError: (error: any) => {
                 const message = error.response?.data?.error || 'System failed to advance workflow phase.';
@@ -66,18 +72,22 @@ export default function BaptismManager({ open, onClose }: { open: boolean, onClo
         const status = baptism.status;
 
         if (role === 'WATUA' || role === 'SUPER_ADMIN') return true; 
-        if ((role === 'PASTOR' || role === 'ASSOCIATE_PASTOR') && status === 'PENDING_PASTOR_APPROVAL') return true;
+        if (role === 'PASTOR' && status === 'PENDING_PASTOR_APPROVAL') return true;
         if ((role === 'SYSTEM_ADMIN' || role === 'SECRETARY') && status === 'ADMIN_PAYMENT_VERIFICATION') return true;
-        if (role === 'SUPER_ADMIN' && status === 'BISHOP_RITE_PENDING') return true;
+        if (role === 'SUPER_ADMIN' && status === 'BISHOP_APPROVED') return true;
 
         return false;
     };
+
+    const candidateNotCleared = !!selectedBaptism?.user
+        && selectedBaptism.status === 'PENDING_PASTOR_APPROVAL'
+        && (selectedBaptism.user.isCardPaid === false || selectedBaptism.user.status !== 'ACTIVE');
 
     const getActionLabel = (status: string) => {
         switch (status) {
             case 'PENDING_PASTOR_APPROVAL': return 'PROPOSE SCHEDULE & SEND TO ADMIN';
             case 'ADMIN_PAYMENT_VERIFICATION': return 'VERIFY PAYMENT & SEND TO BISHOP';
-            case 'BISHOP_RITE_PENDING': return 'MARK RITE AS COMPLETED';
+            case 'BISHOP_APPROVED': return 'MARK RITE AS COMPLETED';
             default: return 'ADVANCE PHASE';
         }
     };
@@ -103,7 +113,7 @@ export default function BaptismManager({ open, onClose }: { open: boolean, onClo
                     <Droplet size={24} color="var(--cyan)" />
                     <Typography variant="h6" fontWeight="950" className="glow-text">BAPTISM SACRAMENT WORKFLOW</Typography>
                 </Box>
-                <IconButton onClick={onClose} size="small" sx={{ color: 'text.secondary' }}>
+                <IconButton aria-label="close" onClick={onClose} size="small" sx={{ color: 'text.secondary' }}>
                     <X size={22} />
                 </IconButton>
             </DialogTitle>
@@ -209,6 +219,15 @@ export default function BaptismManager({ open, onClose }: { open: boolean, onClo
 
                                 {canApprove(selectedBaptism) ? (
                                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                        {candidateNotCleared && (
+                                            <Alert severity="warning" sx={{ borderRadius: 2 }}>
+                                                <Typography variant="caption" fontWeight={900}>
+                                                    {selectedBaptism.user?.status !== 'ACTIVE'
+                                                        ? 'This member account is not active yet. Administration must verify the member first.'
+                                                        : 'Membership card payment is not verified. Ask administration to verify the card payment before scheduling.'}
+                                                </Typography>
+                                            </Alert>
+                                        )}
                                         {selectedBaptism.status === 'PENDING_PASTOR_APPROVAL' && (
                                             <Grid container spacing={2}>
                                                 <Grid item xs={6}>
@@ -269,10 +288,9 @@ export default function BaptismManager({ open, onClose }: { open: boolean, onClo
                                                 plannedDate,
                                                 plannedTime,
                                                 baptismCardNumber,
-                                                isPaid: true,
                                                 paymentReference
                                             })}
-                                            disabled={updateStatusMutation.isLoading || 
+                                            disabled={updateStatusMutation.isLoading || candidateNotCleared ||
                                                 (selectedBaptism.status === 'PENDING_PASTOR_APPROVAL' && (!plannedDate || !plannedTime)) ||
                                                 (selectedBaptism.status === 'ADMIN_PAYMENT_VERIFICATION' && (!baptismCardNumber || !paymentReference))
                                             }

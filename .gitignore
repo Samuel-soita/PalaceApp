@@ -7,3 +7,5 @@ build
 .DS_Store
 *.log
 *.pid
+cypress/screenshots
+cypress/videos

@@ -1,25 +1,18 @@
-import { runStressTest } from '../../src/scripts/simulate-stress';
+import { stubApi } from '../support/session';
 
-describe('PWA Mission Stress Testing', () => {
-  beforeEach(() => {
-    cy.clearLocalStorage();
-    cy.clearCookies();
-  });
-
-  it('Simulation E: PWA IndexedDB Thundering Herd Pipeline', () => {
-    // We visit the main page (we need the dev server to be responding, or we just load it)
-    cy.visit('/');
-
-    // Attach to the window to ensure variables are mounted
-    cy.window().then((win) => {
-        // Run the 1200 mission injection
-        return win.runStressTest();
+describe('PWA sync queue under load', () => {
+    beforeEach(() => {
+        cy.clearLocalStorage();
+        stubApi();
+        cy.intercept('POST', '/api/test-stress', { statusCode: 200, body: { success: true } });
     });
 
-    // We can monitor the console logs to see the output. Cypress will wait for execution.
-    // Ensure the offline queues were injected and processed.
-    cy.wait(5000); 
+    it('queues 1200 offline actions without freezing the page', () => {
+        cy.visit('/login');
+        cy.window().its('runStressTest', { timeout: 15000 }).should('be.a', 'function');
 
-    // The test explicitly passes if the JS engine does not crash while executing the 1200 DOM updates.
-  });
+        cy.window().then({ timeout: 60000 }, (win: any) => win.runStressTest());
+
+        cy.contains('button', 'Sign In').should('be.visible').and('not.be.disabled');
+    });
 });

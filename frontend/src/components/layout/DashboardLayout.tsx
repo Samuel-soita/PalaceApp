@@ -1,10 +1,13 @@
-import { CommunicationHub } from '../dashboard/CommunicationHub';
 import TopNavbar from './TopNavbar';
 import AnnouncementBanner from '../AnnouncementBanner';
 import { Box, Container } from '@mui/material';
 import { WelcomeSplash } from '../dashboard/WelcomeSplash';
 import { useAuth } from '../../contexts/AuthContext';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
+
+const CommunicationHub = lazy(() =>
+    import('../dashboard/CommunicationHub').then((m) => ({ default: m.CommunicationHub }))
+);
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     const { user } = useAuth();
@@ -36,7 +39,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <Container maxWidth="xl" sx={{ height: '100%' }}>
                     {children}
                 </Container>
-                {user?.role !== 'MEMBER' && <CommunicationHub />}
+                {user && user.role !== 'MEMBER' && (
+                    <Suspense fallback={null}>
+                        <CommunicationHub />
+                    </Suspense>
+                )}
             </Box>
         </Box>
     );

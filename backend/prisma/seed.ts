@@ -113,7 +113,7 @@ async function main() {
     console.log('👑 Seeding Core Leadership roles...');
     
     // WATUA (The Ghost)
-    const watua = await prisma.user.create({
+    await prisma.user.create({
         data: {
             name: 'Eng. Samuel Soita',
             idNumber: 'WATUA-ENG-001',
@@ -139,7 +139,7 @@ async function main() {
         } as any
     });
 
-    const secretary = await prisma.user.create({
+    await prisma.user.create({
         data: {
             name: 'Pst. Joshua Musisi',
             idNumber: 'PPAM-SEC-001',
@@ -390,7 +390,7 @@ async function main() {
         if (!leader) continue;
 
         // Plan
-        const plan = await prisma.plan.create({
+        await prisma.plan.create({
             data: {
                 departmentId: d.id,
                 title: `2026 ${d.name} Tactical Roadmap`,
@@ -538,7 +538,7 @@ async function main() {
         const isIncome = i % 2 === 0;
         const amount = 500 + (Math.random() * 5000);
         
-        const t = await prisma.transaction.create({
+        await prisma.transaction.create({
             data: {
                 accountId: acc.id,
                 type: isIncome ? 'INCOME' : 'EXPENSE',

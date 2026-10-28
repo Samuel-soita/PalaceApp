@@ -4,9 +4,8 @@ import {
     Alert, MenuItem, Divider, CircularProgress, IconButton, Grid,
     FormControlLabel, Switch, Collapse, Card
 } from '@mui/material';
-import { UserPlus, Baby, ArrowLeft, Plus, ShieldCheck, Heart } from 'lucide-react';
+import { UserPlus, ArrowLeft, Plus, ShieldCheck, Heart } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import api from '../lib/api-client';
 import { db } from '../lib/db';
 import { executeApiFirstMutation } from '../lib/api-first-mutation';
 import DashboardLayout from '../components/layout/DashboardLayout';
@@ -80,7 +79,9 @@ export default function ChildRegistration() {
             });
 
             const saved = result?.data?.data ?? result?.data;
-            setDedicationNumber(saved?.dedicationNumber || saved?.dedicationNumber || 'SUBMITTED');
+            if (!saved?._queued) {
+                setDedicationNumber(saved?.child?.dedicationNumber || saved?.dedicationNumber || 'SUBMITTED');
+            }
             setSuccess(true);
             // Reset form
             setName('');

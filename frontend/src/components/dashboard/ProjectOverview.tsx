@@ -22,7 +22,7 @@ export const ProjectOverview = ({ projects }: { projects: Project[] }) => {
                             <Typography variant="h6" fontWeight="800" sx={{ lineHeight: 1.2 }}>{project.title}</Typography>
                             <Box display="flex" alignItems="center" gap={2} mt={0.5}>
                                 <Typography variant="caption" className="neon-label" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    <Briefcase size={12} /> {project.department.name}
+                                    <Briefcase size={12} /> {project.department?.name || 'General'}
                                 </Typography>
                                 {project.deadline && (
                                     <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, opacity: 0.6, color: 'secondary.main', fontWeight: 'bold' }}>

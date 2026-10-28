@@ -3,8 +3,6 @@ import { FeatureFlagService } from '../../utils/feature-flag.service.js';
 
 export const getFlags = async (req: Request, res: Response) => {
     try {
-        const flags = await FeatureFlagService.isEnabled('all', {}); // Dummy call to trigger cache load or just use prisma
-        // Let's just query prisma for full list
         const allFlags = await (await import('../../utils/prisma.js')).default.featureFlag.findMany();
         res.json(allFlags);
     } catch (error: any) {

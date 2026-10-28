@@ -64,11 +64,13 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
         
         let pastorModules: string[] = [];
         if (user.role === 'PASTOR' || user.role === 'ASSOCIATE_PASTOR') {
-            const mods = await (prisma as any).pastorModuleAccess.findMany({
-                where: { pastorId: user.id },
-                select: { moduleKey: true }
-            });
-            pastorModules = mods.map((m: any) => m.moduleKey);
+            pastorModules = await getOrSetCache(`auth:pastor-modules:${user.id}`, async () => {
+                const mods = await (prisma as any).pastorModuleAccess.findMany({
+                    where: { pastorId: user.id },
+                    select: { moduleKey: true }
+                });
+                return mods.map((m: any) => m.moduleKey);
+            }, 15);
         }
 
         req.user = {

@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
-import { Box, Typography, TextField, IconButton, Paper, Avatar, Drawer, Badge, useMediaQuery, useTheme, InputAdornment } from '@mui/material';
-import { Send, MessageSquare, X, Users, Shield, Edit2, Pencil, Trash2 } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Box, Typography, TextField, IconButton, Paper, Avatar, Badge, useMediaQuery, useTheme, InputAdornment } from '@mui/material';
+import { Send, MessageSquare, X, Shield, Edit2, Pencil } from 'lucide-react';
 import { socket, connectSocket } from '../../utils/socket';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../lib/api-client';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../lib/db';
 import { encryptMessage, decryptMessage } from '../../lib/encryption';
@@ -50,15 +50,20 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
     }, { enabled: open && (activeTab === 'ROOM' || !!selectedUser), retry: false });
 
     // --- MISSION: OFFLINE-FIRST LEADER LIST ---
-    const users = useLiveQuery(() => 
-        db.users.filter(u => u.id !== user?.id && ['SUPER_ADMIN', 'PASTOR', 'DEPARTMENT_LEADER', 'BISHOP'].includes(u.role)).toArray()
-    , [user?.id]) || [];
+    const showLeaderList = open && activeTab === 'PRIVATE' && !selectedUser;
+    const users = useLiveQuery(() =>
+        showLeaderList
+            ? db.users.filter(u => u.id !== user?.id && ['SUPER_ADMIN', 'PASTOR', 'DEPARTMENT_LEADER', 'BISHOP'].includes(u.role)).toArray()
+            : []
+    , [user?.id, showLeaderList]) || [];
 
-    // Inactivity Tracker
+    // Inactivity Tracker: emit only on ONLINE <-> OFFLINE transitions, not on every input event.
+    const isIdleRef = useRef(true);
     useEffect(() => {
         if (!user) return;
         const timer = setInterval(() => {
-            if (Date.now() - lastActivity > 10 * 60 * 1000) {
+            if (!isIdleRef.current && Date.now() - lastActivity > 10 * 60 * 1000) {
+                isIdleRef.current = true;
                 socket.emit('update-status', { userId: user.id, status: 'OFFLINE' });
             }
         }, 60000);
@@ -66,9 +71,17 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
     }, [lastActivity, user]);
 
     useEffect(() => {
+        let lastStamp = 0;
         const updateActivity = () => {
-            setLastActivity(Date.now());
-            if (user) socket.emit('update-status', { userId: user.id, status: 'ONLINE' });
+            const now = Date.now();
+            if (now - lastStamp > 30000) {
+                lastStamp = now;
+                setLastActivity(now);
+            }
+            if (user && isIdleRef.current && socket.connected) {
+                isIdleRef.current = false;
+                socket.emit('update-status', { userId: user.id, status: 'ONLINE' });
+            }
         };
         window.addEventListener('mousedown', updateActivity);
         window.addEventListener('keydown', updateActivity);
@@ -111,6 +124,11 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
     }, [messages]);
+
+    const decryptedMessages = useMemo(
+        () => (messages || []).map((msg: any) => ({ ...msg, plainText: decryptMessage(msg.content, roomId) })),
+        [messages, roomId]
+    );
 
     if (!user || user.role === 'MEMBER') return null;
 
@@ -271,7 +289,7 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
                             {!messagesError && messages?.length === 0 && (
                                 <Typography variant="caption" sx={{ textAlign: 'center', opacity: 0.3, py: 8, fontWeight: 900 }}>NO MESSAGES IN THIS FREQUENCY</Typography>
                             )}
-                            {messages?.map((msg: any) => (
+                            {decryptedMessages.map((msg: any) => (
                                 <Box key={msg.id} sx={{ alignSelf: msg.senderId === user?.id ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
                                     {msg.isFlagged && user?.role === 'SUPER_ADMIN' && (
                                         <Typography variant="caption" color="error" sx={{ display: 'block', mb: 0.5, fontWeight: '950', fontSize: '0.6rem' }}>⚠️ FLAGGED</Typography>
@@ -287,7 +305,7 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
                                     border: '1px solid var(--glass-border)',
                                 }}>
                                     <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', color: msg.senderId === user?.id ? 'white' : 'inherit', lineHeight: 1.4 }}>
-                                        {decryptMessage(msg.content, roomId)}
+                                        {msg.plainText}
                                         {msg.isEdited && <Typography component="span" variant="caption" sx={{ ml: 1, opacity: 0.5, fontSize: '0.6rem' }}>(edited)</Typography>}
                                     </Typography>
                                 </Paper>
@@ -300,7 +318,7 @@ export const CommunicationHub = ({ departmentId, projectId, eventId, title = "Ch
                                             size="small" 
                                             onClick={() => {
                                                 setEditingMessageId(msg.id);
-                                                setMessage(decryptMessage(msg.content, roomId));
+                                                setMessage(msg.plainText);
                                             }}
                                             sx={{ p: 0.2, color: 'primary.main', opacity: 0.5, '&:hover': { opacity: 1 } }}
                                         >
